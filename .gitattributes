@@ -1,2 +1,14 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# AHK 脚本保持 CRLF（Windows 习惯）
+*.ahk text eol=crlf
+
+# Markdown 保持 LF（GitHub 友好）
+*.md text eol=lf
+
+# 二进制文件不做换行转换
+*.exe binary
+*.ico binary
+*.png binary
+*.rtf binary
