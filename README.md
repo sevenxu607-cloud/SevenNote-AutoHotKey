@@ -10,7 +10,25 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
 
-![SevenNote 界面截图](./screenshots/main.png)
+## 界面预览
+
+### 主界面
+![主界面](./screenshots/main.png)
+
+### 帮助页面
+![帮助页面](./screenshots/help.png)
+
+### 检索页面
+![检索页面](./screenshots/search.png)
+
+### 日期跳转
+![日期跳转](./screenshots/date-jump.png)
+
+### 主题字体切换
+![主题字体切换](./screenshots/theme-font.png)
+
+### 在 Obsidian 中回顾
+![Obsidian 回顾](./screenshots/obsidian.png)
 
 ---
 
