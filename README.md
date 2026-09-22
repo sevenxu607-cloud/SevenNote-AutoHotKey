@@ -128,7 +128,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 ### 方式 A：使用 EXE（推荐普通用户）
 
-1. 从 [Releases](../../releases) 下载 `SevenNote.exe`（约 250MB，内含 Pandoc）
+1. 从 [Releases](../../releases) 下载 `SevenNote.zip`（约 40MB，解压后得到 SevenNote.exe）
 2. 放到任意非系统盘目录（如 `D:\tools\`）
 3. **关闭杀毒软件**（AHK 编译的 EXE 常被误报）
 4. 双击运行
