@@ -55,8 +55,8 @@ class Config {
     static AppName := "SevenNote"
     static Version := "1.9"
 
-    static AppDataDir := A_AppData . "\SevenNote"
-    static ConfigPath := A_AppData . "\SevenNote\_config.ini"
+    static AppDataDir := A_AppData . "\SevenNote-Dev"
+    static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
     static PandocPath := A_AppData . "\SevenNote\pandoc.exe"
 
     static GetVault() {
