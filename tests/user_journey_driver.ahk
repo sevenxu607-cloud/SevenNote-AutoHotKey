@@ -1,6 +1,7 @@
 global JourneyResultPath := "__RESULT_PATH__"
 global JourneyImagePath := "__DEMO_IMAGE_PATH__"
 global JourneyTracePath := "__TRACE_PATH__"
+global JourneyStartSignalPath := "__START_SIGNAL_PATH__"
 global JourneyPaceMs := 8000
 global JourneyTypeDelayMs := 100
 global JourneySpeedMode := "balanced"
@@ -132,24 +133,29 @@ if (overlap || appWidth != guideWidth || appHeight != guideHeight) {
 
 WinSetAlwaysOnTop(1, "ahk_id " . JourneyAppGui.Hwnd)
 WinSetAlwaysOnTop(1, "ahk_id " . presenter.Hwnd)
+if (JourneyStartSignalPath != "") {
+    signalDeadline := A_TickCount + 300000
+    while !FileExist(JourneyStartSignalPath) {
+        if (A_TickCount >= signalDeadline)
+            throw Error("等待录制启动信号超时；演示已取消。")
+        Sleep(100)
+    }
+}
 SendMode("Event")
 SetKeyDelay(12, 8)
 SendLevel(1)
 Sleep(700)
 
 FocusJourneyApp()
-Loop 6 {
-    Send("!{Up}")
-    Sleep(180)
-}
+ShiftJourneyDate(-6)
 WriteDemoLine("SevenNote 用户旅途｜序言", "title")
-WriteDemoLine("记录日期｜" . State.GetDate(), "prompt")
-WriteDemoLine("从一条随手速记开始，记录可以轻，也可以完整。", "body")
-WriteDemoLine("这份演示以连续日期组织六段功能；每篇笔记均带有旅途标签。", "body")
-WriteDemoLine("极致轻量 → 富文本编辑 → 双格式归档 → 标签系统 → 日期管理 → 6 套主题 + 7 种字体", "prompt")
-WriteDemoLine("操作方式｜先阅读本篇提示，再观察真实热键与笔记变化。", "body")
-WriteDemoLine("查找方式｜Ctrl+G 搜索“旅途-”，按标签打开对应模块。", "body")
-WriteDemoLine("隔离说明｜演示数据仅保存在临时 Vault，结束后自动清理。", "result")
+WriteDemoLine("记录日期｜" . State.GetDate(), "prompt", "instant")
+WriteDemoLine("从一条随手速记开始，记录可以轻，也可以完整。", "body", "instant")
+WriteDemoLine("这份演示以连续日期组织六段功能；每篇笔记均带有旅途标签。", "body", "instant")
+WriteDemoLine("极致轻量 → 富文本编辑 → 双格式归档 → 标签系统 → 日期管理 → 6 套主题 + 7 种字体", "prompt", "instant")
+WriteDemoLine("操作方式｜先阅读本篇提示，再观察真实热键与笔记变化。", "body", "instant")
+WriteDemoLine("查找方式｜Ctrl+G 搜索“旅途-”，按标签打开对应模块。", "body", "instant")
+WriteDemoLine("隔离说明｜演示数据仅保存在临时 Vault，结束后自动清理。", "result", "instant")
 Sleep(1200)
 if !FinalizeJourneyNote(JourneyTags[1])
     throw Error("Could not save and tag the user-journey introduction note.")
@@ -160,8 +166,8 @@ for index, slide in JourneySlides {
     WinActivate("ahk_id " . presenter.Hwnd)
     Sleep(550)
     FocusJourneyApp()
-    Send("!{Down}")
-    Sleep(550)
+    ShiftJourneyDate(1)
+    Sleep(300)
     titleControl.Value := slide.title
     featureControl.Value := slide.feature
     storyControl.Value := slide.story
@@ -169,15 +175,15 @@ for index, slide in JourneySlides {
     progressControl.Value := JourneyProgress(index, slide.journey)
     resultControl.Value := "应用窗口同步呈现当前步骤"
     WriteDemoLine(slide.journey, "title")
-    WriteDemoLine("记录日期｜" . State.GetDate(), "prompt")
-    WriteDemoLine("本段重点｜" . slide.feature, "body")
+    WriteDemoLine("记录日期｜" . State.GetDate(), "prompt", "instant")
+    WriteDemoLine("本段重点｜" . slide.feature, "body", "instant")
     WriteDemoLine("操作提示｜" . slide.hotkey, "prompt")
     Sleep(900)
 
     detail := ""
     passed := false
     if (index = 1) {
-        WriteDemoLine("记录入口随时可用；切回当天即可继续。", "body")
+        WriteDemoLine("记录入口随时可用；切回当天即可继续。", "body", "instant")
         Sleep(1100)
         Send("!z")
         Sleep(900)
@@ -187,15 +193,19 @@ for index, slide in JourneySlides {
         Sleep(650)
         WriteDemoLine("效果｜窗口重新呼出，当天记录仍在原处。", "result")
         note := EditorService.GetText(State.GetEd())
-        passed := hidden && appRestored && InStr(note, State.GetDate()) > 0
-            && InStr(note, "当天记录仍在原处") > 0
+        dateVisible := InStr(note, State.GetDate()) > 0
+        contentVisible := InStr(note, "当天记录仍在原处") > 0
+        passed := hidden && appRestored && dateVisible && contentVisible
+        TraceJourney("Lightweight checks: hidden=" . hidden . " active=" . appRestored
+            . " date=" . State.GetDate() . " dateVisible=" . dateVisible
+            . " contentVisible=" . contentVisible)
         detail := passed ? "Alt+Z 隐藏并重新呼出；当天笔记内容保持不变。" : "窗口呼出/隐藏或当天日期检查未通过。"
     } else if (index = 2) {
         SetGuideSegment("行编辑 · 习惯迁移"
             , "将 PyCharm 中熟悉的行操作带入笔记；顺序可调整，修改可恢复。"
             , "Ctrl+Shift+↑  移动行    Ctrl+D  复制行    Ctrl+Z  撤销")
-        WriteDemoLine("行编辑｜将 PyCharm 中熟悉的快捷键习惯带入 SevenNote。", "prompt")
-        WriteDemoLine("操作提示｜先调整顺序，再观察复制与撤销、重做。", "body")
+        WriteDemoLine("行编辑｜将 PyCharm 中熟悉的快捷键习惯带入 SevenNote。", "prompt", "instant")
+        WriteDemoLine("操作提示｜先调整顺序，再观察复制与撤销、重做。", "body", "instant")
         TypeDemoLines([
             "补充信息：文字与图片留在同一篇记录。",
             "记录重点：时间、结构与图像保持关联。"
@@ -221,45 +231,45 @@ for index, slide in JourneySlides {
         extraPos := InStr(movedNote, "补充信息：文字与图片留在同一篇记录。")
         lineEditPassed := duplicateVisible && duplicateRestored
             && priorityPos > 0 && extraPos > priorityPos
-        WriteDemoLine("效果｜重点行已移到前面；复制、撤销与重做可观察。", "result")
+        WriteDemoLine("效果｜重点行已移到前面；复制、撤销与重做可观察。", "result", "instant")
         Sleep(800)
 
         SetGuideSegment("时间与分段 · 记录组织"
             , "时间戳标记记录时刻，分隔线与分段标题让连续内容更易浏览。"
             , "Ctrl+T  时间戳    Ctrl+H  分隔线    Ctrl+Shift+H  分段标题")
-        WriteDemoLine("SevenNote 记录功能｜为笔记添加时间与清晰段落。", "prompt")
-        WriteDemoLine("操作提示｜Ctrl+T 插入当前时间。", "body")
+        WriteDemoLine("SevenNote 记录功能｜为笔记添加时间与清晰段落。", "prompt", "instant")
+        WriteDemoLine("操作提示｜Ctrl+T 插入当前时间。", "body", "instant")
         Sleep(650)
         Send("^t")
         Sleep(600)
-        WriteDemoLine("效果｜记录时刻已写入当前笔记。", "result")
-        WriteDemoLine("操作提示｜Ctrl+B 突出需要回看的重点。", "prompt")
+        WriteDemoLine("效果｜记录时刻已写入当前笔记。", "result", "instant")
+        WriteDemoLine("操作提示｜Ctrl+B 突出需要回看的重点。", "prompt", "instant")
         Sleep(650)
         Send("^b")
         SendText("重点：醒目格式保留信息层次")
         Send("^b")
         Send("{Enter}")
         Sleep(650)
-        WriteDemoLine("效果｜重点内容通过格式强调，与正文区分。", "result")
-        WriteDemoLine("操作提示｜Ctrl+H 插入分隔线，Ctrl+Shift+H 建立分段标题。", "prompt")
+        WriteDemoLine("效果｜重点内容通过格式强调，与正文区分。", "result", "instant")
+        WriteDemoLine("操作提示｜Ctrl+H 插入分隔线，Ctrl+Shift+H 建立分段标题。", "prompt", "instant")
         Sleep(650)
         Send("^h")
         Sleep(550)
         Send("^+h")
         Sleep(650)
         TypeDemoLines(["连续记录按主题分段。", "标题、正文与重点格式清晰区分。"])
-        WriteDemoLine("效果｜内容按主题分区，长笔记更容易浏览。", "result")
+        WriteDemoLine("效果｜内容按主题分区，长笔记更容易浏览。", "result", "instant")
         Sleep(800)
 
         SetGuideSegment("图片粘贴 · 图文同篇"
             , "粘贴图片后，画面与文字保留在同一条记录，附件按日期整理。"
             , "Ctrl+V  粘贴图片")
-        WriteDemoLine("图文记录｜接下来将截图与说明放在同一篇笔记中。", "prompt")
-        WriteDemoLine("操作提示｜Ctrl+V 粘贴演示图片。", "body")
+        WriteDemoLine("图文记录｜接下来将截图与说明放在同一篇笔记中。", "prompt", "instant")
+        WriteDemoLine("操作提示｜Ctrl+V 粘贴演示图片。", "body", "instant")
         Sleep(850)
         PasteDemoImage()
         Sleep(900)
-        WriteDemoLine("效果｜图片已嵌入笔记；保存时归入当天附件。", "result")
+        WriteDemoLine("效果｜图片已嵌入笔记；保存时归入当天附件。", "result", "instant")
         Send("^s")
         Sleep(1200)
         imageRtf := NoteStoreService.FindRtf(State.GetDate())
@@ -296,9 +306,9 @@ for index, slide in JourneySlides {
         mdPath := NoteStoreService.FindMd(State.GetDate())
         saved := rtfPath != "" && mdPath != ""
             && FileExist(rtfPath) && FileExist(mdPath)
-        WriteDemoLine("RTF 母版｜" . (saved ? RegExReplace(rtfPath, "^.*\\") : "未生成"), "body")
-        WriteDemoLine("Markdown｜" . (saved ? RegExReplace(mdPath, "^.*\\") : "未生成"), "body")
-        WriteDemoLine("价值｜可保留富文本，也可在 Markdown 工具中继续整理。", "result")
+        WriteDemoLine("RTF 母版｜" . (saved ? RegExReplace(rtfPath, "^.*\\") : "未生成"), "body", "instant")
+        WriteDemoLine("Markdown｜" . (saved ? RegExReplace(mdPath, "^.*\\") : "未生成"), "body", "instant")
+        WriteDemoLine("价值｜可保留富文本，也可在 Markdown 工具中继续整理。", "result", "instant")
         passed := saved
         detail := passed ? "Ctrl+S 后实际生成 RTF 与 Markdown；文件名与用途已展示。"
             : "RTF 或 Markdown 文件未生成。"
@@ -318,7 +328,7 @@ for index, slide in JourneySlides {
         directTagPassed := directTagJump && State.GetDate() = richTextDate
             && InStr(StatusBar._tagCtrl.Value, JourneyTags[3]) > 0
             && InStr(note, "富文本编辑") > 0
-        WriteDemoLine("效果｜直接选择已打开另一日期的富文本记录。", "result")
+        WriteDemoLine("效果｜直接选择已打开另一日期的富文本记录。", "result", "instant")
         Sleep(800)
         SetGuideSegment("标签系统 · 检索后选择"
             , "当列表较长时，输入标签缩小范围，再选择目标笔记。"
@@ -328,9 +338,9 @@ for index, slide in JourneySlides {
         foundByTag := JumpByQuery(JourneyTags[3], richTextDate)
         filteredTagPassed := foundByTag && State.GetDate() = richTextDate
             && InStr(StatusBar._tagCtrl.Value, JourneyTags[3]) > 0
-        WriteDemoLine("效果｜筛选结果仍可回到同一日期的富文本记录。", "result")
+        WriteDemoLine("效果｜筛选结果仍可回到同一日期的富文本记录。", "result", "instant")
         Sleep(800)
-        WriteDemoLine("返回提示｜按标签检索并选择当前的标签系统笔记。", "prompt")
+        WriteDemoLine("返回提示｜按标签检索并选择当前的标签系统笔记。", "prompt", "instant")
         Sleep(700)
         returnedToTag := JumpByQuery(JourneyTags[index + 1], chapterDate)
         note := EditorService.GetText(State.GetEd())
@@ -347,7 +357,7 @@ for index, slide in JourneySlides {
     } else if (index = 5) {
         savedDate := State.GetDate()
         richTextDate := JourneyDateForTag(3)
-        WriteDemoLine("检索标记｜阶段回顾", "body")
+        WriteDemoLine("检索标记｜阶段回顾", "body", "instant")
         Sleep(750)
         WriteDemoLine("搜索提示｜Ctrl+F 输入本段标记词，观察匹配计数与正文定位。", "prompt")
         Sleep(900)
@@ -361,16 +371,14 @@ for index, slide in JourneySlides {
         Send("{Esc}")
         Sleep(450)
         FocusJourneyApp()
-        WriteDemoLine("效果｜Ctrl+F 在当前笔记中找到 1 处匹配并定位正文。", "result")
+        WriteDemoLine("效果｜Ctrl+F 在当前笔记中找到 1 处匹配并定位正文。", "result", "instant")
         Sleep(850)
-        WriteDemoLine("日期提示｜Alt+↑ 查看前一天，再按 Alt+↓ 返回本篇。", "prompt")
+        WriteDemoLine("日期提示｜Alt+↑ 查看前一天，再按 Alt+↓ 返回本篇。", "prompt", "instant")
         Sleep(900)
-        Send("!{Up}")
-        Sleep(1000)
+        ShiftJourneyDate(-1)
         previousDate := State.GetDate()
         previousNote := EditorService.GetText(State.GetEd())
-        Send("!{Down}")
-        Sleep(1000)
+        ShiftJourneyDate(1)
         returnedByStep := State.GetDate() = savedDate
             && InStr(EditorService.GetText(State.GetEd()), "日期管理") > 0
         SetGuideSegment("日期管理 · 直接选择"
@@ -382,7 +390,7 @@ for index, slide in JourneySlides {
         directDateNote := EditorService.GetText(State.GetEd())
         directDatePassed := directDateJump && State.GetDate() = richTextDate
             && InStr(directDateNote, "富文本编辑") > 0
-        WriteDemoLine("效果｜直接选择已打开 " . richTextDate . " 的记录。", "result")
+        WriteDemoLine("效果｜直接选择已打开 " . richTextDate . " 的记录。", "result", "instant")
         Sleep(800)
         SetGuideSegment("日期管理 · 检索后选择"
             , "日期较多时，可输入具体日期过滤，再选择对应记录。"
@@ -393,9 +401,9 @@ for index, slide in JourneySlides {
         historicalNote := EditorService.GetText(State.GetEd())
         historicalJumpPassed := jumpedByDate && State.GetDate() = richTextDate
             && InStr(historicalNote, "富文本编辑") > 0
-        WriteDemoLine("效果｜按日期检索后跳转，目标笔记与列表直选一致。", "result")
+        WriteDemoLine("效果｜按日期检索后跳转，目标笔记与列表直选一致。", "result", "instant")
         Sleep(800)
-        WriteDemoLine("返回提示｜按当前日期再次筛选，回到日期管理篇。", "prompt")
+        WriteDemoLine("返回提示｜按当前日期再次筛选，回到日期管理篇。", "prompt", "instant")
         Sleep(750)
         returnedByQuery := JumpByQuery(savedDate, savedDate)
         passed := previousDate != savedDate && InStr(previousNote, "标签系统") > 0
@@ -444,8 +452,8 @@ for index, slide in JourneySlides {
             , "六段功能  ·  七篇日期笔记  ·  隔离环境演示")
         WriteDemoLine("旅途回顾｜从随手记录，到随时找回。", "title")
         WriteDemoLine("快速记录 · 灵活编辑 · 双格式保存 · 标签与日期回顾。", "body")
-        WriteDemoLine("演示特点｜七篇连续日期笔记，各有旅途标签，后续也可作为笔记整理。", "prompt")
-        WriteDemoLine("安全说明｜所有演示数据仅保存在临时隔离环境。", "result")
+        WriteDemoLine("演示特点｜七篇连续日期笔记，各有旅途标签，后续也可作为笔记整理。", "prompt", "instant")
+        WriteDemoLine("安全说明｜所有演示数据仅保存在临时隔离环境。", "result", "instant")
     }
 
     if !passed && detail = ""
@@ -477,9 +485,12 @@ for tagIndex, tag in JourneyTags {
     date := FormatTime(DateAdd(FormatTime(, "yyyyMMdd"), tagIndex - 7, "Days"), "yyyy-MM-dd")
     rtfPath := NoteStoreService.FindRtf(date)
     mdPath := NoteStoreService.FindMd(date)
-    if (InStr(rtfPath, "-" . tag . ".rtf") > 0
+    tagVerified := InStr(rtfPath, "-" . tag . ".rtf") > 0
         && InStr(mdPath, "-" . tag . ".md") > 0
-        && FileExist(rtfPath) && FileExist(mdPath))
+        && FileExist(rtfPath) && FileExist(mdPath)
+    TraceJourney("Archive check: date=" . date . " tag=" . tag
+        . " verified=" . tagVerified . " rtf=" . rtfPath . " md=" . mdPath)
+    if tagVerified
         verifiedNotes++
 }
 if (verifiedNotes != 7) {
@@ -539,11 +550,20 @@ TypeDemoLines(lines) {
     }
 }
 
-WriteDemoLine(text, style := "body") {
+WriteDemoLine(text, style := "body", revealMode := "typewriter") {
     global JourneyTypeDelayMs, JourneyLiveControl, JourneySpeedMode
     hwnd := State.GetEd()
     EditorService.MoveCaretToEnd(hwnd)
     ApplyDemoTextStyle(hwnd, style)
+    if (revealMode = "instant") {
+        SendText(text)
+        JourneyLiveControl.Value := text
+        Send("{Enter}")
+        ApplyDemoTextStyle(hwnd, "body")
+        Sleep(180)
+        return
+    }
+
     typingDelay := JourneyTypeDelayMs
     punctuationDelay := 150
     if (style = "body") {
@@ -582,8 +602,8 @@ WriteDemoLine(text, style := "body") {
 
 JourneyPauseScale() {
     global JourneySpeedMode
-    return JourneySpeedMode = "fast" ? 0.65
-        : JourneySpeedMode = "readable" ? 1.1 : 0.8
+    return JourneySpeedMode = "fast" ? 0.325
+        : JourneySpeedMode = "readable" ? 0.55 : 0.4
 }
 
 SetGuideSegment(feature, story, hotkeyText) {
@@ -607,6 +627,31 @@ TraceJourney(message) {
     global JourneyTracePath
     FileAppend(FormatTime(, "HH:mm:ss") . " " . message . "`n"
         , JourneyTracePath, "UTF-8")
+}
+
+ShiftJourneyDate(offset) {
+    if (offset = 0)
+        return true
+
+    key := offset < 0 ? "!{Up}" : "!{Down}"
+    direction := offset < 0 ? -1 : 1
+    Loop Abs(offset) {
+        currentDate := State.GetDate()
+        targetDate := FormatTime(
+            DateAdd(StrReplace(currentDate, "-", ""), direction, "Days"),
+            "yyyy-MM-dd"
+        )
+        Send(key)
+        deadline := A_TickCount + 3000
+        while (State.GetDate() != targetDate && A_TickCount < deadline)
+            Sleep(25)
+        if (State.GetDate() != targetDate) {
+            TraceJourney("Date switch timed out: from=" . currentDate
+                . " to=" . targetDate . " actual=" . State.GetDate())
+            throw Error("演示切换日期超时：" . currentDate . " → " . targetDate)
+        }
+    }
+    return true
 }
 
 ApplyDemoTextStyle(hwnd, style) {

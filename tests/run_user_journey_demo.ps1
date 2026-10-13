@@ -1,11 +1,12 @@
 ﻿param(
     [string]$AutoHotkeyPath = "D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe",
     [ValidateRange(500, 15000)]
-    [int]$PaceMs = 6000,
+    [int]$PaceMs = 3000,
     [ValidateRange(20, 300)]
-    [int]$TypeDelayMs = 100,
+    [int]$TypeDelayMs = 50,
     [ValidateSet("balanced", "fast", "readable")]
-    [string]$SpeedMode = "balanced"
+    [string]$SpeedMode = "balanced",
+    [string]$StartSignalPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,8 +32,19 @@ $testScriptPath = Join-Path $sandboxRoot "SevenNote-JourneyDemo.ahk"
 $resultPath = Join-Path $sandboxRoot "results.tsv"
 $tracePath = Join-Path $sandboxRoot "trace.log"
 $demoImagePath = Join-Path $sandboxRoot "journey-image.bmp"
+$process = $null
 
 try {
+    $demoSandboxPrefix = Join-Path $env:TEMP "SevenNoteJourneyTests\"
+    $existingDemo = Get-CimInstance Win32_Process | Where-Object {
+        $_.CommandLine -and
+        $_.CommandLine.Contains($demoSandboxPrefix) -and
+        $_.CommandLine -match 'SevenNote-JourneyDemo\.ahk'
+    } | Select-Object -First 1
+    if ($existingDemo) {
+        throw "An isolated presentation is already running (PID $($existingDemo.ProcessId)); refusing to send input to an ambiguous window."
+    }
+
     New-Item -ItemType Directory -Path $appDataPath, $vaultPath -Force | Out-Null
     Set-Content -LiteralPath $configPath -Value "[Paths]`r`nVault=$vaultPath" -Encoding ASCII
     Add-Type -AssemblyName System.Drawing
@@ -59,10 +71,16 @@ try {
     $source = [System.IO.File]::ReadAllText($sourcePath, [System.Text.Encoding]::UTF8)
     function Replace-ExactlyOnce([string]$Text, [string]$Pattern, [string]$Replacement, [string]$Label) {
         $regex = [regex]::new($Pattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-        if ($regex.Matches($Text).Count -ne 1) {
-            throw "Expected exactly one source location for $Label (matches: $($regex.Matches($Text).Count)). No demo process was started."
+        $matches = $regex.Matches($Text)
+        if ($matches.Count -ne 1) {
+            $count = $matches.Count
+            throw "Expected exactly one source location for $Label (matches: $count). No demo process was started."
         }
-        return $regex.Replace($Text, $Replacement, 1)
+
+        $match = $matches[0]
+        $prefix = $Text.Substring(0, $match.Index)
+        $suffix = $Text.Substring($match.Index + $match.Length)
+        return $prefix + $Replacement + $suffix
     }
 
     $source = Replace-ExactlyOnce $source '^\s*static AppName := "SevenNote"\s*$' '    static AppName := "SevenNote-JourneyDemo"' "AppName"
@@ -88,6 +106,7 @@ try {
     $driver = $driver.Replace("__RESULT_PATH__", $resultPath)
     $driver = $driver.Replace("__DEMO_IMAGE_PATH__", $demoImagePath)
     $driver = $driver.Replace("__TRACE_PATH__", $tracePath)
+    $driver = $driver.Replace("__START_SIGNAL_PATH__", $StartSignalPath)
     $driver = Replace-ExactlyOnce $driver `
         '(?m)^global JourneyPaceMs := \d+\r?$' `
         ("global JourneyPaceMs := " + $PaceMs) `
@@ -232,6 +251,13 @@ try {
         exit 1
     }
 } finally {
+    if ($null -ne $process) {
+        $process.Refresh()
+        if (-not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            $null = $process.WaitForExit(5000)
+        }
+    }
     if (Test-Path -LiteralPath $sandboxRoot) {
         Remove-Item -LiteralPath $sandboxRoot -Recurse -Force
     }
