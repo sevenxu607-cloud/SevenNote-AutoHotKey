@@ -1228,7 +1228,18 @@ class BackdropService {
             return false
 
         this._picCtrl.Move(x, y, w, h)
-        hbm := this._Compose(w, h)
+
+        ; ⚠ 位图尺寸必须与控件的「物理像素尺寸」严格相等，SS_BITMAP 才会 1:1 贴图。
+        ;   只要差 1px，它就改用 COLORONCOLOR（最近邻）把整张图重采样一遍 —— 画面
+        ;   当场发糊，损失比换任何插值算法都大。而 w × A_ScreenDPI/96 只是估算：
+        ;     · 非整数倍 DPI（125% / 175%）下 AHK 内部的换算与这里的舍入可能差 1px；
+        ;     · A_ScreenDPI 只反映主屏 —— 窗口拖到另一块不同缩放的显示器上会整倍地错，
+        ;       这正是「换个屏就糊」的根。
+        ;   所以不猜：Move 完直接从 Win32 读回真实像素尺寸，所见即所得。
+        pw := 0, ph := 0
+        if !this._CtrlPixelSize(&pw, &ph)
+            return false
+        hbm := this._Compose(pw, ph)
         if !hbm
             return false
 
@@ -1238,9 +1249,22 @@ class BackdropService {
         ; ⚠ SS_BITMAP 控件收到 STM_SETIMAGE 后会把自身尺寸改成「位图的像素尺寸」——
         ;   那是物理值、不走 DPI 缩放，会把上面那次 Move 的逻辑尺寸冲掉。实测 150%
         ;   缩放下图只盖住编辑区 1/1.5 的面积（控件 443x483，编辑区 665x725）。
-        ;   位图灌完后按逻辑尺寸再压一次；_Compose 又按同一系数合成画布，故不拉伸。
+        ;   位图灌完后按原逻辑尺寸再压一次，控件物理矩形即回到 pw×ph，与位图严丝合缝。
         this._picCtrl.Move(x, y, w, h)
         return true
+    }
+
+    ; ─── 读承载控件的真实物理像素尺寸 ───
+    ; GetWindowRect 返回的永远是物理像素（进程已 DPI 感知），不经过 AHK 的逻辑换算。
+    ; 因此它一并解决两件事：消掉「估算差 1px → 整图重采样」，以及让尺寸自动跟随
+    ; 窗口所在的显示器缩放（副屏 100%、主屏 150% 也不会再糊）。
+    static _CtrlPixelSize(&w, &h) {
+        rc := Buffer(16, 0)
+        if !DllCall("GetWindowRect", "ptr", this._picCtrl.Hwnd, "ptr", rc)
+            return false
+        w := NumGet(rc, 8, "int") - NumGet(rc, 0, "int")
+        h := NumGet(rc, 12, "int") - NumGet(rc, 4, "int")
+        return (w > 0 && h > 0)
     }
 
     ; ─── 解码原图（惰性，只做一次）───
@@ -1277,12 +1301,9 @@ class BackdropService {
     }
 
     ; ─── 合成：原图缩放到目标尺寸 + 叠一层半透明遮罩色 ───
-    ; w/h 是逻辑单位（与编辑区 Move 的参数同源）。画布按 DPI 缩成物理像素，
-    ; 否则 SS_BITMAP 把位图铺到「逻辑尺寸 × 缩放」的区域时还会再拉伸一次而发虚。
+    ; w/h 是**物理像素**，由 _CtrlPixelSize 从控件读回，不再自己按 A_ScreenDPI 估算 ——
+    ; 位图与控件因此像素对齐，SS_BITMAP 不会再多拉伸一次，跨显示器缩放也自动跟随。
     static _Compose(w, h) {
-        scale := A_ScreenDPI / 96
-        w := Round(w * scale)
-        h := Round(h * scale)
         if (w < 1 || h < 1)
             return 0
         hdcScreen := DllCall("GetDC", "ptr", 0, "ptr")
@@ -1290,21 +1311,64 @@ class BackdropService {
         hbm := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", w, "int", h, "ptr")
         oldMem := DllCall("SelectObject", "ptr", hdcMem, "ptr", hbm, "ptr")
 
-        ; ① 原图 → 目标尺寸（HALFTONE 比默认的 COLORONCOLOR 平滑）
+        ; ① 原图 → 目标尺寸，逐级对折（每级最多缩一半）。
         ;    等比裁剪（cover）而非拉伸：3840x2400（16:10）硬塞进 665x725（0.92）会被压扁，
         ;    星云拉成竖条就"不清晰"了。按 max 缩放系数放大到刚好盖满，再从中心裁出与目标
         ;    同比例的一块来画 —— 只裁不压，画面比例保持原样。
+        ;
+        ;    ⚠ 为什么不能一步缩到位：HALFTONE 本质是 box 采样，一次缩 5.8 倍等于源图上
+        ;      每 5.8 个像素只留 1 个进结果，中间的亮度被直接丢掉 —— 星点被采成锯齿、
+        ;      亮部起摩尔纹，这才是「不细腻」的大头（比换插值算法的影响还大）。
+        ;      拆成每级 ≤2 倍，每级都先做一次平均，等效于多抽头低通滤波，纹理立刻干净。
+        ;      放大时（源比目标小）不该分级，一级直出即可，免得白损一次插值。
         hdcSrc := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
         oldSrc := DllCall("SelectObject", "ptr", hdcSrc, "ptr", this._srcBmp, "ptr")
-        DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
-        DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
-        k := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
+
+        k  := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
         cw := Round(w / k)
         ch := Round(h / k)
+
+        curDC := hdcSrc
+        curX  := Round((this._srcW - cw) / 2)
+        curY  := Round((this._srcH - ch) / 2)
+        curW  := cw
+        curH  := ch
+        mids  := []                ; 逐级产生的临时位图/DC，画完统一回收
+
+        while (curW > w * 2 && curH > h * 2) {
+            nw := Max(w, curW // 2)
+            nh := Max(h, curH // 2)
+            nb := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", nw, "int", nh, "ptr")
+            nd := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+            if !(nb && nd) {
+                ; 分配失败就退回「上一级单步缩到位」：宁可略糙，也不能把图弄丢
+                if nb
+                    DllCall("DeleteObject", "ptr", nb)
+                if nd
+                    DllCall("DeleteDC", "ptr", nd)
+                break
+            }
+            old := DllCall("SelectObject", "ptr", nd, "ptr", nb, "ptr")
+            DllCall("SetStretchBltMode", "ptr", nd, "int", 4)      ; HALFTONE
+            DllCall("SetBrushOrgEx", "ptr", nd, "int", 0, "int", 0, "ptr", 0)
+            DllCall("StretchBlt", "ptr", nd, "int", 0, "int", 0, "int", nw, "int", nh
+                , "ptr", curDC, "int", curX, "int", curY, "int", curW, "int", curH
+                , "uint", 0x00CC0020)                              ; SRCCOPY
+            mids.Push({dc: nd, bmp: nb, old: old})
+            curDC := nd, curX := 0, curY := 0, curW := nw, curH := nh
+        }
+
+        DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
+        DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
         DllCall("StretchBlt", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
-            , "ptr", hdcSrc
-            , "int", Round((this._srcW - cw) / 2), "int", Round((this._srcH - ch) / 2)
-            , "int", cw, "int", ch, "uint", 0x00CC0020)            ; SRCCOPY
+            , "ptr", curDC, "int", curX, "int", curY, "int", curW, "int", curH
+            , "uint", 0x00CC0020)                                  ; SRCCOPY
+
+        for m in mids {
+            DllCall("SelectObject", "ptr", m.dc, "ptr", m.old)
+            DllCall("DeleteDC", "ptr", m.dc)
+            DllCall("DeleteObject", "ptr", m.bmp)
+        }
         DllCall("SelectObject", "ptr", hdcSrc, "ptr", oldSrc)
         DllCall("DeleteDC", "ptr", hdcSrc)
 
