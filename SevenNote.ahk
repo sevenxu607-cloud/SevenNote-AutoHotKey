@@ -1105,6 +1105,206 @@ class FontService {
 }
 
 
+; ─── BackdropService：背景图能力（位图合成 + 层级铺设）───
+; 纯能力：不读配置、不管开关、不发事件，只负责「把一张图铺到编辑区背后的控件上」。
+;
+; 技术路线（全部由独立 spike 脚本实测确认，非推测）：
+;   · RichEdit 无法真正透明 —— 给编辑区加 WS_EX_TRANSPARENT，让它绘制时跳过自身背景，
+;     由 z-order 更低的同级兄弟控件（承载图片的 Static）先画出的图透上来；
+;   · 父窗口绝不能加 WS_EX_COMPOSITED —— 双缓冲合成会吞掉 WS_EX_TRANSPARENT 子窗口
+;     的文字（实测：只剩图、文字全丢）；
+;   · 子类化 WM_ERASEBKGND 自绘也无效 —— 图会被 RichEdit 在 WM_PAINT 内重填背景盖掉；
+;   · WS_EX_TRANSPARENT 实测不影响鼠标命中与键盘输入，真实滚轮滚动无残影，
+;     被其他窗口遮挡再露出也能正常恢复。
+;
+; ⚠ 两个 API 细节：
+;   · 扩展样式必须在 Show() 之前设置；
+;   · 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 匹配不到，需 DetectHiddenWindows(true)。
+class BackdropService {
+    static _picCtrl := ""        ; 承载背景图的 Static 控件（带 SS_BITMAP）
+    static _srcBmp := 0          ; 原图 HBITMAP（只解码一次，反复复用）
+    static _srcW := 0
+    static _srcH := 0
+    static _imgPath := ""
+    static _maskColor := "FFF8E7"   ; 遮罩色，十六进制 RGB（取主题编辑区底色）
+    static _maskAlpha := 204        ; 遮罩不透明度 0-255（204 ≈ 80%）
+    static _attached := false
+
+    static IsAttached() => this._attached
+    static GetPicCtrl() => this._picCtrl
+    static HasImage() => (this._imgPath != "" && FileExist(this._imgPath))
+
+    ; 遮罩色 + 不透明度（终端式做法的要点：把图压暗，前景文字才读得清）
+    static SetMask(hexRGB, alphaPercent) {
+        if (hexRGB != "")
+            this._maskColor := hexRGB
+        a := Round(255 * alphaPercent / 100)
+        this._maskAlpha := (a < 0) ? 0 : ((a > 255) ? 255 : a)
+    }
+
+    ; 换图：清掉已解码的原图，下次 Render 时重新加载
+    static SetImage(path) {
+        if (path = this._imgPath)
+            return
+        this._ReleaseSource()
+        this._imgPath := path
+    }
+
+    ; ─── 图层控件：创建后压到编辑区之下 ───
+    ; 用 AddText + SS_BITMAP(0x0E) 而非 AddPicture：后者必须给文件路径，
+    ; 而我们要往控件里灌内存位图（图 + 遮罩是合成出来的，不落盘）。
+    static Attach(g) {
+        if this._attached
+            return true
+        try {
+            ; ⚠ 不能带 -Wrap：-Wrap 会清掉 0x0C 位，把 SS_BITMAP(0x0E) 打成 0x02(SS_RIGHT)
+            pic := g.AddText("x8 y32 w434 h440 +0xE", "")
+            pic.Visible := false
+            ; 把 pic 插到编辑区之后 —— z-order 里「之后」即在更下层
+            DllCall("SetWindowPos", "ptr", pic.Hwnd, "ptr", State.GetEd()
+                , "int", 0, "int", 0, "int", 0, "int", 0
+                , "uint", 0x0002 | 0x0001 | 0x0010)   ; NOMOVE | NOSIZE | NOACTIVATE
+            this._picCtrl := pic
+            this._attached := true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static SetVisible(on) {
+        if !this._picCtrl
+            return
+        try this._picCtrl.Visible := on
+    }
+
+    ; ─── 按目标矩形重新合成并铺上图 ───
+    ; 尺寸交给调用方（Feature）用与编辑区 Move 完全相同的参数算，避免 DPI 单位混用。
+    static Render(x, y, w, h) {
+        if !this._attached || !this._picCtrl
+            return false
+        if (w <= 0 || h <= 0)
+            return false
+        if !this.LoadSource()
+            return false
+
+        this._picCtrl.Move(x, y, w, h)
+        hbm := this._Compose(w, h)
+        if !hbm
+            return false
+
+        ; STM_SETIMAGE(0x0172) / wParam = IMAGE_BITMAP(0)
+        ; SS_BITMAP 控件会自行销毁上一张位图，这里不必手动 DeleteObject
+        SendMessage(0x0172, 0, hbm, this._picCtrl.Hwnd)
+        return true
+    }
+
+    ; ─── 解码原图（惰性，只做一次）───
+    static LoadSource() {
+        if this._srcBmp
+            return true
+        if !this.HasImage()
+            return false
+        try {
+            bmp := LoadPicture(this._imgPath, "G")   ; G = 只要 HBITMAP，不要 Bitmap 对象
+        } catch {
+            return false
+        }
+        if !bmp
+            return false
+
+        ; BITMAP 结构：bmWidth 在偏移 4，bmHeight 在偏移 8
+        info := Buffer(32, 0)
+        if !DllCall("GetObject", "ptr", bmp, "int", 32, "ptr", info, "int")
+            return false
+        this._srcBmp := bmp
+        this._srcW := NumGet(info, 4, "int")
+        this._srcH := NumGet(info, 8, "int")
+        return (this._srcW > 0 && this._srcH > 0)
+    }
+
+    static _ReleaseSource() {
+        if this._srcBmp {
+            try DllCall("DeleteObject", "ptr", this._srcBmp)
+            this._srcBmp := 0
+            this._srcW := 0
+            this._srcH := 0
+        }
+    }
+
+    ; ─── 合成：原图缩放到目标尺寸 + 叠一层半透明遮罩色 ───
+    static _Compose(w, h) {
+        hdcScreen := DllCall("GetDC", "ptr", 0, "ptr")
+        hdcMem := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+        hbm := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", w, "int", h, "ptr")
+        oldMem := DllCall("SelectObject", "ptr", hdcMem, "ptr", hbm, "ptr")
+
+        ; ① 原图 → 目标尺寸（HALFTONE 比默认的 COLORONCOLOR 平滑）
+        hdcSrc := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+        oldSrc := DllCall("SelectObject", "ptr", hdcSrc, "ptr", this._srcBmp, "ptr")
+        DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
+        DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
+        DllCall("StretchBlt", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
+            , "ptr", hdcSrc, "int", 0, "int", 0, "int", this._srcW, "int", this._srcH
+            , "uint", 0x00CC0020)                                  ; SRCCOPY
+        DllCall("SelectObject", "ptr", hdcSrc, "ptr", oldSrc)
+        DllCall("DeleteDC", "ptr", hdcSrc)
+
+        ; ② 半透明遮罩：用 1x1 的 32bpp DIB 源配合 AlphaBlend 整体合成，
+        ;    避免逐像素遍历（840x600 有 50 万像素，逐像素在 AHK 里会明显卡顿）
+        ;    ⚠ 两个坑（都实测踩过）：
+        ;      · 源必须是 32bpp 且像素内嵌 alpha —— CreateCompatibleBitmap 造出的 DDB
+        ;        没有 alpha 通道，AlphaBlend 会直接返回 0（失败）
+        ;      · BLENDFUNCTION 是「按值传递」的 4 字节结构，必须打包成 uint 传，
+        ;        传指针会导致 AlphaBlend 静默失败
+        if (this._maskAlpha > 0) {
+            bmih := Buffer(40, 0)
+            NumPut("uint", 40, bmih, 0)      ; biSize
+            NumPut("int", 1, bmih, 4)        ; biWidth
+            NumPut("int", 1, bmih, 8)        ; biHeight
+            NumPut("ushort", 1, bmih, 12)    ; biPlanes
+            NumPut("ushort", 32, bmih, 14)   ; biBitCount
+            NumPut("uint", 0, bmih, 16)      ; biCompression = BI_RGB
+            NumPut("uint", 4, bmih, 20)      ; biSizeImage
+            ppv := 0
+            hbmSolid := DllCall("CreateDIBSection", "ptr", 0, "ptr", bmih, "uint", 0
+                , "ptr*", &ppv, "ptr", 0, "uint", 0, "ptr")
+
+            if (hbmSolid && ppv) {
+                ; BGRA 单像素：遮罩色 + 不透明度
+                NumPut("uint"
+                    , (this._maskAlpha << 24) | this._RGBtoBGR(this._maskColor), ppv, 0)
+
+                hdcSolid := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+                oldSolid := DllCall("SelectObject", "ptr", hdcSolid, "ptr", hbmSolid, "ptr")
+
+                ; AC_SRC_OVER(0) | BlendFlags(0) | SourceConstantAlpha(255) | AC_SRC_ALPHA(1)
+                ftn := (1 << 24) | (255 << 16)
+                DllCall("msimg32\AlphaBlend", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
+                    , "ptr", hdcSolid, "int", 0, "int", 0, "int", 1, "int", 1, "uint", ftn)
+
+                DllCall("SelectObject", "ptr", hdcSolid, "ptr", oldSolid)
+                DllCall("DeleteDC", "ptr", hdcSolid)
+            }
+            if hbmSolid
+                DllCall("DeleteObject", "ptr", hbmSolid)
+        }
+
+        DllCall("SelectObject", "ptr", hdcMem, "ptr", oldMem)
+        DllCall("DeleteDC", "ptr", hdcMem)
+        DllCall("ReleaseDC", "ptr", 0, "ptr", hdcScreen)
+        return hbm
+    }
+
+    static _RGBtoBGR(hexRGB) {
+        r := SubStr(hexRGB, 1, 2)
+        g := SubStr(hexRGB, 3, 2)
+        b := SubStr(hexRGB, 5, 2)
+        return Integer("0x" . b . g . r)
+    }
+}
+
+
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  表示层组件
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -1138,6 +1338,7 @@ class StatusBar {
         EventBus.On("Line.Indented",      (*) => this.SetMsg("✓ 已缩进"))
         EventBus.On("Line.Outdented",     (*) => this.SetMsg("✓ 已取消缩进"))
         EventBus.On("CapsLock.Toggled",   (d) => this.SetMsg(d.msg))
+        EventBus.On("Backdrop.Toggled",   (d) => this.SetMsg(d.on ? "✓ 背景图：开" : "✓ 背景图：关"))
         EventBus.On("Title.Changed",      (d) => (
             this.SetTag(d.tag),
             this.SetMsg(d.tag = "" ? "✓ 标签已清除" : "✓ 标签：" . d.tag)))
@@ -2148,6 +2349,110 @@ class FontFeature {
 }
 
 
+; ─── BackdropFeature：背景图开关与布局同步 ───
+; 终端式背景图：文字直接浮在图上、图铺满整个编辑区（非相框式）。
+; 开关状态存配置；窗口尺寸变化时由组合根的 OnSize 调 Layout 重新铺图。
+class BackdropFeature {
+    static _on := false
+    static _lastW := 0
+    static _lastH := 0
+    static _applied := false
+
+    static IsOn() => this._on
+
+    ; ⚠ 必须与组合根 OnSize 里 ed.Move 的矩形完全一致，否则图层会与编辑区错位
+    static _Rect(winW, winH) {
+        if SearchFeature.IsVisible()
+            return {x: 8, y: 72, w: winW - 16, h: winH - 110}
+        return {x: 8, y: 32, w: winW - 16, h: winH - 70}
+    }
+
+    static Init(g) {
+        BackdropService.Attach(g)
+        ; 换主题时遮罩色要跟着主题底色走，需要重新合成
+        EventBus.On("Theme.Changed", (*) => this.Refresh())
+    }
+
+    ; 开关：Alt+B
+    static Toggle() {
+        ; 先把配置里的路径灌进 Service 再判断，否则 _imgPath 还是空串、必然误判
+        BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
+        if !BackdropService.HasImage() {
+            EventBus.Emit("Error.Occurred"
+                , {msg: "未配置背景图：请在 _config.ini 里填 [Appearance] BackdropImage"})
+            return
+        }
+        this._on := !this._on
+        this._Apply()
+        ConfigService.Write("Appearance", "BackdropOn", this._on ? 1 : 0)
+    }
+
+    static Refresh() {
+        if this._on
+            this._Apply()
+    }
+
+    ; 窗口尺寸变化：记下尺寸，开启状态下重新合成铺满
+    static Layout(winW, winH) {
+        this._lastW := winW
+        this._lastH := winH
+        if !this._on
+            return
+        ; 启动时窗口尚未 Show，_Apply 会因尺寸为 0 而只把 _on 置真、不发图层；
+        ; 这里首次拿到有效尺寸后补一次完整应用，否则图会一直不显示。
+        if !this._applied {
+            this._Apply()
+            return
+        }
+        rect := this._Rect(winW, winH)
+        BackdropService.Render(rect.x, rect.y, rect.w, rect.h)
+    }
+
+    static _Apply() {
+        hwndEd := State.GetEd()
+        if !hwndEd
+            return
+        ; 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 会匹配不到
+        DetectHiddenWindows(true)
+
+        useIt := this._on && BackdropService.HasImage()
+            && this._lastW > 1 && this._lastH > 1
+        this._applied := useIt
+
+        if useIt {
+            ; 遮罩色取当前主题的编辑区底色，让图与主题色调一致
+            t := ThemeService.Themes[ThemeService.GetCurrent()]
+            BackdropService.SetMask(t.edBg
+                , ConfigService.ReadInt("Appearance", "BackdropOpacity", 80))
+            BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
+            BackdropService.SetVisible(true)
+            this.Layout(this._lastW, this._lastH)
+            ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
+            WinSetExStyle("+0x20", "ahk_id " . hwndEd)   ; WS_EX_TRANSPARENT
+        } else {
+            ; 先恢复不透明再撤图，顺序反过来会闪一下白底
+            WinSetExStyle("-0x20", "ahk_id " . hwndEd)
+            BackdropService.SetVisible(false)
+        }
+
+        try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
+            , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
+        EventBus.Emit("Backdrop.Toggled", {on: useIt})
+    }
+
+    static LoadFromConfig() {
+        if !ConfigService.ReadInt("Appearance", "BackdropOn", 0)
+            return
+        ; 同上：必须先 SetImage，_imgPath 才会有值
+        BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
+        if !BackdropService.HasImage()
+            return
+        this._on := true
+        this._Apply()
+    }
+}
+
+
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  组合根 —— 装配 + 启动
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -2176,6 +2481,10 @@ ConfigService.Init(Config.ConfigPath)
 ConfigService.SetDefault("Appearance", "ThemeIndex", "1")
 ConfigService.SetDefault("Appearance", "FontIndex", "1")
 ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
+; 背景图：图片路径（留空=不启用）、遮罩不透明度 0-100、开关状态
+ConfigService.SetDefault("Appearance", "BackdropImage", "")
+ConfigService.SetDefault("Appearance", "BackdropOpacity", "80")
+ConfigService.SetDefault("Appearance", "BackdropOn", "0")
 ConfigService.SetDefault("Input", "CapsLockMap", "0")
 ConfigService.SetDefault("Paths", "Vault", "")
 
@@ -2260,6 +2569,8 @@ OnSize(guiObj, MinMax, Width, Height) {
     }
     try dateCtrl.Move(8, Height - 30, 180, 22)
     try msgCtrl.Move(Width - 288, Height - 30, 280, 22)
+    ; 背景图跟着编辑区一起缩放（未开启时内部直接返回，无额外开销）
+    BackdropFeature.Layout(Width, Height)
 }
 
 ; ═══ 挂载 Feature ═══
@@ -2271,6 +2582,7 @@ CaretFeature.Init()
 StatFeature.Init(Config.StatInterval)
 TimestampFeature.Init()
 PowerShellFeature.Init()
+BackdropFeature.Init(g)
 
 ; ═══ 全局热键（按用户旅程排序）═══
 ; ① 唤起与关闭
@@ -2290,6 +2602,7 @@ PowerShellFeature.Init()
 !Home::GoTodayFeature.Go()
 
 ; 横切·美观
+!b::BackdropFeature.Toggle()
 !t::ThemeFeature.Next()
 !+t::FontFeature.NextFont()
 !=::FontFeature.BiggerSize()
@@ -2337,6 +2650,8 @@ StatusBar.RefreshTag()
 ThemeFeature.LoadFromConfig()
 FontFeature.LoadFromConfig()
 CapsLockFeature.LoadFromConfig()
+; 背景图放最后：它要按当前主题的编辑区底色合成遮罩色
+BackdropFeature.LoadFromConfig()
 
 ShowStartupTip()
 
@@ -2401,6 +2716,7 @@ ShowHelp() {
         . "   Alt+H            显示本帮助`n"
         . "`n"
         . "【外观】`n"
+        . "   Alt+B            背景图 开 / 关`n"
         . "   Alt+T            切换主题`n"
         . "   Shift+Alt+T      切换字体`n"
         . "   Alt+=            调大字号`n"
@@ -2451,7 +2767,7 @@ ShowHelp() {
         . "   按 ESC 或点关闭按钮关闭"
 
     help.AddText("x20 y15 w400", text)
-    help.Show("w440 h900")
+    help.Show("w440 h920")
 
     HotIfWinActive(Config.AppName . " · 快捷键")
     Hotkey("Esc", (*) => help.Destroy())
