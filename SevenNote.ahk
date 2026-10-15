@@ -1604,35 +1604,72 @@ class WindowFeature {
     }
 
     ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
-    ; 末尾补一次 WinRestore，覆盖“在最小化状态下呼出”的情形。
+    ;
+    ; ⚠ 全程在「隐藏」状态下完成 —— 先 Show 再 Move 会让窗口先在 AHK 的默认落点露面，
+    ;   约 190ms 后才跳到目标位置（实测 924,357 → 1629,238），视觉上就是「飘一下」。
+    ;   Show("Hide") 先把窗口建好、让 OnSize 把控件布局跑完，位置算准了再一次性露面。
     ;
     ; ⚠ 尺寸不硬设 —— 本机 150% 缩放（A_ScreenDPI = 144）下 Gui 控件坐标会按 DPI 放大 1.5 倍，
-    ;   窗口最小尺寸由控件固有尺寸决定，Config.WinW/WinH 是「逻辑单位」而 WinMove 收「物理像素」。
-    ;   实测把 450x550 直接传给 WinMove：宽被 +MinSize450x300（物理 675x450）拒绝，
-    ;   高却通过了，结果窗口被压矮（881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
+    ;   窗口最小尺寸由控件固有尺寸决定（逻辑 +MinSize450x300 → 物理 675x450），
+    ;   而 Config.WinW/WinH 是「逻辑单位」、WinMove 收「物理像素」。
+    ;   实测把 450x550 直接传给 WinMove：宽被 675 的最小宽拒绝、高却通过了，窗口被压矮
+    ;   （881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
     static _PlaceWindow(g, ghwnd) {
-        g.Show()
-        WinRestore("ahk_id " . ghwnd)
+        ; 定位全程在隐藏状态下做：Show("Hide") 过的窗口 WS_VISIBLE 仍是 0，
+        ; 而 WinGetPos 默认不认隐藏窗口（会直接抛错）—— 项目里 BackdropFeature 踩过同一个坑。
+        ; 用完恢复原值，免得改变其它代码的可见性语义。
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            g.Show("Hide")
 
-        rect := State.GetHiddenRect()
-        if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
-            ; 记忆里存的是物理像素（WinGetPos 读到的），与 WinMove 同一单位，可直接还原
-            WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
-            return
+            rect := State.GetHiddenRect()
+            if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
+                ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
+                ;   （本机 1.5）。而 rect 来自 WinGetPos，是「物理像素」——喂给 g.Move 会被
+                ;   二次放大（实测 1629,238 → 2444,357）。WinMove 与 WinGetPos 同一单位，配套。
+                WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+            } else {
+                State.ClearHiddenRect()
+                this._MoveToDefault(g, ghwnd)
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
         }
 
-        State.ClearHiddenRect()
-        this._MoveToDefault(ghwnd)
+        g.Show()
+        WinRestore("ahk_id " . ghwnd)
     }
 
-    ; 移到默认落点。必须先 Show 再量窗口，因为尺寸由 AHK 按 DPI 决定，Show 之前无从得知
-    static _MoveToDefault(ghwnd) {
-        try
-            WinGetPos(&_, &_, &winW, &winH, "ahk_id " . ghwnd)
-        catch
+    ; 移到默认落点
+    static _MoveToDefault(g, ghwnd) {
+        w := 0, h := 0
+        if !this._MeasureStable(ghwnd, &w, &h)
             return
-        rect := this._DefaultRect(winW, winH)
+        rect := this._DefaultRect(w, h)
+        ; 同样用 WinMove（物理像素），只设位置不设尺寸 —— 尺寸交给 AHK 按 DPI 决定
         WinMove(rect.x, rect.y, , , "ahk_id " . ghwnd)
+    }
+
+    ; 等窗口尺寸稳定下来。Show 之后控件的固有尺寸要等 OnSize 跑完才反映到窗口外框上，
+    ; 连续两次量到同一个值才认为定型。全程窗口不可见，多花几毫秒用户看不见。
+    static _MeasureStable(hwnd, &w, &h) {
+        prevW := -1, prevH := -1, same := 0
+        loop 40 {
+            try
+                WinGetPos(&_, &_, &w, &h, "ahk_id " . hwnd)
+            catch
+                return false
+            if (w > 0 && h > 0 && w = prevW && h = prevH) {
+                if (++same >= 2)
+                    return true
+            } else {
+                same := 0
+            }
+            prevW := w, prevH := h
+            Sleep 5
+        }
+        return (w > 0 && h > 0)
     }
 
     ; 默认落点坐标：右侧偏上，右边距 220px，并保证不出屏。
