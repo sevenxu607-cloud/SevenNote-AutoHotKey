@@ -42,6 +42,8 @@ Persistent()
 ;    · FINDTEXTEXW 读偏移 16/20（chrgText）
 ;    · 32 位编译导致 RichEdit 字符格式异常——必须 64 位
 ;    · FileInstall 必须一行，源路径不存在会打包 0KB 空文件（v1.9）
+;    · 启动终端别传 Run 的 "Hide"：隐藏启动会绕过 Windows Terminal 委派，终端退回
+;      conhost 默认（120x50 = 1488x1256、#012456 蓝底），拿不到 WT profile 的星空背景
 ;
 ;  依赖：pandoc.exe（软依赖，未安装则 MD 降级为纯文本）
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -1545,10 +1547,41 @@ class WindowFeature {
     ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
     static _preStackRect := ""
 
-    ; ─── 挂载：订阅终端落点 ───
+    ; ─── 挂载：订阅终端生命周期 ───
     ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
     static Init() {
-        EventBus.On("Terminal.Placed", (rect) => this._OnTerminalPlaced(rect))
+        EventBus.On("Terminal.Placed",    (rect) => this._OnTerminalPlaced(rect))
+        EventBus.On("Terminal.Preparing", (*)    => this._CollapseForTerminal())
+        EventBus.On("Terminal.Failed",    (*)    => this._RestoreAfterFailedTerminal())
+    }
+
+    ; 终端马上要露面，先让笔记窗口退场。
+    ;
+    ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：终端落位后
+    ; _AdaptToTerminal 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
+    ; 「隐藏态下把位置尺寸算好、最后一次性露面」（见 _PlaceWindow）。不这么做的话，
+    ; 就是当着用户的面把一个**已经显示**的窗口搬去堆叠位，平移与控件重排连在一起，
+    ; 看着就是「飘一下」。
+    ;
+    ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
+    ; 与用户自己按 Alt+Z 收起完全同一条路。
+    static _CollapseForTerminal() {
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            this.Hide()
+    }
+
+    ; 终端最终没起来（Run 抛错，或等满超时都找不到窗口）—— 刚才为它让位而收起的
+    ; 窗口得还回来。少了这条兜底，用户按一次 Alt+C，屏幕上就什么都剩不下。
+    ; 记忆里那份 _terminalRect 若指向已消失的终端，_StackWithTerminal 开头有 alive
+    ; 检查兜着，Show() 会自行回落到记忆位置 / 默认落点。
+    static _RestoreAfterFailedTerminal() {
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            return
+        this.Show()
     }
 
     ; 记下终端的位置，再让笔记窗口适配 —— 两步都要做，
@@ -1561,6 +1594,10 @@ class WindowFeature {
     ; 终端出现了 → 笔记窗口自动适配：
     ;   已显示 → 就地与终端重新堆叠；正藏着 → 弹出来（Show 内部会直接按堆叠位置定位，
     ;   不会先出现在原位再跳一下）。
+    ;
+    ; ⚠ 正常流程下走不到「已显示」那一支 —— 终端露面之前 PowerShellFeature 会先广播
+    ;   Terminal.Preparing，那时窗口已经被收起。留着它是防御：万一订阅没挂上，或将来
+    ;   有别的来源广播 Terminal.Placed，至少仍会适配，而不是摆着不动。
     static _AdaptToTerminal() {
         if !State.GetGuiHwnd()
             return
@@ -1984,6 +2021,12 @@ class PowerShellFeature {
     }
 
     static _ShowAndFocus(hwnd) {
+        ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。理由详见
+        ; WindowFeature._CollapseForTerminal。重复发是无害的：窗口已经收起时那次调用会跳过。
+        ; ⚠ 这条广播管的是笔记窗口，不是终端：终端的露面时机由它自己的宿主掌握
+        ;   （为什么不能靠 Run 的 "Hide" 去藏它，见 _LaunchPowerShell）。
+        EventBus.Emit("Terminal.Preparing")
+
         WinShow("ahk_id " . hwnd)
         WinActivate("ahk_id " . hwnd)
         try {
@@ -1992,6 +2035,11 @@ class PowerShellFeature {
         ; 终端按它自己的默认位置和大小出现，这里不做任何 WinMove。
         ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
         this._BroadcastRect(hwnd)
+
+        ; 广播是同步的（EventBus 直接循环调用 handler），所以上一行返回时笔记窗口已经
+        ; 露面了 —— 而 Show() 末尾会激活窗口自身，把前台从刚呼出的终端手里夺走。
+        ; 按 Alt+C 是要用终端，这里还回去。
+        WinActivate("ahk_id " . hwnd)
     }
 
     ; 广播终端此刻的实际位置与尺寸，供笔记窗口让位。
@@ -2030,14 +2078,36 @@ class PowerShellFeature {
             return
         }
 
+        ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
+        EventBus.Emit("Terminal.Preparing")
+
         try {
             command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
+            ; ⚠ Run 的第三个参数只能留空，绝不能传 "Hide"。
+            ;
+            ; 本机 HKCU:\Console\%%Startup 里 DelegateTerminal = {00000000}「让 Windows 决定」，
+            ; 实际落到 Windows Terminal：正常启动时 conhost 会把控制台交接给它，于是终端是
+            ; 你配好的那个 —— Windows PowerShell profile、星空背景图、One Half Dark。
+            ; 但 **隐藏着启动，这次交接就不会发生**，终端退回由 conhost 自己承载，顶着注册表
+            ; 默认值出现：WindowSize = 120x50（实测 1488x1256）、conhost 的级联落点、
+            ; 配色变成 powershell.exe 子键里的 ColorTable05 = #012456 经典蓝。
+            ; 症状就是「终端背景失灵、位置大小不对」。
+            ;
+            ; 实测（AHK 探针，同样两条命令各启动一次、取窗口家族差集）：
+            ;   Run(cmd, dir)          → CASCADIA_HOSTING_WINDOW_CLASS（Windows Terminal）
+            ;   Run(cmd, dir, "Hide")  → ConsoleWindowClass（conhost）
+            ;
+            ; 代价：终端会带着「Windows PowerShell」旧标题先露一脸，等 PowerShell 进程把标题
+            ; 设好、我们再轮询到它才归位。这一步的观感只能由 Windows Terminal 自己承载 ——
+            ; 藏窗口绕过它，等于把整台终端换掉。
             Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
         } catch as err {
             MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
+            EventBus.Emit("Terminal.Failed")
             return
         }
 
+        ; 轮询要密：终端进程起来约 0.7s，每一档的等待都会叠进「按了没反应」的那段空白。
         deadline := A_TickCount + 15000
         while (A_TickCount < deadline) {
             hwnd := this._FindPowerShellHwnd()
@@ -2045,7 +2115,7 @@ class PowerShellFeature {
                 this._ShowAndFocus(hwnd)
                 return
             }
-            Sleep(150)
+            Sleep(20)
         }
 
         hwnd := this._FindPowerShellHwnd()
@@ -2053,6 +2123,7 @@ class PowerShellFeature {
             this._ShowAndFocus(hwnd)
         } else {
             MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+            EventBus.Emit("Terminal.Failed")
         }
     }
 }
