@@ -940,13 +940,17 @@ class ThemeService {
         {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"},
         ; ⚠ 带背景图的主题：bg 是图片路径，bgAlpha 是把图压暗的遮罩不透明度（0-100）。
         ;   这套配色取自那张星空图（实测全图均色 #181C25、平均亮度仅 28）：win / edBg 都
-        ;   贴着图的暗部走，编辑区内外浑然一体，没有色块割裂感。
-        ;   浅色文字压在半透明遮罩上，图暗下去、字亮起来，即终端那种「字浮在图上」。
+        ;   贴着图的暗部走（亮度 ≈15），编辑区内外浑然一体，没有色块割裂感。
+        ;   bgAlpha = 0 表示不压暗：Windows Terminal 用的就是同一张图、backgroundImageOpacity
+        ;     设成 1（完全不压暗），这里对齐它 —— 星云保持原样、最亮也最清楚。
+        ;     想压暗就在 _config.ini 写 BackdropOpacity=20（越小越亮），或改这里的 bgAlpha。
+        ;   ⚠ 不压暗之后前景色必须够亮：文字取近白、次级文字也抬到浅灰蓝，
+        ;     否则压在星云亮部（亮度约 60-130）上会发灰读不清。
         ;   图片缺失时自动降级成纯深色底（edBg），浅色文字照样读得清。
         ;   不想改源码就换图：在 _config.ini 的 [Appearance] 里写 BackdropImage / BackdropOpacity。
-        {name: "星空", win: "13161D", edBg: "0F1218", text: "D8DEE8", dim: "8A93A2"
+        {name: "星空", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
             , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
-            , bgAlpha: 28}
+            , bgAlpha: 0}
     ]
 
     static _current := 1

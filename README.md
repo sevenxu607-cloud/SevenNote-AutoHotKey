@@ -124,7 +124,9 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 - 切到「星空」就铺图，切到其它 6 套会**自动撤掉图**、回到纯色底 —— 想关背景图就切主题
 - 图按**等比裁剪**缩放（cover）：只裁不压，16:10 的星空图铺进近方形的编辑区不会被压扁
-- 图与文字的可读性靠**遮罩**平衡：图片先铺满，再叠一层「主题编辑区底色 + 28%」的色罩
+- **默认不压暗**（遮罩 0%）—— 和 Windows Terminal 用同一张图、`backgroundImageOpacity: 1` 的效果
+  对齐：星云保持原样、最亮也最清楚。前提是前景色够亮，所以文字取近白 `#F5F9FF`、次级文字
+  `#9FAABC`，压在星云亮部上依然读得清
 - 整套配色取自那张图本身（实测全图均色 `#181C25`）：窗口底色、标题栏、搜索条都跟着走，
   编辑区内外浑然一体，没有色块割裂感
 - 改窗口大小、切主题、开搜索栏都会按编辑区的新位置重新铺图
@@ -134,7 +136,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 ```ini
 BackdropImage=D:\Pictures\你的星空.png  ; 留空则用主题自带的那张
-BackdropOpacity=28                      ; 0 或留空则用主题自带值；0-100，越小图越清晰
+BackdropOpacity=20                      ; 0 或留空则用主题自带值；0-100，越小图越亮越清晰
 ```
 
 ### ⌨️ 输入增强
