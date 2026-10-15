@@ -937,7 +937,14 @@ class ThemeService {
         {name: "天空蓝", win: "EAF4FF", edBg: "DCEBFA", text: "1F3A5C", dim: "7A92AA"},
         {name: "薄荷绿", win: "E8F5F0", edBg: "DAEEE8", text: "1F4A3D", dim: "7A9E92"},
         {name: "高雅灰", win: "F0F0F0", edBg: "E8E8E8", text: "2A2A2A", dim: "808080"},
-        {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"}
+        {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"},
+        ; ⚠ 带背景图的主题：bg 是图片路径，bgAlpha 是把图压暗的遮罩不透明度（0-100）。
+        ;   浅色文字压在半透明遮罩上，图暗下去、字亮起来，即终端那种「字浮在图上」。
+        ;   图片缺失时自动降级成纯深色底（edBg），浅色文字照样读得清。
+        ;   不想改源码就换图：在 _config.ini 的 [Appearance] 里写 BackdropImage / BackdropOpacity。
+        {name: "星空", win: "0D1220", edBg: "0B1020", text: "DCE4F2", dim: "8794AC"
+            , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
+            , bgAlpha: 45}
     ]
 
     static _current := 1
@@ -1196,6 +1203,11 @@ class BackdropService {
         ; STM_SETIMAGE(0x0172) / wParam = IMAGE_BITMAP(0)
         ; SS_BITMAP 控件会自行销毁上一张位图，这里不必手动 DeleteObject
         SendMessage(0x0172, 0, hbm, this._picCtrl.Hwnd)
+        ; ⚠ SS_BITMAP 控件收到 STM_SETIMAGE 后会把自身尺寸改成「位图的像素尺寸」——
+        ;   那是物理值、不走 DPI 缩放，会把上面那次 Move 的逻辑尺寸冲掉。实测 150%
+        ;   缩放下图只盖住编辑区 1/1.5 的面积（控件 443x483，编辑区 665x725）。
+        ;   位图灌完后按逻辑尺寸再压一次；_Compose 又按同一系数合成画布，故不拉伸。
+        this._picCtrl.Move(x, y, w, h)
         return true
     }
 
@@ -1233,7 +1245,14 @@ class BackdropService {
     }
 
     ; ─── 合成：原图缩放到目标尺寸 + 叠一层半透明遮罩色 ───
+    ; w/h 是逻辑单位（与编辑区 Move 的参数同源）。画布按 DPI 缩成物理像素，
+    ; 否则 SS_BITMAP 把位图铺到「逻辑尺寸 × 缩放」的区域时还会再拉伸一次而发虚。
     static _Compose(w, h) {
+        scale := A_ScreenDPI / 96
+        w := Round(w * scale)
+        h := Round(h * scale)
+        if (w < 1 || h < 1)
+            return 0
         hdcScreen := DllCall("GetDC", "ptr", 0, "ptr")
         hdcMem := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
         hbm := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", w, "int", h, "ptr")
@@ -2349,14 +2368,17 @@ class FontFeature {
 }
 
 
-; ─── BackdropFeature：背景图开关与布局同步 ───
-; 终端式背景图：文字直接浮在图上、图铺满整个编辑区（非相框式）。
-; 开关状态存配置；窗口尺寸变化时由组合根的 OnSize 调 Layout 重新铺图。
+; ─── BackdropFeature：带背景图的主题（星空）───
+; 背景图不是「全局贴一张」，而是主题自带的属性：ThemeService.Themes 里带 bg 字段的
+; 主题（目前只有「星空」）才铺图，切到别的主题自动撤掉、回到纯底色。
+; 文字浮在图上、图铺满整个编辑区（终端式，非相框式）。
 class BackdropFeature {
     static _on := false
     static _lastW := 0
     static _lastH := 0
     static _applied := false
+    static _bgPath := ""      ; 当前主题生效的背景图路径（空 = 该主题没有背景图）
+    static _bgAlpha := 60     ; 当前生效的遮罩不透明度（0-100）
 
     static IsOn() => this._on
 
@@ -2369,17 +2391,34 @@ class BackdropFeature {
 
     static Init(g) {
         BackdropService.Attach(g)
-        ; 换主题时遮罩色要跟着主题底色走，需要重新合成
+        ; 换主题 = 换背景图：带 bg 的主题铺图，其余撤图
         EventBus.On("Theme.Changed", (*) => this.Refresh())
     }
 
-    ; 开关：Alt+B
+    ; 按当前主题刷新「图路径 + 遮罩不透明度」缓存。
+    ; 配置优先于主题自带，这样不动源码也能换图 / 调压暗程度：
+    ;   [Appearance] BackdropImage   —— 非空则覆盖主题的 bg
+    ;   [Appearance] BackdropOpacity —— >0 则覆盖主题的 bgAlpha
+    static _Sync() {
+        t := ThemeService.Themes[ThemeService.GetCurrent()]
+        p := ConfigService.Read("Appearance", "BackdropImage")
+        if (p = "" && IsObject(t) && t.HasProp("bg"))
+            p := t.bg
+        this._bgPath := p
+        BackdropService.SetImage(p)
+
+        a := ConfigService.ReadInt("Appearance", "BackdropOpacity", 0)
+        if (a <= 0)
+            a := (IsObject(t) && t.HasProp("bgAlpha")) ? t.bgAlpha : 60
+        this._bgAlpha := a
+    }
+
+    ; 开关：Alt+B。只对带背景图的主题有效
     static Toggle() {
-        ; 先把配置里的路径灌进 Service 再判断，否则 _imgPath 还是空串、必然误判
-        BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
+        this._Sync()
         if !BackdropService.HasImage() {
             EventBus.Emit("Error.Occurred"
-                , {msg: "未配置背景图：请在 _config.ini 里填 [Appearance] BackdropImage"})
+                , {msg: "主题「" . ThemeService.GetName() . "」没有背景图"})
             return
         }
         this._on := !this._on
@@ -2387,44 +2426,43 @@ class BackdropFeature {
         ConfigService.Write("Appearance", "BackdropOn", this._on ? 1 : 0)
     }
 
+    ; 换主题后重新判定。静默应用：状态栏留给「✓ 主题：xxx」，别被背景图消息盖掉
     static Refresh() {
-        if this._on
-            this._Apply()
+        this._Sync()
+        this._Apply(true)
     }
 
-    ; 窗口尺寸变化：记下尺寸，开启状态下重新合成铺满
+    ; 窗口尺寸变化：记下尺寸，已铺图则按新尺寸重铺
     static Layout(winW, winH) {
         this._lastW := winW
         this._lastH := winH
-        if !this._on
-            return
-        ; 启动时窗口尚未 Show，_Apply 会因尺寸为 0 而只把 _on 置真、不发图层；
-        ; 这里首次拿到有效尺寸后补一次完整应用，否则图会一直不显示。
+        ; 启动时窗口尚未 Show，尺寸仍是 0，_Apply 会判成「不显示」；
+        ; 首次拿到有效尺寸后补一次完整应用，否则图会一直不出来。
         if !this._applied {
-            this._Apply()
+            if (this._on && this._bgPath != "" && BackdropService.HasImage())
+                this._Apply(true)
             return
         }
         rect := this._Rect(winW, winH)
         BackdropService.Render(rect.x, rect.y, rect.w, rect.h)
     }
 
-    static _Apply() {
+    static _Apply(quiet := false) {
         hwndEd := State.GetEd()
         if !hwndEd
             return
         ; 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 会匹配不到
         DetectHiddenWindows(true)
 
-        useIt := this._on && BackdropService.HasImage()
+        useIt := this._on && this._bgPath != ""
+            && BackdropService.HasImage()
             && this._lastW > 1 && this._lastH > 1
         this._applied := useIt
 
         if useIt {
             ; 遮罩色取当前主题的编辑区底色，让图与主题色调一致
             t := ThemeService.Themes[ThemeService.GetCurrent()]
-            BackdropService.SetMask(t.edBg
-                , ConfigService.ReadInt("Appearance", "BackdropOpacity", 80))
-            BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
+            BackdropService.SetMask(t.edBg, this._bgAlpha)
             BackdropService.SetVisible(true)
             this.Layout(this._lastW, this._lastH)
             ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
@@ -2437,18 +2475,14 @@ class BackdropFeature {
 
         try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
             , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
-        EventBus.Emit("Backdrop.Toggled", {on: useIt})
+        if !quiet
+            EventBus.Emit("Backdrop.Toggled", {on: useIt})
     }
 
     static LoadFromConfig() {
-        if !ConfigService.ReadInt("Appearance", "BackdropOn", 0)
-            return
-        ; 同上：必须先 SetImage，_imgPath 才会有值
-        BackdropService.SetImage(ConfigService.Read("Appearance", "BackdropImage"))
-        if !BackdropService.HasImage()
-            return
-        this._on := true
-        this._Apply()
+        this._on := ConfigService.ReadInt("Appearance", "BackdropOn", 1) ? true : false
+        this._Sync()
+        this._Apply(true)   ; 主题没有背景图时，_Apply 内部自行撤掉
     }
 }
 
@@ -2483,8 +2517,8 @@ ConfigService.SetDefault("Appearance", "FontIndex", "1")
 ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
 ; 背景图：图片路径（留空=不启用）、遮罩不透明度 0-100、开关状态
 ConfigService.SetDefault("Appearance", "BackdropImage", "")
-ConfigService.SetDefault("Appearance", "BackdropOpacity", "80")
-ConfigService.SetDefault("Appearance", "BackdropOn", "0")
+ConfigService.SetDefault("Appearance", "BackdropOpacity", "0")
+ConfigService.SetDefault("Appearance", "BackdropOn", "1")
 ConfigService.SetDefault("Input", "CapsLockMap", "0")
 ConfigService.SetDefault("Paths", "Vault", "")
 
@@ -2716,7 +2750,7 @@ ShowHelp() {
         . "   Alt+H            显示本帮助`n"
         . "`n"
         . "【外观】`n"
-        . "   Alt+B            背景图 开 / 关`n"
+        . "   Alt+B            背景图 开 / 关（星空主题）`n"
         . "   Alt+T            切换主题`n"
         . "   Shift+Alt+T      切换字体`n"
         . "   Alt+=            调大字号`n"
