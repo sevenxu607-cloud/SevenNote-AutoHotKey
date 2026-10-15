@@ -55,7 +55,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "2.0"
+    static Version := "2.1"
 
     static AppDataDir := A_AppData . "\SevenNote-Dev"
     static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
@@ -1544,6 +1544,10 @@ class WindowFeature {
     ;   Peer.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
     ; 发布方只管广播这三条；订阅、摆放算法全在本类里，接入新窗口不用改它。
     ;
+    ; ⚠ **只适配一次**：真正会动笔记窗口的只有「第一次」，适配完就置位 _docked，
+    ;   此后三条事件一律不再碰它（语义与理由见 _docked 的注释）。所以上面那句
+    ;   「先退场」也只发生在第一次 —— 过了那一回，伙伴再怎么呼出隐藏，笔记都纹丝不动。
+    ;
     ; 伴生窗口的位置与尺寸（发布方摆好后广播过来）。
     ; 非对象 = 屏幕上没有伴生窗口，呼出时按记忆位置 / 默认落点走。
     static _peerRect := ""
@@ -1556,6 +1560,15 @@ class WindowFeature {
     ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
     static _preStackRect := ""
 
+    ; 是否已经为伴生窗口「适配过一次」。置位之后，Peer.* 三条事件一律不再碰笔记窗口 ——
+    ; 这是本机制现在的核心语义：用顺了之后，笔记的尺寸位置就是用户自己的格局，
+    ; 不该每次呼出终端 / DeepSeek 都被重算、重摆一遍。
+    ;
+    ; ⚠ 刻意**不落盘**。位置记忆（State._hiddenX 那一组）本来就是纯内存的，重启即丢、
+    ;   笔记回到默认落点 —— 那时本来就需要重新落位一次。于是「重启程序 = 重新适配一次」
+    ;   这个逃生门是自然存在的，不必额外加配置项，也不必往用户的 _config.ini 里写状态。
+    static _docked := false
+
     ; ─── 挂载：订阅伴生窗口生命周期 ───
     ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
     static Init() {
@@ -1564,7 +1577,7 @@ class WindowFeature {
         EventBus.On("Peer.Failed",    (*)    => this._RestoreAfterFailedPeer())
     }
 
-    ; 伴生窗口马上要露面，先让笔记窗口退场。
+    ; 伴生窗口马上要露面，先让笔记窗口退场。**只在第一次** —— 已经适配过的格局不再动。
     ;
     ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：伙伴落位后
     ; _AdaptToPeer 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
@@ -1573,8 +1586,11 @@ class WindowFeature {
     ; 看着就是「飘一下」。
     ;
     ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
-    ; 与用户自己按 Alt+Z 收起完全同一条路。
+    ; 与用户自己按 Alt+Z 收起完全同一条路。这份记忆随后正好被 _AdaptToPeer 拿来
+    ; 判断「伙伴会不会压到笔记原来待的地方」。
     static _CollapseForPeer() {
+        if this._docked
+            return
         if !State.GetGuiHwnd()
             return
         if this.IsShowing()
@@ -1598,25 +1614,95 @@ class WindowFeature {
     ; 会直接退回记忆位置。
     static _OnPeerPlaced(rect) {
         this._peerRect := rect
-        this._AdaptToPeer()
+        this._AdaptToPeer(rect)
     }
 
-    ; 伴生窗口出现了 → 笔记窗口自动适配：
-    ;   已显示 → 就地与它重新堆叠；正藏着 → 弹出来（Show 内部会直接按堆叠位置定位，
-    ;   不会先出现在原位再跳一下）。
+    ; 伴生窗口落位了 → 决定笔记窗口要不要动。三种情形：
+    ;   ① 已经适配过       → 一个坐标都不改（_docked）
+    ;   ② 伙伴没压到它身上 → 原样还回来，一个坐标都不改，然后固定下来
+    ;   ③ 真压上了         → 按原设计适配一次，然后固定下来
     ;
-    ; ⚠ 正常流程下走不到「已显示」那一支 —— 伙伴露面之前发布方会先广播
-    ;   Peer.Preparing，那时窗口已经被收起。留着它是防御：万一订阅没挂上，或将来
-    ;   有别的来源广播 Peer.Placed，至少仍会适配，而不是摆着不动。
-    static _AdaptToPeer() {
+    ; 「② 不冲突就不动」是这套机制现在的要害：笔记摆在左边、伙伴在右下，两者互不
+    ; 妨碍 —— 那就谁也别动谁。改之前是无条件重算重摆，于是每次呼出都把用户自己
+    ; 摆好的格局冲掉，笔记窗口次次跟着伙伴动。
+    static _AdaptToPeer(rect) {
         if !State.GetGuiHwnd()
             return
-        if this.IsShowing() {
-            g := State.GetGui()
-            this._StackWithPeer(g.Hwnd)
-        } else {
-            this.Show()
+        if this._docked
+            return
+
+        ghwnd := State.GetGuiHwnd()
+
+        ; 笔记此刻多半已被 _CollapseForPeer 收走，位置取 Hide 时刚记下的那份 ——
+        ; 那正是「笔记原来待的地方」，该拿它去比。万一它还显示着（订阅缺失，或将来
+        ; 有别的来源广播 Peer.Placed），就现量一个。
+        noteRect := State.HasHiddenRect()
+            ? State.GetHiddenRect()
+            : this._CurrentRect(ghwnd)
+
+        if IsObject(noteRect) && IsObject(rect) && !this._RectsOverlap(noteRect, rect) {
+            ; ── 不冲突：原样还回来，坐标尺寸一字不动 ──
+            ; ⚠ 必须**先固定、再 Show**。Show 内部会走 _PlaceWindow → _StackWithPeer，
+            ;   那时 _docked 已置位，于是它退回「记忆位置」= 刚 Hide 时记下的那份，
+            ;   窗口正好回到原处。顺序反了就会在 Show 里被重新堆叠一次，白固定。
+            this._FreezeDocked(ghwnd)
+            if !this.IsShowing()
+                this.Show()
+            return
         }
+
+        ; ── 冲突（或量不到笔记矩形，保守当作冲突）：按原设计适配一次 ──
+        ; ⚠ 先收再摆：_StackWithPeer 要改位置改尺寸，这一整段不该被看见
+        ;   （理由同 _CollapseForPeer）。若它已经收过，这次调用会跳过。
+        if this.IsShowing()
+            this.Hide()
+        this.Show()
+        ; 真摆成了才算「适配过一次」：没摆成（屏幕太矮等，_StackWithPeer 返回 false
+        ; 让窗口退回了记忆位置）就不置位，留着以后还有机会再试。
+        if this._stacked
+            this._FreezeDocked(ghwnd)
+    }
+
+    ; 两个矩形是否相交 —— 即「有没有一块地方同时被两个窗口占着」。
+    ; 两个入参都只用到 {x, y, w, h} 这四个字段，不关心别的。
+    static _RectsOverlap(a, b) {
+        return (a.x < b.x + b.w && a.x + a.w > b.x
+            && a.y < b.y + b.h && a.y + a.h > b.y)
+    }
+
+    ; 窗口当前的矩形；窗口没了、或位置不可用（最小化停放位）时返回 ""。
+    ; ⚠ 要开 DetectHiddenWindows：笔记可能正处在 Hide() 之后的状态，而 WinGetPos
+    ;   默认忽略隐藏窗口、直接抛错。用完恢复原值，免得改变其它代码的可见性语义。
+    static _CurrentRect(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } catch {
+            ; 显式赋空：AHK v2 里未赋值的变量参与比较会触发 VarUnset 警告
+            x := "", y := "", w := "", h := ""
+        }
+        DetectHiddenWindows(detectOld)
+        if !this.IsUsableRect(x, y, w, h)
+            return ""
+        return {x: x, y: y, w: w, h: h}
+    }
+
+    ; 把这次适配的结果「转正」成用户格局，此后不再联动。三件事都要做，少一件都露馅：
+    ;   ① 留下的矩形成为正式格局 —— 在这之前它是 _preStackRect 那份临时底稿；
+    ;   ② 清掉堆叠态标记，_RememberPosition 从此走非堆叠分支，日后如实记录用户的拖动；
+    ;   ③ 置位 _docked。
+    ; ⚠ 只有窗口正显示着才量矩形：隐藏态下 State 里已经有 Hide() 记下的那份（就是
+    ;   用户原来的位置），留着它才对 —— 那时量出来的也是同一个值，多此一举。
+    static _FreezeDocked(ghwnd) {
+        this._docked := true
+        this._stacked := false
+        this._preStackRect := ""
+        if !this.IsShowing()
+            return
+        rect := this._CurrentRect(ghwnd)
+        if IsObject(rect)
+            State.SetHiddenRect(rect.x, rect.y, rect.w, rect.h)
     }
 
     ; ─── 入口：Alt+Z ───
@@ -1773,6 +1859,14 @@ class WindowFeature {
     static _StackWithPeer(ghwnd) {
         pr := this._peerRect
         if !IsObject(pr)
+            return false
+
+        ; 已经适配过一次 → 格局已定，绝不再按伴生窗口的位置重算。
+        ;   本方法有两条调用路径，这一条把两条都管住：
+        ;     · _PlaceWindow —— Alt+Z 展开笔记时，于是走「记忆位置」= 用户自己的格局；
+        ;     · _AdaptToPeer —— 伴生窗口落位时，那里另有 _docked 守卫，这里是双保险。
+        ;   返回 false 让调用方回落到记忆位置，正是想要的：不动坐标。
+        if this._docked
             return false
 
         ; 伴生窗口可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
@@ -2371,7 +2465,6 @@ class DeepSeekFeature {
         ; 理由详见 WindowFeature._CollapseForPeer。重复发是无害的：已收起时那次会跳过。
         ; ⚠ 这条广播管的是笔记窗口，不是浏览器：浏览器的露面时机由它自己的宿主掌握。
         EventBus.Emit("Peer.Preparing")
-
         WinShow("ahk_id " . hwnd)
         ; ⚠ WinShow 之后必须再 WinRestore：Chromium 的窗口被 WinHide 藏起来后会把自己
         ;   标记成「最小化」—— 本机实测再按 Alt+X 呼出时 iconic=1、rect 停在
