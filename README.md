@@ -132,6 +132,9 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 - 改窗口大小、切主题、开搜索栏都会按编辑区的新位置重新铺图
 - 图片缺失时自动降级为纯深色底，浅色文字照样读得清
 
+想再加一套**别的图**当主题（极光、雪原……）？见
+[开发指南 → 添加带背景图的主题](#添加带背景图的主题)，配 `tools\pick-theme-colors.ps1` 一键取色。
+
 **换图 / 调压暗程度**（不用改源码）—— 在 `_config.ini` 的 `[Appearance]` 里加：
 
 ```ini
