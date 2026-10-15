@@ -55,7 +55,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "1.9"
+    static Version := "2.0"
 
     static AppDataDir := A_AppData . "\SevenNote-Dev"
     static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
@@ -77,7 +77,7 @@ class Config {
     static AutoSaveInterval := 120000
     static StatInterval := 500
     static TimestampInterval := 60
-    ; 双窗并存（Alt+C 唤起 PowerShell）时的「可见」间距（物理像素）：
+    ; 双窗并存（Alt+C 唤起 PowerShell / Alt+X 唤起 DeepSeek）时的「可见」间距（物理像素）：
     ; 两窗之间的缝、窗口到工作区顶/底的边距。
     ; ⚠ 这里算的是**肉眼看到**的距离 —— 按 DWM 的可见边界算，不含 Win11 的不可见调整边框。
     ;   本机实测 `WinGetPos` 的矩形比可见边界每边多 9px（左 −9 / 上 0 / 右 9 / 下 9），
@@ -2022,13 +2022,21 @@ class PowerShellFeature {
             return
         }
 
-        if (WinActive("ahk_id " . hwnd)) {
+        ; ⚠ 必须同时看「可见」：WinHide 之后 GetForegroundWindow 仍指着那个隐藏窗口
+        ;   （本机实测 1.2s 后依然如此），只看 WinActive 会判定成「在前台 → 再藏一次」，
+        ;   于是按了没反应、再也呼不出来。DeepSeekFeature.Toggle 是同一处。
+        if (this._IsVisible(hwnd) && WinActive("ahk_id " . hwnd)) {
             WinHide("ahk_id " . hwnd)
             return
         }
 
         this._ShowAndFocus(hwnd)
     }
+
+    ; 窗口此刻是否真的在屏幕上（WinHide 过 = false）。
+    ; ⚠ 别用 IsIconic 组合来判断这里的「在显示」—— 那是判断最小化的写法：
+    ;   本窗口只会被 WinHide 藏起来，不会被最小化，看 IsWindowVisible 一个就够。
+    static _IsVisible(hwnd) => !!DllCall("IsWindowVisible", "ptr", hwnd, "int")
 
     static _FindPowerShellHwnd() {
         detectHidden := A_DetectHiddenWindows
@@ -2049,6 +2057,10 @@ class PowerShellFeature {
         EventBus.Emit("Peer.Preparing")
 
         WinShow("ahk_id " . hwnd)
+        ; ⚠ WinShow 之后必须再 WinRestore：窗口被 WinHide 藏起来后，宿主可能把自己
+        ;   标记成「最小化」，而 WinShow 不解除最小化，用户看到的就是「窗口没回来」。
+        ;   浏览器（Chromium）实测必现，终端留着这行也无害 —— 兜底就该一直有。
+        WinRestore("ahk_id " . hwnd)
         WinActivate("ahk_id " . hwnd)
         try {
             WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
@@ -2148,6 +2160,316 @@ class PowerShellFeature {
         }
     }
 }
+
+; ─── Alt+X 呼出 DeepSeek 网页端 ───
+; 「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的第二个使用者 ——
+; 与 PowerShellFeature 同一套玩法，只把「终端」换成浏览器的 app 窗口。
+; 三条广播的语义、时序、失败兜底完全一致；接入步骤见 README「开发指南」。
+;
+; 有两处与终端不同，值得记下：
+;   ① **窗口怎么认**：终端能靠标题（"SevenNote PowerShell"）认，浏览器不能 ——
+;      本机日常 Edge 里也开着 DeepSeek 网页，标题一样含 "DeepSeek"，靠标题一认就错。
+;      这里改用「专用 profile → 独立进程树」的办法：窗口按 PID 认。
+;   ② **尺寸与位置要自己给**：终端由 Windows Terminal 的 profile 决定落点（本机 744x1020），
+;      浏览器却每次都落在 Chromium 的默认点。这里按目标尺寸摆到「和终端同一处」——
+;      右侧贴工作区右缘、底边贴工作区底，于是两种伙伴产出的堆叠效果一模一样。
+class DeepSeekFeature {
+    static _initialized := false
+    static _url := "https://chat.deepseek.com/"
+
+    ; 专用浏览器 profile —— 与用户日常浏览器**完全隔离**。两条理由：
+    ;   ① 不往用户的收藏夹 / 历史 / 扩展里掺东西；
+    ;   ② 独立 user-data-dir 会让 Chromium 起一条独立进程树，窗口才能被唯一定位。
+    ; ⚠ 代价：首次要用它登录一次 DeepSeek，之后 profile 会记住。
+    static _profileDir := Config.AppDataDir . "\_deepseek-profile"
+    ; PID 落盘，好在「笔记程序重启」后认回已有窗口 —— 内存缓存随进程丢，文件不丢。
+    static _pidFile := Config.AppDataDir . "\_deepseek.pid"
+
+    static _hwnd := 0   ; 进程内缓存，省掉每次读文件
+
+    static Init() {
+        if (this._initialized)
+            return
+        Hotkey("!x", (*) => this.Toggle(), "On")
+        this._initialized := true
+    }
+
+    static Toggle() {
+        hwnd := this._FindBrowserHwnd()
+        if (hwnd = 0) {
+            this._Launch()
+            return
+        }
+
+        ; ⚠ 必须同时看「可见」：WinHide 之后 GetForegroundWindow 仍指着那个隐藏窗口
+        ;   （本机实测 1.2s 后依然如此），只看 WinActive 会判定成「在前台 → 再藏一次」，
+        ;   于是按了没反应、再也呼不出来。
+        if (this._IsVisible(hwnd) && WinActive("ahk_id " . hwnd)) {
+            WinHide("ahk_id " . hwnd)
+            return
+        }
+
+        this._ShowAndFocus(hwnd)
+    }
+
+    ; 窗口此刻是否真的在屏幕上（WinHide 过 = false）。
+    ; ⚠ 别用 IsIconic 组合来判断这里的「在显示」—— 那是判断最小化的写法：
+    ;   本窗口只会被 WinHide 藏起来，不会被最小化，看 IsWindowVisible 一个就够。
+    static _IsVisible(hwnd) => !!DllCall("IsWindowVisible", "ptr", hwnd, "int")
+
+    ; 认回自己的窗口，两级兜底：进程内缓存 → PID 文件 → 没有（那就重新拉起）
+    static _FindBrowserHwnd() {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if (this._hwnd && WinExist("ahk_id " . this._hwnd)
+                && WinGetClass("ahk_id " . this._hwnd) = "Chrome_WidgetWin_1")
+                return this._hwnd
+            this._hwnd := 0
+
+            pid := this._ReadPid()
+            if (pid > 0) {
+                hwnd := this._TopWindowOf(pid)
+                if hwnd {
+                    this._hwnd := hwnd
+                    return hwnd
+                }
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        return 0
+    }
+
+    ; 取某进程「用户看得见的那扇窗」。
+    ; Chromium 一个实例会带一串窗口：Chrome_WidgetWin_0 的辅助窗、IME、
+    ; Base_PowerMessageWindow…（本机实测一个实例 5 个），只有 Chrome_WidgetWin_1
+    ; 且 IsWindowVisible 的那个才是界面本身 —— 两个条件都得要：
+    ; ① 光看 class 不够，别的 Chromium 窗口也可能是 Chrome_WidgetWin_1；
+    ; ② 光看可见不够，辅助窗在某些状态下也报可见。
+    static _TopWindowOf(pid) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            for h in WinGetList("ahk_exe " . this._ExeName()) {
+                if (WinGetPID("ahk_id " . h) != pid)
+                    continue
+                if (WinGetClass("ahk_id " . h) != "Chrome_WidgetWin_1")
+                    continue
+                if DllCall("IsWindowVisible", "ptr", h, "int")
+                    return h
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        return 0
+    }
+
+    static _ReadPid() {
+        try {
+            v := Trim(FileRead(this._pidFile, "UTF-8"))
+            return IsNumber(v) ? Integer(v) : 0
+        } catch {
+            return 0
+        }
+    }
+
+    static _WritePid(pid) {
+        try {
+            FileDelete(this._pidFile)
+        } catch {
+        }
+        try {
+            FileAppend(pid, this._pidFile, "UTF-8")
+        } catch {
+        }
+    }
+
+    static _Launch() {
+        exe := this._BrowserPath()
+        if (exe = "") {
+            MsgBox("未找到可用的 Chromium 系浏览器（Edge / Chrome）。`n"
+                . "可在 _config.ini 的 [Paths] BrowserPath 指定浏览器路径。"
+                , "SevenNote", "Icon!")
+            return
+        }
+
+        ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
+        EventBus.Emit("Peer.Preparing")
+
+        ; 启动前先记下现有的同族 PID，之后「新出现的那个」就是我们的 ——
+        ; 专用 profile 保证了它必定是条新进程树，不会并进用户自己的浏览器里。
+        before := this._PidSnapshot()
+
+        try {
+            ; ⚠ --window-size 收的是**逻辑像素**（DIP），而 WinMove / WinGetPos 认物理像素。
+            ;   本机 150% 缩放（A_ScreenDPI = 144）下传 496x680，实际得到 744x1020 —— 正合目标。
+            ;   换个缩放比例就得跟着变，所以按 A_ScreenDPI 反算，别写死。
+            w := this._TargetW() * 96 // A_ScreenDPI
+            h := this._TargetH() * 96 // A_ScreenDPI
+            ; --app：无地址栏的独立窗口，观感接近桌面应用，而不是「浏览器里多开了个标签」；
+            ;       app 窗口的标题归页面管（本机实测为 "DeepSeek"），所以别拿标题找它。
+            ; --user-data-dir：独立 profile（理由见类头）。
+            ; --no-first-run / --no-default-browser-check：跳过首次运行的欢迎页与
+            ;       「是否设为默认浏览器」的询问 —— 新 profile 每次都问，很烦。
+            cmd := '"' . exe . '" --app=' . this._url
+                . ' --user-data-dir="' . this._profileDir . '"'
+                . ' --window-size=' . w . ',' . h
+                . ' --no-first-run --no-default-browser-check'
+            Run(cmd)
+        } catch as err {
+            MsgBox("启动浏览器失败：`n" . err.Message, "SevenNote", "Icon!")
+            EventBus.Emit("Peer.Failed")
+            return
+        }
+
+        ; 浏览器冷启动比终端快（本机实测起进程 ~0.1s、窗口到位 ~0.9s），但仍要轮询：
+        ; 抢在窗口出现前 WinShow 会报「窗口不存在」。
+        deadline := A_TickCount + 15000
+        while (A_TickCount < deadline) {
+            pid := this._NewPidSince(before)
+            if (pid != 0) {
+                hwnd := this._TopWindowOf(pid)
+                if (hwnd != 0) {
+                    this._WritePid(pid)
+                    this._hwnd := hwnd
+                    this._ShowAndFocus(hwnd)
+                    return
+                }
+            }
+            Sleep(20)
+        }
+
+        MsgBox("浏览器已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+        EventBus.Emit("Peer.Failed")
+    }
+
+    ; 当前同族进程的 PID 集合（含只有隐藏窗口的宿主进程）
+    static _PidSnapshot() {
+        s := Map()
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            for h in WinGetList("ahk_exe " . this._ExeName())
+                try s[WinGetPID("ahk_id " . h)] := true
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        return s
+    }
+
+    static _NewPidSince(before) {
+        for pid, _ in this._PidSnapshot() {
+            if !before.Has(pid)
+                return pid
+        }
+        return 0
+    }
+
+    static _ShowAndFocus(hwnd) {
+        ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。
+        ; 理由详见 WindowFeature._CollapseForPeer。重复发是无害的：已收起时那次会跳过。
+        ; ⚠ 这条广播管的是笔记窗口，不是浏览器：浏览器的露面时机由它自己的宿主掌握。
+        EventBus.Emit("Peer.Preparing")
+
+        WinShow("ahk_id " . hwnd)
+        ; ⚠ WinShow 之后必须再 WinRestore：Chromium 的窗口被 WinHide 藏起来后会把自己
+        ;   标记成「最小化」—— 本机实测再按 Alt+X 呼出时 iconic=1、rect 停在
+        ;   -32000,-32000 237x39 的停放位，而 WinShow 不解除最小化，于是「窗口没回来」。
+        WinRestore("ahk_id " . hwnd)
+        WinActivate("ahk_id " . hwnd)
+        try {
+            WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
+        }
+        ; 浏览器自己不记位置，每次都在 Chromium 的默认点，所以摆到「和终端同一处」。
+        this._PlaceLikeTerminal(hwnd)
+        ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
+        this._BroadcastRect(hwnd)
+
+        ; 广播是同步的（EventBus 直接循环调用 handler），所以上一行返回时笔记窗口已经
+        ; 露面了 —— 而 Show() 末尾会激活窗口自身，把前台从刚呼出的浏览器手里夺走。
+        ; 按 Alt+X 是要用 DeepSeek，这里还回去。
+        WinActivate("ahk_id " . hwnd)
+    }
+
+    ; 摆到「和 PowerShell 终端同一处」：右侧贴工作区右缘、底边贴工作区底。
+    ; 本机实测终端落在 (1803, 540) 744x1020，底边 1560 正是工作区底 ——
+    ; 所以两种伙伴产出的堆叠效果一模一样。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static _PlaceLikeTerminal(hwnd) {
+        w := this._TargetW(), h := this._TargetH()
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        x := wkRight - w - Config.PlaceRight
+        y := wkBottom - h
+        ; 兜底：工作区比目标窗口还小时别落到屏幕外
+        if (x < wkLeft + 10)
+            x := wkLeft + 10
+        if (y < wkTop + 10)
+            y := wkTop + 10
+        WinMove(x, y, w, h, "ahk_id " . hwnd)
+    }
+
+    ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; 与 PowerShellFeature._BroadcastRect 是同一份逻辑 —— Feature 之间不许互相调用，
+    ; 所以各留一份；两处要同步改。
+    ; ⚠ 读之前要开 DetectHiddenWindows —— 窗口刚 WinShow 出来，隐藏态 WinGetPos 会抛错。
+    static _BroadcastRect(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (w > 0 && h > 0)
+            EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
+    }
+
+    ; 目标窗口尺寸（物理像素）。默认对齐本机 Windows Terminal profile 的 744x1020 ——
+    ; 这样 Alt+C 与 Alt+X 两种堆叠布局观感完全一致。
+    ; 换机器 / 换终端尺寸：在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
+    static _TargetW() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
+        return v > 0 ? v : 744
+    }
+
+    static _TargetH() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekH", 0)
+        return v > 0 ? v : 1020
+    }
+
+    ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，
+    ; 命中率最高）。只要是 Chromium 系（支持 --app / --user-data-dir）都能用。
+    static _BrowserPath() {
+        p := ConfigService.Read("Paths", "BrowserPath")
+        if (p != "" && FileExist(p))
+            return p
+        for candidate in [
+            A_ProgramFiles . "\Microsoft\Edge\Application\msedge.exe",
+            EnvGet("ProgramFiles(x86)") . "\Microsoft\Edge\Application\msedge.exe",
+            A_ProgramFiles . "\Google\Chrome\Application\chrome.exe",
+            EnvGet("ProgramFiles(x86)") . "\Google\Chrome\Application\chrome.exe",
+            EnvGet("LOCALAPPDATA") . "\Google\Chrome\Application\chrome.exe",
+        ] {
+            if FileExist(candidate)
+                return candidate
+        }
+        return ""
+    }
+
+    ; 进程名（WinGetList 的 ahk_exe 参数用）—— 跟着上面选中的浏览器走，
+    ; 免得用户把 BrowserPath 改成 Chrome 后这里还在找 msedge.exe。
+    static _ExeName() {
+        p := this._BrowserPath()
+        if (p = "")
+            return "msedge.exe"
+        SplitPath(p, &name)
+        return name
+    }
+}
+
 
 
 class CapsLockFeature {
@@ -3066,7 +3388,8 @@ OnSize(guiObj, MinMax, Width, Height) {
 }
 
 ; ═══ 挂载 Feature ═══
-; 最先挂 —— 它订阅「PowerShell 要出现了」，得赶在第一次 Alt+C 之前注册好
+; 最先挂 —— 它订阅「外部窗口（PowerShell / DeepSeek）要出现了」，
+; 得赶在第一次 Alt+C / Alt+X 之前注册好
 WindowFeature.Init()
 StatusBar.Init(dateCtrl, tagCtrl, msgCtrl)
 SearchFeature.Init(searchBarBg, searchIcon, searchEdit, searchCount, stat, themeLabel, ed)
@@ -3076,6 +3399,7 @@ CaretFeature.Init()
 StatFeature.Init(Config.StatInterval)
 TimestampFeature.Init()
 PowerShellFeature.Init()
+DeepSeekFeature.Init()
 BackdropFeature.Init(g)
 
 ; ═══ 全局热键（按用户旅程排序）═══
@@ -3217,8 +3541,9 @@ ShowHelp() {
         . "`n"
         . "【输入增强】`n"
         . "   Alt+Shift+C      切换 CapsLock 键盘映射`n"
-        . "   Alt+C            唤出 / 隐藏 PowerShell`n"
         . "                      （开启后 CapsLock+H/J/K/L = 方向键）`n"
+        . "   Alt+C            唤出 / 隐藏 PowerShell（笔记自动让位）`n"
+        . "   Alt+X            呼出 / 隐藏 DeepSeek 网页（笔记自动让位）`n"
         . "`n"
         . "【搜索】`n"
         . "   Ctrl+F           打开搜索栏`n"

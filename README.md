@@ -189,6 +189,7 @@ BackdropOpacity=20                      ; 0 或留空则用主题自带值；0-1
 | `Alt+Z` | 呼出 / 隐藏 |
 | `Alt+Shift+Z` | 保存并退出 |
 | `Alt+C` | 呼出 / 隐藏 PowerShell，笔记窗口自动与它上下对齐成规整一列 |
+| `Alt+X` | 呼出 / 隐藏 DeepSeek 网页（应用窗口模式），同样自动与笔记对齐 |
 | `Alt+H` | 显示快捷键帮助 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
@@ -544,7 +545,14 @@ BackdropOpacity=20      ; 0-100，越小图越亮越清晰
 
 #### 接入步骤
 
-`PowerShellFeature` 就是参考实现（类头注释里也标了），可直接对照：
+仓库里有两个现成的参考实现，都带完整注释，可直接对照：
+
+| 参考 | 起什么 | 特殊在哪 |
+| --- | --- | --- |
+| `PowerShellFeature`（`Alt+C`） | 本机 PowerShell 终端 | 最简形态：靠窗口标题认窗，位置尺寸全交给 Windows Terminal |
+| `DeepSeekFeature`（`Alt+X`） | DeepSeek 网页（Edge 应用窗口） | 得「自己认窗 + 自己定尺寸位置」，多出来的两处坑见下表与实例二 |
+
+骨架长这样（`PowerShellFeature` 的简化版）：
 
 ```ahk
 class MyWindowFeature {
@@ -590,6 +598,9 @@ class MyWindowFeature {
 | **`EventBus.Emit` 是同步的** | 广播那一行返回时笔记窗口已经露面了，而 `Show()` 末尾会激活自己、抢走前台。以你的窗口为主角的话，广播后要 `WinActivate` 还给它 |
 | **`Peer.Placed` 的 `hwnd` 不用你清理** | 每次呼出都重记一份；伙伴被关掉后 `_StackWithPeer` 开头有 `WinExist` 存活性检查，会自行退回记忆位置 |
 | **一套机制同时只服务一个伙伴** | `_peerRect` 是单值。将来若要「同时呼出 A 和 B 各占一边」，得先把它升级成列表 —— 那是重构，不是加一行 |
+| **窗口认不出来？给它的进程做个记号** | 终端能靠标题认（`SevenNote PowerShell`），浏览器**不能** —— 页面标题归网页管、还会随会话变，用户的日常浏览器里也常开着同一个站点，标题一模一样。`DeepSeekFeature` 的做法是 `--user-data-dir` 指一个**专用 profile**，让 Chromium 起一条独立进程树，之后按 PID 认窗 |
+| **切换判定不能只看 `WinActive`** | `WinHide` 之后 `GetForegroundWindow` **仍指着那个隐藏窗口**（本机实测 1.2s 后依然如此），于是判定成「在前台 → 再藏一次」，**再也呼不出来**。要写成 `可见 && 在前台`（两个参考实现里都有 `_IsVisible`） |
+| **`WinShow` 之后补一句 `WinRestore`** | 窗口被 `WinHide` 藏起来后，宿主可能把自己标记成「最小化」—— Chromium 实测必现：再呼出时 `iconic=1`、`rect` 停在 `-32000,-32000 237x39` 的停放位。而 `WinShow` **不解除最小化**，用户看到的就是「窗口没回来」 |
 
 #### 摆放策略在哪改
 
@@ -601,6 +612,35 @@ class MyWindowFeature {
 
 要改成**左右并排**（比如浏览器更适合放右边），改的就是这一个方法 —— 发布方那三个事件的代码一行不用动。
 间距与边距调 `Config.DockGap` / `Config.DockMargin` 即可，不必碰算法。
+
+#### 实例二：`Alt+X` 唤 DeepSeek（浏览器）
+
+浏览器比终端多两件事要处理，`DeepSeekFeature` 是完整答案：
+
+1. **认窗**：用 `--app=<url>` 让 Edge 开出无地址栏的应用窗口，再配 `--user-data-dir` 指向
+   `Config.AppDataDir\_deepseek-profile`。**专用 profile** 换来两样东西 —— 不往用户自己的
+   收藏夹 / 历史 / 扩展里掺东西，以及一条独立进程树（窗口可按 PID 唯一定位，不受用户日常
+   浏览器里那些同标题窗口干扰）。PID 记在 `_deepseek.pid`，笔记程序重启后据此认回窗口。
+   首次需要在它的 profile 里登录一次 DeepSeek，之后就记住了。
+2. **尺寸位置**：终端的位置尺寸由 Windows Terminal 的 profile 决定，浏览器却每次落在 Chromium
+   的默认点。所以启动时给 `--window-size` 定尺寸，露面前再由 `_PlaceLikeTerminal()` 摆到终端
+   那一处（右侧贴工作区右缘、底边贴工作区底），于是 `Alt+C` 与 `Alt+X` 两种堆叠观感一致。
+
+可配置项（`_config.ini`，都可留空走默认）：
+
+```ini
+[Paths]
+BrowserPath=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+DeepSeekW=744
+DeepSeekH=1020
+```
+
+- `BrowserPath` 留空时按 Edge → Chrome 顺序自动探测，换 Chromium 系浏览器不用改代码。
+- `DeepSeekW` / `DeepSeekH` 是**物理像素**目标尺寸，默认 `744x1020`（本机终端尺寸）。
+  想和自己的终端对齐，用 `WinGetPos` 量一下终端改这两个值即可。
+- ⚠ `--window-size` 收的是**逻辑像素**，而 `WinMove` / `WinGetPos` 认**物理像素**。
+  本机 150% 缩放（`A_ScreenDPI = 144`）下传 `496x680` 得到 `744x1020`，所以代码里按
+  `目标物理值 × 96 ÷ A_ScreenDPI` 反算，别写死。
 
 ### 关键坑点（踩过的坑）
 
@@ -653,7 +693,8 @@ class MyWindowFeature {
 
 | 版本 | 日期 | 变化 |
 | --- | --- | --- |
-| **v1.9** | 2026-09-20 | 修复 pandoc 打包 0KB 问题；`PandocService` 加文件有效性校验（>1MB） |
+| **v2.0** | 2026-10-16 | 新增 `Alt+X` 呼出 / 隐藏 DeepSeek 网页（专用 profile 的 Edge 应用窗口），窗口自动与笔记对齐；`Alt+C` 的窗口适配机制泛化为 `Peer.*` 通用契约，并修好「隐藏后再按呼不出来」 |
+| v1.9 | 2026-09-20 | 修复 pandoc 打包 0KB 问题；`PandocService` 加文件有效性校验（>1MB） |
 | v1.8 | 2026-09-20 | 状态栏日期后显示星期（`📅 2026-09-20 周日`） |
 | v1.7 | 2026-09-19 | assets 统一收纳到 `_assets/日期/`；切日期光标到开头 |
 | v1.6 | 2026-09-19 | 路径分离（统一自用/分发）；首次运行引导；Pandoc 双路径；代码数据分离 |
