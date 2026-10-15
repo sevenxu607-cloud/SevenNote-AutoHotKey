@@ -58,6 +58,15 @@ Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()')
 - 同理别把中间产物（截图、diff 图、日志）留在 `%TEMP%` 根部。
 - 更别写进仓库目录 —— `.ahk` / `.ps1` 会进 `git status`，也会被 AHK++ 语法检查扫到。
 
+**怎么清陈旧诊断**：文件删了、「问题」面板还挂着它的告警时 ——
+
+1. 先关掉那个文件的标签页（若 VS Code 里还开着）；
+2. `Ctrl+Shift+P` → 输入 `Developer: Reload Window` 回车。
+
+诊断只存在于扩展宿主进程的内存里，磁盘上**没有**缓存文件可删，所以别去翻
+`%APPDATA%\Code\` 找 —— 重载窗口是刷新它的方式（实测：`%TEMP%\_gdicmp.ps1`
+早已删除，面板里那 3 条告警仍旧挂着，与磁盘状态无关）。
+
 ## 给 PowerShell 写脚本时的编码坑
 
 `powershell.exe`（5.1）**按系统 ANSI（本机 GBK）读取无 BOM 的 `.ps1`**。用 UTF-8 无 BOM
