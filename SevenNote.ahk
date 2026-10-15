@@ -69,6 +69,8 @@ class Config {
 
     static WinW := 450
     static WinH := 550
+    ; 首次呼出时窗口距屏幕工作区右边 / 底边的距离（物理像素）
+    static PlaceMargin := 220
     static AutoSaveInterval := 120000
     static StatInterval := 500
     static TimestampInterval := 60
@@ -1672,17 +1674,21 @@ class WindowFeature {
         return (w > 0 && h > 0)
     }
 
-    ; 默认落点坐标：右侧偏上，右边距 220px，并保证不出屏。
-    ; ⚠ 横坐标必须按窗口的「实际」尺寸算 —— A_ScreenWidth 是物理像素，而窗口实际宽含
-    ;   DPI 放大后的控件与边框（本机约 697），远大于逻辑值 Config.WinW = 450；
-    ;   拿 Config.WinW 去算会让窗口右边缘探出屏幕 27px。
+    ; 默认落点坐标：贴主屏工作区的右下角，右边距 / 底边距各 Config.PlaceMargin。
+    ;
+    ; ⚠ 尺寸必须按窗口的「实际」值算 —— A_ScreenWidth 是物理像素，而窗口实际宽含 DPI
+    ;   放大后的控件与边框（本机约 711），远大于逻辑值 Config.WinW = 450。
+    ; ⚠ 用 MonitorGetWorkArea 而非 A_ScreenWidth / A_ScreenHeight：后者是全屏尺寸，
+    ;   贴着底部放会压到任务栏底下；多屏时 A_Screen* 也只反映主屏。
     static _DefaultRect(winW, winH) {
-        posX := A_ScreenWidth - winW - 220
-        posY := (A_ScreenHeight - winH) // 3
-        if (posX < 10)
-            posX := 10
-        if (posY < 10)
-            posY := 10
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        posX := wkRight - winW - Config.PlaceMargin
+        posY := wkBottom - winH - Config.PlaceMargin
+        ; 窗口比工作区还大（或边距过大）时兜底，免得落到负坐标、跑到屏幕外
+        if (posX < wkLeft + 10)
+            posX := wkLeft + 10
+        if (posY < wkTop + 10)
+            posY := wkTop + 10
         return {x: posX, y: posY}
     }
 
