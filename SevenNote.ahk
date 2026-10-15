@@ -1283,26 +1283,48 @@ class WindowFeature {
 
     ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
     ; 末尾补一次 WinRestore，覆盖“在最小化状态下呼出”的情形。
+    ;
+    ; ⚠ 尺寸不硬设 —— 本机 150% 缩放（A_ScreenDPI = 144）下 Gui 控件坐标会按 DPI 放大 1.5 倍，
+    ;   窗口最小尺寸由控件固有尺寸决定，Config.WinW/WinH 是「逻辑单位」而 WinMove 收「物理像素」。
+    ;   实测把 450x550 直接传给 WinMove：宽被 +MinSize450x300（物理 675x450）拒绝，
+    ;   高却通过了，结果窗口被压矮（881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
     static _PlaceWindow(g, ghwnd) {
-        rect := State.GetHiddenRect()
-        if !(State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h)) {
-            State.ClearHiddenRect()
-            rect := this._DefaultRect()
-        }
         g.Show()
         WinRestore("ahk_id " . ghwnd)
-        WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+
+        rect := State.GetHiddenRect()
+        if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
+            ; 记忆里存的是物理像素（WinGetPos 读到的），与 WinMove 同一单位，可直接还原
+            WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+            return
+        }
+
+        State.ClearHiddenRect()
+        this._MoveToDefault(ghwnd)
     }
 
-    ; 默认落点：屏幕右侧偏上，留 220px 边距，并保证不出屏
-    static _DefaultRect() {
-        posX := A_ScreenWidth - Config.WinW - 220
-        posY := (A_ScreenHeight - Config.WinH) // 3
+    ; 移到默认落点。必须先 Show 再量窗口，因为尺寸由 AHK 按 DPI 决定，Show 之前无从得知
+    static _MoveToDefault(ghwnd) {
+        try
+            WinGetPos(&_, &_, &winW, &winH, "ahk_id " . ghwnd)
+        catch
+            return
+        rect := this._DefaultRect(winW, winH)
+        WinMove(rect.x, rect.y, , , "ahk_id " . ghwnd)
+    }
+
+    ; 默认落点坐标：右侧偏上，右边距 220px，并保证不出屏。
+    ; ⚠ 横坐标必须按窗口的「实际」尺寸算 —— A_ScreenWidth 是物理像素，而窗口实际宽含
+    ;   DPI 放大后的控件与边框（本机约 697），远大于逻辑值 Config.WinW = 450；
+    ;   拿 Config.WinW 去算会让窗口右边缘探出屏幕 27px。
+    static _DefaultRect(winW, winH) {
+        posX := A_ScreenWidth - winW - 220
+        posY := (A_ScreenHeight - winH) // 3
         if (posX < 10)
             posX := 10
         if (posY < 10)
             posY := 10
-        return {x: posX, y: posY, w: Config.WinW, h: Config.WinH}
+        return {x: posX, y: posY}
     }
 
     ; ═══ 光标与重绘 ═══
