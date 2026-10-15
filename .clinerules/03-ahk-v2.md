@@ -29,3 +29,4 @@
 | `FileInstall` 必须写在一行 | 折行会导致打包出 0KB 空文件 |
 | `FileExist` 返回 `"A"` 不是 `true` | 断言需 `!!` 转换 |
 | **最小化窗口的 `IsWindowVisible` 仍是 `1`** | 判断“窗口是否在显示”必须用 `IsWindowVisible && !IsIconic`。最小化窗口的 `WinGetPos` 会返回 `-32000` 一类**屏幕外停放位**（按 DPI 缩放显示为 `-21333` 等）；把这种坐标记下来再 `WinMove`，窗口就被永久搬到看不见的地方，`Alt+Z` 再也呼不出。**记录窗口位置前必须校验它落在某个屏幕工作区内**（`MonitorGetWorkArea`），并给 `WinRestore` 兜底 |
+| **`WinMove` 收「物理像素」，而 `Config` 里的尺寸是「逻辑单位」** | 本机 150% 缩放（`A_ScreenDPI = 144`、`A_ScreenWidth = 2560`）下，`Gui` 控件坐标按 DPI 放大 1.5 倍，**窗口最小尺寸由控件固有尺寸决定**，`+MinSize450x300` 同样是逻辑值（物理 675x450）。把 `Config.WinW/WinH`（450/550）原样传给 `WinMove`：宽度撞上 `MinSize` 被拒绝、高度却通过，窗口被压矮（实测 `881` → `550`）。**尺寸交给 AHK 按 DPI 自行决定**（`WinMove` 的 `Width/Height` 留空即保持不变），位置则必须按 `WinGetPos` 读到的**实际**物理尺寸算——`A_ScreenWidth - Config.WinW - 220` 会让右边缘探出屏幕 27px。另注：同一份代码里 `g.Show("w450 h550")` 也压不住尺寸，仍会被控件撑到 697×881 |
