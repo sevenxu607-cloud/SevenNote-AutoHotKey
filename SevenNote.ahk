@@ -75,9 +75,13 @@ class Config {
     static AutoSaveInterval := 120000
     static StatInterval := 500
     static TimestampInterval := 60
-    ; 双窗并存（Alt+C 唤起 PowerShell）时：两窗之间的间隙、距屏幕工作区的边距（物理像素）
-    static DockGap := 12
-    static DockMargin := 15
+    ; 双窗并存（Alt+C 唤起 PowerShell）时的「可见」间距（物理像素）：
+    ; 两窗之间的缝、窗口到工作区顶/底的边距。
+    ; ⚠ 这里算的是**肉眼看到**的距离 —— 按 DWM 的可见边界算，不含 Win11 的不可见调整边框。
+    ;   本机实测 `WinGetPos` 的矩形比可见边界每边多 9px（左 −9 / 上 0 / 右 9 / 下 9），
+    ;   若直接按矩形拼，设 12 的缝看上去会是 12 + 9 = 21。
+    static DockGap := 6
+    static DockMargin := 10
 }
 
 
@@ -1625,10 +1629,12 @@ class WindowFeature {
     static _RememberPosition(hwnd) {
         ; 与终端堆叠时，位置和高度都是临时算出来的 —— 拿堆叠前的底稿还原再记。
         ; 否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
+        ; ⚠ 底稿**用完不丢**：堆叠态下隐藏只是「暂时收起来」，用户随时会 Alt+C 再摆回来，
+        ;   那时仍要按同一份底稿记。真正作废是在下面的非堆叠分支 —— 那时窗口的位置
+        ;   就是用户自己的格局，底稿已完成使命。
         if this._stacked {
             this._stacked := false
             pre := this._preStackRect
-            this._preStackRect := ""
             if IsObject(pre) && this.IsUsableRect(pre.x, pre.y, pre.w, pre.h) {
                 State.SetHiddenRect(pre.x, pre.y, pre.w, pre.h)
                 return
@@ -1636,6 +1642,8 @@ class WindowFeature {
             State.ClearHiddenRect()
             return
         }
+        ; 非堆叠态：当前坐标就是用户自己的格局 —— 正常记忆，并作废旧底稿
+        this._preStackRect := ""
         try
             WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . hwnd)
         catch
@@ -1736,8 +1744,13 @@ class WindowFeature {
         if !this._MeasureStable(ghwnd, &nw, &nh)
             return false
 
-        ; 头一次堆叠时留个底 —— 堆叠会把窗口压矮，收窗口时要照这份原始位置尺寸还原
-        if !this._stacked {
+        ; 头一次堆叠时留个底 —— 堆叠会把窗口压矮，收窗口时要照这份原始位置尺寸还原。
+        ; ⚠ 只在「还没有底稿」时留：底稿的语义是**用户自己的窗口格局**。
+        ;   若每次堆叠都重留，就会把上一次堆叠后的压扁尺寸当作新旧稿 ——
+        ;   「堆叠 → Alt+Z 收起 → Alt+Z 展开」一轮下来，实测 711x885 会被写成 744x533，
+        ;   之后终端不在时窗口就再也回不到原来的大小。
+        ;   底稿由 _RememberPosition 在**非堆叠态**隐藏时刷新（见那里的注释）。
+        if !IsObject(this._preStackRect) {
             try {
                 WinGetPos(&ox, &oy, &ow, &oh, "ahk_id " . ghwnd)
                 this._preStackRect := {x: ox, y: oy, w: ow, h: oh}
@@ -1765,33 +1778,65 @@ class WindowFeature {
         minW := 450 * A_ScreenDPI // 96
         minH := 300 * A_ScreenDPI // 96
 
-        ; 笔记窗口：与终端同宽、左边对齐，顶边贴工作区顶部
-        noteX := tx
-        noteW := Max(tw, minW)     ; 终端比 MinSize 还窄时按 MinSize 走，免得 WinMove 被拒
-        noteY := wkTop + margin
+        ; 摆位置一律按「可见边界」算 —— 直接拿 WinGetPos 的矩形去拼，
+        ; 肉眼看会多出上窗那 9px 的不可见底边框（12 的缝看着像 21），显得松散。
+        tFrame := this._InvisibleFrame(tr.hwnd)
+        nFrame := this._InvisibleFrame(ghwnd)
+        termVisL := tx - tFrame.l, termVisT := ty - tFrame.t
+        termVisR := tx + tw - tFrame.r, termVisB := ty + th - tFrame.b
+
+        ; 笔记窗口的可见目标：左边与终端对齐、同宽、顶边贴工作区顶、底边在终端上方留 gap
+        noteVisL := termVisL
+        noteVisW := termVisR - termVisL
+        noteVisT := wkTop + margin
 
         ; 方案一：终端原地不动，笔记窗口填它上方的空间
-        availH := ty - gap - noteY
-        if (availH >= minH) {
-            WinMove(noteX, noteY, noteW, availH, "ahk_id " . ghwnd)
+        noteVisB := termVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
             this._stacked := true
             return true
         }
 
         ; 方案二：终端已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
         ; 尺寸（宽高）原样保留，只挪位置
-        newTy := wkBottom - margin - th
-        availH := newTy - gap - noteY
-        if (availH >= minH) {
-            WinMove(tx, newTy, , , "ahk_id " . tr.hwnd)   ; 宽高留空 = 保持不变
+        newTermVisT := (wkBottom - margin) - (termVisB - termVisT)
+        noteVisB := newTermVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            newTermY := newTermVisT + tFrame.t
+            WinMove(tx, newTermY, , , "ahk_id " . tr.hwnd)   ; 宽高留空 = 保持不变
             ; 终端挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
-            this._terminalRect := {hwnd: tr.hwnd, x: tx, y: newTy, w: tw, h: th}
-            WinMove(noteX, noteY, noteW, availH, "ahk_id " . ghwnd)
+            this._terminalRect := {hwnd: tr.hwnd, x: tx, y: newTermY, w: tw, h: th}
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
             this._stacked := true
             return true
         }
 
         return false
+    }
+
+    ; 按「可见边界」摆放窗口：传进来的是肉眼看到的矩形，
+    ; 内部补上该窗口的不可见边框偏移再交给 WinMove（后者认的是含边框的矩形）。
+    static _MoveToVisible(hwnd, visL, visT, visW, visH, frame) {
+        rectW := Max(visW + frame.r - frame.l, 1)
+        rectH := Max(visH + frame.b - frame.t, 1)
+        WinMove(visL + frame.l, visT + frame.t, rectW, rectH, "ahk_id " . hwnd)
+    }
+
+    ; 窗口矩形比「可见边界」多出来的那圈不可见调整边框（含 DWM 阴影）。
+    ; 返回 {l, t, r, b} = 各自的「矩形边 − 可见边」，左 / 上通常为负。
+    ; ⚠ 本机（150% 缩放）实测：左 −9、上 0、右 9、下 9；25% 缩放或旧系统上可能不同，
+    ;   所以这里每次都实测，不写死。
+    static _InvisibleFrame(hwnd) {
+        buf := Buffer(16, 0)
+        try
+            DllCall("dwmapi\DwmGetWindowAttribute", "ptr", hwnd, "uint", 9, "ptr", buf, "uint", 16)
+        catch
+            return {l: 0, t: 0, r: 0, b: 0}   ; 拿不到就当作没有不可见边框
+        WinGetPos(&rx, &ry, &rw, &rh, "ahk_id " . hwnd)
+        vx := NumGet(buf, 0, "int"), vy := NumGet(buf, 4, "int")
+        vr := NumGet(buf, 8, "int"), vb := NumGet(buf, 12, "int")
+        return {l: rx - vx, t: ry - vy, r: (rx + rw) - vr, b: (ry + rh) - vb}
     }
 
     ; 移到默认落点
