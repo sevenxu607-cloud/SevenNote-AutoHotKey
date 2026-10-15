@@ -939,12 +939,14 @@ class ThemeService {
         {name: "高雅灰", win: "F0F0F0", edBg: "E8E8E8", text: "2A2A2A", dim: "808080"},
         {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"},
         ; ⚠ 带背景图的主题：bg 是图片路径，bgAlpha 是把图压暗的遮罩不透明度（0-100）。
+        ;   这套配色取自那张星空图（实测全图均色 #181C25、平均亮度仅 28）：win / edBg 都
+        ;   贴着图的暗部走，编辑区内外浑然一体，没有色块割裂感。
         ;   浅色文字压在半透明遮罩上，图暗下去、字亮起来，即终端那种「字浮在图上」。
         ;   图片缺失时自动降级成纯深色底（edBg），浅色文字照样读得清。
         ;   不想改源码就换图：在 _config.ini 的 [Appearance] 里写 BackdropImage / BackdropOpacity。
-        {name: "星空", win: "0D1220", edBg: "0B1020", text: "DCE4F2", dim: "8794AC"
+        {name: "星空", win: "13161D", edBg: "0F1218", text: "D8DEE8", dim: "8A93A2"
             , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
-            , bgAlpha: 45}
+            , bgAlpha: 28}
     ]
 
     static _current := 1
@@ -989,10 +991,36 @@ class ThemeService {
 
         try State.GetThemeLabel().Value := this._BuildLabel()
 
+        ; 深色主题连标题栏一起变深 —— Windows 默认画白标题栏，压在深色窗口上很扎眼
+        this._SetDarkTitleBar(t)
+
         if !this._loading
             this.SaveToConfig()
 
         EventBus.Emit("Theme.Changed", {name: t.name, idx: this._current})
+    }
+
+    ; 标题栏深浅跟着主题底色走：按亮度判断，深色主题开 immersive dark mode、浅色主题关掉。
+    ; ⚠ 属性号随 Windows 版本变：Win10 1903+ / Win11 用 20，Win10 1809 用 19；
+    ;   先试 20，DllCall 返回非 0（不支持该属性）再退到 19。
+    static _SetDarkTitleBar(t) {
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return
+        r  := Integer("0x" . SubStr(t.win, 1, 2))
+        gg := Integer("0x" . SubStr(t.win, 3, 2))
+        b  := Integer("0x" . SubStr(t.win, 5, 2))
+        dark := (0.299 * r + 0.587 * gg + 0.114 * b) < 128 ? 1 : 0
+
+        v := Buffer(4, 0)
+        NumPut("int", dark, v, 0)
+        try {
+            for attr in [20, 19] {
+                if !DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
+                    , "int", attr, "ptr", v, "int", 4, "int")
+                    break
+            }
+        }
     }
 
     static SaveToConfig() {
@@ -1259,13 +1287,20 @@ class BackdropService {
         oldMem := DllCall("SelectObject", "ptr", hdcMem, "ptr", hbm, "ptr")
 
         ; ① 原图 → 目标尺寸（HALFTONE 比默认的 COLORONCOLOR 平滑）
+        ;    等比裁剪（cover）而非拉伸：3840x2400（16:10）硬塞进 665x725（0.92）会被压扁，
+        ;    星云拉成竖条就"不清晰"了。按 max 缩放系数放大到刚好盖满，再从中心裁出与目标
+        ;    同比例的一块来画 —— 只裁不压，画面比例保持原样。
         hdcSrc := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
         oldSrc := DllCall("SelectObject", "ptr", hdcSrc, "ptr", this._srcBmp, "ptr")
         DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
         DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
+        k := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
+        cw := Round(w / k)
+        ch := Round(h / k)
         DllCall("StretchBlt", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
-            , "ptr", hdcSrc, "int", 0, "int", 0, "int", this._srcW, "int", this._srcH
-            , "uint", 0x00CC0020)                                  ; SRCCOPY
+            , "ptr", hdcSrc
+            , "int", Round((this._srcW - cw) / 2), "int", Round((this._srcH - ch) / 2)
+            , "int", cw, "int", ch, "uint", 0x00CC0020)            ; SRCCOPY
         DllCall("SelectObject", "ptr", hdcSrc, "ptr", oldSrc)
         DllCall("DeleteDC", "ptr", hdcSrc)
 
@@ -1357,7 +1392,6 @@ class StatusBar {
         EventBus.On("Line.Indented",      (*) => this.SetMsg("✓ 已缩进"))
         EventBus.On("Line.Outdented",     (*) => this.SetMsg("✓ 已取消缩进"))
         EventBus.On("CapsLock.Toggled",   (d) => this.SetMsg(d.msg))
-        EventBus.On("Backdrop.Toggled",   (d) => this.SetMsg(d.on ? "✓ 背景图：开" : "✓ 背景图：关"))
         EventBus.On("Title.Changed",      (d) => (
             this.SetTag(d.tag),
             this.SetMsg(d.tag = "" ? "✓ 标签已清除" : "✓ 标签：" . d.tag)))
@@ -1939,6 +1973,9 @@ class SearchFeature {
         this._themeLabel := themeLabelCtrl
         this._edCtrl := edCtrl
         this._SetVisible(false)
+        ; 搜索条配色跟着主题走：否则「星空」底下会横插一块浅米黄
+        this._ApplyColors()
+        EventBus.On("Theme.Changed", (*) => this._ApplyColors())
     }
 
     static IsVisible() => this._visible
@@ -2019,6 +2056,33 @@ class SearchFeature {
         try this._icon.Visible := v
         try this._edit.Visible := v
         try this._count.Visible := v
+    }
+
+    ; ─── 配色：跟着当前主题走 ───
+    ; 搜索条底色要比编辑区深一档才分得出来（深色主题下方向相反），所以统一用
+    ; 「主题编辑区底色 + 25% 次级文字色」混出来，浅色 / 深色两边都自然。
+    static _ApplyColors() {
+        t := ThemeService.Themes[ThemeService.GetCurrent()]
+        if !IsObject(t)
+            return
+        barBg := this._Mix(t.edBg, t.dim, 25)
+        for ctrl in [this._barBg, this._icon, this._count]
+            try ctrl.Opt("Background" . barBg)
+        try this._icon.Opt("c" . t.dim)
+        try this._count.Opt("c" . t.dim)
+        try this._edit.Opt("Background" . t.edBg . " c" . t.text)
+    }
+
+    ; 两个十六进制 RGB 之间线性插值，pct = 第二个色的百分比（0-100）
+    static _Mix(hexA, hexB, pct) {
+        out := ""
+        loop 3 {
+            i := (A_Index - 1) * 2
+            a := Integer("0x" . SubStr(hexA, i + 1, 2))
+            b := Integer("0x" . SubStr(hexB, i + 1, 2))
+            out .= Format("{:02X}", Round(a + (b - a) * pct / 100))
+        }
+        return out
     }
 
     static Layout(winWidth, winHeight) {
@@ -2373,14 +2437,11 @@ class FontFeature {
 ; 主题（目前只有「星空」）才铺图，切到别的主题自动撤掉、回到纯底色。
 ; 文字浮在图上、图铺满整个编辑区（终端式，非相框式）。
 class BackdropFeature {
-    static _on := false
     static _lastW := 0
     static _lastH := 0
-    static _applied := false
+    static _applied := false  ; 当前是否已铺图（启动期窗口尺寸是 0，此时为 false）
     static _bgPath := ""      ; 当前主题生效的背景图路径（空 = 该主题没有背景图）
     static _bgAlpha := 60     ; 当前生效的遮罩不透明度（0-100）
-
-    static IsOn() => this._on
 
     ; ⚠ 必须与组合根 OnSize 里 ed.Move 的矩形完全一致，否则图层会与编辑区错位
     static _Rect(winW, winH) {
@@ -2391,78 +2452,66 @@ class BackdropFeature {
 
     static Init(g) {
         BackdropService.Attach(g)
-        ; 换主题 = 换背景图：带 bg 的主题铺图，其余撤图
+        ; 换主题 = 换背景图：带 bg 的主题铺图，其余撤图。没有开关 —— 想关就切主题，
+        ; 这也正是「往 Themes 里加一行就是一套新主题」的原设计。
         EventBus.On("Theme.Changed", (*) => this.Refresh())
     }
 
-    ; 按当前主题刷新「图路径 + 遮罩不透明度」缓存。
-    ; 配置优先于主题自带，这样不动源码也能换图 / 调压暗程度：
+    ; 按当前主题刷新「图路径 + 遮罩色 + 不透明度」缓存。配置优先于主题自带，
+    ; 这样不动源码也能换图 / 调压暗程度：
     ;   [Appearance] BackdropImage   —— 非空则覆盖主题的 bg
     ;   [Appearance] BackdropOpacity —— >0 则覆盖主题的 bgAlpha
     static _Sync() {
         t := ThemeService.Themes[ThemeService.GetCurrent()]
+        hasBg := (IsObject(t) && t.HasProp("bg"))
+
         p := ConfigService.Read("Appearance", "BackdropImage")
-        if (p = "" && IsObject(t) && t.HasProp("bg"))
+        if (p = "" && hasBg)
             p := t.bg
         this._bgPath := p
         BackdropService.SetImage(p)
 
         a := ConfigService.ReadInt("Appearance", "BackdropOpacity", 0)
         if (a <= 0)
-            a := (IsObject(t) && t.HasProp("bgAlpha")) ? t.bgAlpha : 60
+            a := hasBg ? t.bgAlpha : 60
         this._bgAlpha := a
+
+        ; 遮罩色取主题编辑区底色，图的色调就跟着主题走（图缺失时它就是那块纯底色）
+        BackdropService.SetMask(hasBg ? t.edBg : "", this._bgAlpha)
     }
 
-    ; 开关：Alt+B。只对带背景图的主题有效
-    static Toggle() {
-        this._Sync()
-        if !BackdropService.HasImage() {
-            EventBus.Emit("Error.Occurred"
-                , {msg: "主题「" . ThemeService.GetName() . "」没有背景图"})
-            return
-        }
-        this._on := !this._on
-        this._Apply()
-        ConfigService.Write("Appearance", "BackdropOn", this._on ? 1 : 0)
-    }
-
-    ; 换主题后重新判定。静默应用：状态栏留给「✓ 主题：xxx」，别被背景图消息盖掉
     static Refresh() {
         this._Sync()
-        this._Apply(true)
+        this._Apply()
     }
 
     ; 窗口尺寸变化：记下尺寸，已铺图则按新尺寸重铺
     static Layout(winW, winH) {
         this._lastW := winW
         this._lastH := winH
-        ; 启动时窗口尚未 Show，尺寸仍是 0，_Apply 会判成「不显示」；
-        ; 首次拿到有效尺寸后补一次完整应用，否则图会一直不出来。
+        ; 启动时窗口尚未 Show，尺寸仍是 0，此时不铺；首次拿到有效尺寸后补一次，
+        ; 否则图会一直不出来。
         if !this._applied {
-            if (this._on && this._bgPath != "" && BackdropService.HasImage())
-                this._Apply(true)
+            if (this._bgPath != "" && BackdropService.HasImage())
+                this._Apply()
             return
         }
         rect := this._Rect(winW, winH)
         BackdropService.Render(rect.x, rect.y, rect.w, rect.h)
     }
 
-    static _Apply(quiet := false) {
+    ; 按 _bgPath 决定铺图还是撤图：主题没带 bg、图片不存在、窗口还没尺寸 —— 三种都走撤图。
+    static _Apply() {
         hwndEd := State.GetEd()
         if !hwndEd
             return
         ; 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 会匹配不到
         DetectHiddenWindows(true)
 
-        useIt := this._on && this._bgPath != ""
-            && BackdropService.HasImage()
-            && this._lastW > 1 && this._lastH > 1
-        this._applied := useIt
+        useIt := this._applied := (this._bgPath != "" && BackdropService.HasImage()
+            && this._lastW > 1 && this._lastH > 1)
 
         if useIt {
-            ; 遮罩色取当前主题的编辑区底色，让图与主题色调一致
-            t := ThemeService.Themes[ThemeService.GetCurrent()]
-            BackdropService.SetMask(t.edBg, this._bgAlpha)
             BackdropService.SetVisible(true)
             this.Layout(this._lastW, this._lastH)
             ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
@@ -2475,14 +2524,6 @@ class BackdropFeature {
 
         try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
             , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
-        if !quiet
-            EventBus.Emit("Backdrop.Toggled", {on: useIt})
-    }
-
-    static LoadFromConfig() {
-        this._on := ConfigService.ReadInt("Appearance", "BackdropOn", 1) ? true : false
-        this._Sync()
-        this._Apply(true)   ; 主题没有背景图时，_Apply 内部自行撤掉
     }
 }
 
@@ -2518,7 +2559,6 @@ ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
 ; 背景图：图片路径（留空=不启用）、遮罩不透明度 0-100、开关状态
 ConfigService.SetDefault("Appearance", "BackdropImage", "")
 ConfigService.SetDefault("Appearance", "BackdropOpacity", "0")
-ConfigService.SetDefault("Appearance", "BackdropOn", "1")
 ConfigService.SetDefault("Input", "CapsLockMap", "0")
 ConfigService.SetDefault("Paths", "Vault", "")
 
@@ -2636,7 +2676,6 @@ BackdropFeature.Init(g)
 !Home::GoTodayFeature.Go()
 
 ; 横切·美观
-!b::BackdropFeature.Toggle()
 !t::ThemeFeature.Next()
 !+t::FontFeature.NextFont()
 !=::FontFeature.BiggerSize()
@@ -2684,8 +2723,8 @@ StatusBar.RefreshTag()
 ThemeFeature.LoadFromConfig()
 FontFeature.LoadFromConfig()
 CapsLockFeature.LoadFromConfig()
-; 背景图放最后：它要按当前主题的编辑区底色合成遮罩色
-BackdropFeature.LoadFromConfig()
+; 背景图不必在这里初始化：ThemeService.Apply 会 Emit "Theme.Changed"，
+; 而 BackdropFeature 在 Init 时就挂上了这个事件 —— 启动与换主题都自动重铺。
 
 ShowStartupTip()
 
@@ -2750,8 +2789,7 @@ ShowHelp() {
         . "   Alt+H            显示本帮助`n"
         . "`n"
         . "【外观】`n"
-        . "   Alt+B            背景图 开 / 关（星空主题）`n"
-        . "   Alt+T            切换主题`n"
+        . "   Alt+T            切换主题（含带背景图的「星空」）`n"
         . "   Shift+Alt+T      切换字体`n"
         . "   Alt+=            调大字号`n"
         . "   Alt+-            调小字号`n"
