@@ -55,7 +55,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "2.1"
+    static Version := "2.1.1"
 
     static AppDataDir := A_AppData . "\SevenNote-Dev"
     static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
@@ -2323,7 +2323,7 @@ class DeepSeekFeature {
 
             pid := this._ReadPid()
             if (pid > 0) {
-                hwnd := this._TopWindowOf(pid)
+                hwnd := this._TopWindowOf(pid, true)
                 if hwnd {
                     this._hwnd := hwnd
                     return hwnd
@@ -2335,15 +2335,19 @@ class DeepSeekFeature {
         return 0
     }
 
-    ; 取某进程「用户看得见的那扇窗」。
+    ; 取某进程「属于我们的那扇窗」。
     ; Chromium 一个实例会带一串窗口：Chrome_WidgetWin_0 的辅助窗、IME、
-    ; Base_PowerMessageWindow…（本机实测一个实例 5 个），只有 Chrome_WidgetWin_1
-    ; 且 IsWindowVisible 的那个才是界面本身 —— 两个条件都得要：
-    ; ① 光看 class 不够，别的 Chromium 窗口也可能是 Chrome_WidgetWin_1；
-    ; ② 光看可见不够，辅助窗在某些状态下也报可见。
-    static _TopWindowOf(pid) {
+    ; Base_PowerMessageWindow…（本机实测一个实例 5 个），界面本身是 Chrome_WidgetWin_1。
+    ;
+    ; ⚠ 不能只看 class + 可见：`fallback` 那一支是必须的。窗口被 WinHide 藏着时它
+    ;   依然是我们自己那扇窗 —— 重启程序后靠 pid 文件认回隐藏窗口就是此场景；
+    ;   若要求可见，会认不回、于是又拉起一个新窗口，越按越多。
+    ; ⚠ 可见性只用来「挑」：一个进程可能同时有多个 Chrome_WidgetWin_1（本机实测同一个
+    ;   实例里两个），优先拿可见的那个，都没可见才退回第一个。
+    static _TopWindowOf(pid, relax := false) {
         detectOld := A_DetectHiddenWindows
         DetectHiddenWindows(true)
+        fallback := 0
         try {
             for h in WinGetList("ahk_exe " . this._ExeName()) {
                 if (WinGetPID("ahk_id " . h) != pid)
@@ -2352,11 +2356,13 @@ class DeepSeekFeature {
                     continue
                 if DllCall("IsWindowVisible", "ptr", h, "int")
                     return h
+                if !fallback
+                    fallback := h
             }
         } finally {
             DetectHiddenWindows(detectOld)
         }
-        return 0
+        return relax ? fallback : 0
     }
 
     static _ReadPid() {
@@ -2420,10 +2426,11 @@ class DeepSeekFeature {
         ; 浏览器冷启动比终端快（本机实测起进程 ~0.1s、窗口到位 ~0.9s），但仍要轮询：
         ; 抢在窗口出现前 WinShow 会报「窗口不存在」。
         deadline := A_TickCount + 15000
+        relaxAt := A_TickCount + 3000      ; 3 秒后仍没找到，就连「还没显示」的窗口也算（放宽）
         while (A_TickCount < deadline) {
-            pid := this._NewPidSince(before)
-            if (pid != 0) {
-                hwnd := this._TopWindowOf(pid)
+            relax := A_TickCount >= relaxAt
+            for pid in this._NewPidsSince(before) {
+                hwnd := this._TopWindowOf(pid, relax)
                 if (hwnd != 0) {
                     this._WritePid(pid)
                     this._hwnd := hwnd
@@ -2452,12 +2459,19 @@ class DeepSeekFeature {
         return s
     }
 
-    static _NewPidSince(before) {
+    ; 启动后「新出现、且已经有窗口」的全部 pid。
+    ;
+    ; ⚠ 返回**全集**而不是「第一个」，这是本功能的关键：用户自己的浏览器一直在跑，
+    ;   随时会冒出新的渲染进程（它们没有 Chrome_WidgetWin_1 窗，永远匹配不上）。
+    ;   只返回第一个的话，一旦它排在真正那个前面，就会整段超时卡死到「找不到窗口」——
+    ;   本机实测：新进程 22072 挡住真正的 23064，连卡 8 秒。全集逐个过就没有这个问题。
+    static _NewPidsSince(before) {
+        out := []
         for pid, _ in this._PidSnapshot() {
             if !before.Has(pid)
-                return pid
+                out.Push(pid)
         }
-        return 0
+        return out
     }
 
     static _ShowAndFocus(hwnd) {
