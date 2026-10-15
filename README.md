@@ -165,6 +165,16 @@ BackdropOpacity=20                      ; 0 或留空则用主题自带值；0-1
 3. 把 `SevenNote.ahk` 放任意位置，双击运行
 4. 首次运行会弹框让你选笔记目录
 
+仓库里的其它东西：
+
+| 路径 | 用途 |
+| --- | --- |
+| `SevenNote.ahk` | 全部源码，单文件 |
+| `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
+| `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault） |
+| `screenshots\` | README 配图 |
+| `.clinerules\` | 架构约定与踩坑记录 |
+
 ---
 
 ## ⌨️ 快捷键一览
@@ -412,6 +422,95 @@ class ExportFeature {
 ```
 
 加完 `Alt+T` 自动循环到新主题。
+
+### 添加带背景图的主题
+
+「星空」不是特例，也不是全局开关 —— 它只是 `Themes` 数组里唯一带 `bg` 的普通成员。
+所以**再添一套图主题，做法就是给数组再加一个带 `bg` 的对象**，别处一律不用改：
+切到它就铺图，切走就撤图，窗口、标题栏、搜索条一起跟着变。
+
+#### 第 1 步：量出这张图的颜色
+
+别凭感觉配。编辑区的底色同时被当作遮罩色，跟图差得远就会压成灰蒙蒙一片。
+仓库里带了个小脚本，直接给答案：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\pick-theme-colors.ps1 `
+    -Image "D:\Pictures\你的图.png" -Name "极光"
+```
+
+它把图缩到 256px 宽后统计明暗分布，输出可直接粘贴的条目：
+
+```
+mean colour : #171C25   luma 27.5
+luma p10/p50/p90 : 12.4 / 24.2 / 46.8
+crop note   : wider than the editor area -> cover scaling trims the left/right edges.
+darkness    : the image is DARK -> bgAlpha 0 (no dimming), matching Windows Terminal.
+
+Paste into ThemeService.Themes:
+
+    {name: "极光", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
+        , bg: "D:\Pictures\你的图.png"
+        , bgAlpha: 0}
+```
+
+`win` / `edBg` = 图的全图均色压暗到 55%。**现有星空主题正是这么来的**（均色 `#171C25` → `#0D0F14`），
+可以用它自测脚本是否正常：`-Image "...\2026-10-14_星空-灰色2.png"` 应当输出 `win: "0D0F14"`。
+`-Name` 可以直接写中文。
+
+#### 第 2 步：粘进 `ThemeService.Themes`
+
+```ahk
+{name: "极光", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
+    , bg: "D:\Pictures\你的图.png"
+    , bgAlpha: 0}
+```
+
+**完成。** `Alt+T` 自动循环到它；铺图、撤图、窗口记忆全部自动生效。
+
+#### 五个必须守住的点
+
+| 点 | 为什么 |
+| --- | --- |
+| **`bg` 与 `bgAlpha` 必须成对写** | `BackdropFeature._Sync()` 见主题带 `bg` 就会读 `t.bgAlpha`；只写 `bg` 会抛「属性不存在」 |
+| **新主题追加到数组末尾** | `ThemeIndex` 存的是**数组下标**，插在中间会把老用户当前的主题顶掉 |
+| **配色必须取自图本身** | `edBg` 同时充当压暗遮罩色（`BackdropService.SetMask`），和图差得远整张图就发灰 |
+| **`bgAlpha = 0` 时前景色必须够亮** | 图不压暗，文字直接压在星云上；`text` 要近白，`dim` 别低于 `#9FAABC` 一档 |
+| **别用 `_config.ini` 的 `BackdropImage` 换图** | 它是**全局覆盖**，一旦写上会盖掉**所有**带 `bg` 的主题。多套图主题并存时，换图请直接改主题自己的 `bg` |
+
+标题栏深浅是自动的：`ThemeService._SetDarkTitleBar` 按 `win` 的加权亮度是否小于 128 决定，
+深色主题不必手工处理。
+
+#### 图片本身怎么选
+
+- **比例**：编辑区近方形（默认窗口下约 `695 x 815`，随窗口变化），脚本会提示裁切方向。
+  16:10 横图做 cover 缩放要裁掉左右两边，主体别贴边。
+- **大小**：不低于 `1400 x 1400`。缩图走**逐级对折 + HALFTONE**，大图缩下来不会发毛；
+  但源图比目标还小就是放大，一样糊。
+- **格式**：`.png` / `.jpg` / `.bmp` 均可（GDI+ 解码）。
+- **内容**：明暗别太跳。文字压在均色附近最稳；大片纯白或纯黑会让某处文字读不清。
+
+#### 想压暗一点
+
+图偏亮时不压暗文字就发飘，三种改法任选：
+
+```ini
+; 1) _config.ini 全局压暗 —— 注意：对「所有」图主题生效
+[Appearance]
+BackdropOpacity=20      ; 0-100，越小图越亮越清晰
+```
+
+```ahk
+; 2) 只改这一套主题自带的值
+, bgAlpha: 20
+```
+
+```ahk
+; 3) 图太亮就换思路：前景转深、图压重些（脚本对亮图会自动给出这套值）
+{name: "雪原", win: "C8CCD4", edBg: "C8CCD4", text: "1A1C22", dim: "5A6068"
+    , bg: "D:\Pictures\snow.png"
+    , bgAlpha: 30}
+```
 
 ### 关键坑点（踩过的坑）
 

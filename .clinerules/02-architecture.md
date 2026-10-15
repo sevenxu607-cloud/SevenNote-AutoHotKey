@@ -61,3 +61,22 @@ class ExportFeature {
 ```
 
 加完 `Alt+T` 自动循环到新主题，无需改别处。
+
+### 带背景图的主题
+
+多一组可选字段：`bg`（图片绝对路径）、`bgAlpha`（压暗遮罩 0-100）。
+
+```ahk
+{name: "极光", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
+    , bg: "D:\Pictures\your-wall.png"
+    , bgAlpha: 0}
+```
+
+- **`bg` / `bgAlpha` 必须成对**：`BackdropFeature._Sync()` 见 `bg` 就读 `t.bgAlpha`，
+  缺了会抛「属性不存在」。
+- **只能追加到数组末尾**：`ThemeIndex` 存下标，插中间会顶掉老用户当前的主题。
+- **配色从图取**，用 `tools\pick-theme-colors.ps1`（`win` = 图均色 × 0.55；
+  星空主题即均色 `#171C25` → `#0D0F14`）。`edBg` 兼作压暗遮罩色，偏离图色会发灰。
+- **`BackdropImage` 是全局覆盖**，会盖掉所有带 `bg` 的主题 → 多套图主题并存时别设它。
+
+完整步骤、图片规格与压暗三法见 README「开发指南 → 添加带背景图的主题」。
