@@ -1535,48 +1535,57 @@ class StatusBar {
 ; ═══════════════════════════════════════════════════════════════════════════
 
 class WindowFeature {
-    ; 终端窗口的位置与尺寸（PowerShellFeature 摆好后广播过来）。
-    ; 非对象 = 屏幕上没有终端，呼出时按记忆位置 / 默认落点走。
-    static _terminalRect := ""
+    ; ═══ 伴生窗口适配（peer docking）═══
+    ; 「呼出一个外部窗口 → 笔记窗口自动让位 / 堆叠」这套机制对所有 Feature 通用，
+    ; 不限于终端 —— 以后要换成资源管理器、Obsidian、浏览器，照同一份契约做即可。
+    ; 契约就三个事件，详见 README「开发指南 → 添加呼出外部窗口的功能」：
+    ;   Peer.Preparing  外部窗口**即将露面**   → 笔记窗口先退场（别当着用户的面搬它）
+    ;   Peer.Placed     已落位，带 {hwnd, x, y, w, h}（**真实**窗口矩形）→ 笔记窗口按它摆
+    ;   Peer.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
+    ; 发布方只管广播这三条；订阅、摆放算法全在本类里，接入新窗口不用改它。
+    ;
+    ; 伴生窗口的位置与尺寸（发布方摆好后广播过来）。
+    ; 非对象 = 屏幕上没有伴生窗口，呼出时按记忆位置 / 默认落点走。
+    static _peerRect := ""
 
-    ; 当前窗口位置是不是「与终端上下堆叠」摆出来的。是的话收窗口时不覆盖位置记忆 ——
-    ; 那份坐标和高度都是临时算的（见 _StackWithTerminal），不该被当成用户摆的格局。
+    ; 当前窗口位置是不是「与伴生窗口上下堆叠」摆出来的。是的话收窗口时不覆盖位置记忆 ——
+    ; 那份坐标和高度都是临时算的（见 _StackWithPeer），不该被当成用户摆的格局。
     static _stacked := false
 
-    ; 堆叠前窗口的位置与尺寸。堆叠是临时布局，脱离（终端关掉）后要照这份底稿还原 ——
+    ; 堆叠前窗口的位置与尺寸。堆叠是临时布局，脱离（伴生窗口关掉）后要照这份底稿还原 ——
     ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
     static _preStackRect := ""
 
-    ; ─── 挂载：订阅终端生命周期 ───
+    ; ─── 挂载：订阅伴生窗口生命周期 ───
     ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
     static Init() {
-        EventBus.On("Terminal.Placed",    (rect) => this._OnTerminalPlaced(rect))
-        EventBus.On("Terminal.Preparing", (*)    => this._CollapseForTerminal())
-        EventBus.On("Terminal.Failed",    (*)    => this._RestoreAfterFailedTerminal())
+        EventBus.On("Peer.Placed",    (rect) => this._OnPeerPlaced(rect))
+        EventBus.On("Peer.Preparing", (*)    => this._CollapseForPeer())
+        EventBus.On("Peer.Failed",    (*)    => this._RestoreAfterFailedPeer())
     }
 
-    ; 终端马上要露面，先让笔记窗口退场。
+    ; 伴生窗口马上要露面，先让笔记窗口退场。
     ;
-    ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：终端落位后
-    ; _AdaptToTerminal 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
+    ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：伙伴落位后
+    ; _AdaptToPeer 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
     ; 「隐藏态下把位置尺寸算好、最后一次性露面」（见 _PlaceWindow）。不这么做的话，
     ; 就是当着用户的面把一个**已经显示**的窗口搬去堆叠位，平移与控件重排连在一起，
     ; 看着就是「飘一下」。
     ;
     ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
     ; 与用户自己按 Alt+Z 收起完全同一条路。
-    static _CollapseForTerminal() {
+    static _CollapseForPeer() {
         if !State.GetGuiHwnd()
             return
         if this.IsShowing()
             this.Hide()
     }
 
-    ; 终端最终没起来（Run 抛错，或等满超时都找不到窗口）—— 刚才为它让位而收起的
+    ; 伴生窗口最终没起来（Run 抛错，或等满超时都找不到窗口）—— 刚才为它让位而收起的
     ; 窗口得还回来。少了这条兜底，用户按一次 Alt+C，屏幕上就什么都剩不下。
-    ; 记忆里那份 _terminalRect 若指向已消失的终端，_StackWithTerminal 开头有 alive
+    ; 记忆里那份 _peerRect 若指向已消失的窗口，_StackWithPeer 开头有 alive
     ; 检查兜着，Show() 会自行回落到记忆位置 / 默认落点。
-    static _RestoreAfterFailedTerminal() {
+    static _RestoreAfterFailedPeer() {
         if !State.GetGuiHwnd()
             return
         if this.IsShowing()
@@ -1584,26 +1593,27 @@ class WindowFeature {
         this.Show()
     }
 
-    ; 记下终端的位置，再让笔记窗口适配 —— 两步都要做，
-    ; 少记一步 _FitBesideTerminal 就没有分区依据，会直接退回记忆位置。
-    static _OnTerminalPlaced(rect) {
-        this._terminalRect := rect
-        this._AdaptToTerminal()
+    ; 记下伴生窗口的位置，再让笔记窗口适配 —— 两步都要做：
+    ; 少记一步（this._peerRect := rect）的话，_StackWithPeer 没有分区依据，
+    ; 会直接退回记忆位置。
+    static _OnPeerPlaced(rect) {
+        this._peerRect := rect
+        this._AdaptToPeer()
     }
 
-    ; 终端出现了 → 笔记窗口自动适配：
-    ;   已显示 → 就地与终端重新堆叠；正藏着 → 弹出来（Show 内部会直接按堆叠位置定位，
+    ; 伴生窗口出现了 → 笔记窗口自动适配：
+    ;   已显示 → 就地与它重新堆叠；正藏着 → 弹出来（Show 内部会直接按堆叠位置定位，
     ;   不会先出现在原位再跳一下）。
     ;
-    ; ⚠ 正常流程下走不到「已显示」那一支 —— 终端露面之前 PowerShellFeature 会先广播
-    ;   Terminal.Preparing，那时窗口已经被收起。留着它是防御：万一订阅没挂上，或将来
-    ;   有别的来源广播 Terminal.Placed，至少仍会适配，而不是摆着不动。
-    static _AdaptToTerminal() {
+    ; ⚠ 正常流程下走不到「已显示」那一支 —— 伙伴露面之前发布方会先广播
+    ;   Peer.Preparing，那时窗口已经被收起。留着它是防御：万一订阅没挂上，或将来
+    ;   有别的来源广播 Peer.Placed，至少仍会适配，而不是摆着不动。
+    static _AdaptToPeer() {
         if !State.GetGuiHwnd()
             return
         if this.IsShowing() {
             g := State.GetGui()
-            this._StackWithTerminal(g.Hwnd)
+            this._StackWithPeer(g.Hwnd)
         } else {
             this.Show()
         }
@@ -1661,7 +1671,7 @@ class WindowFeature {
     ; 只记屏幕内的有效位置；屏幕外坐标（最小化停放位、已拔掉的外接屏）一律丢弃
     ; 并清空记忆，让 Show() 回落到默认落点——否则窗口会被永久搬到看不见的地方。
     ;
-    ; 若当前是按「与终端上下堆叠」摆出来的，位置和高度都是临时算的 —— 改用堆叠前的底稿，
+    ; 若当前是按「与伴生窗口上下堆叠」摆出来的，位置和高度都是临时算的 —— 改用堆叠前的底稿，
     ; 不覆盖记忆；否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
     static _RememberPosition(hwnd) {
         ; ⚠ 底稿**用完不丢**：堆叠态下隐藏只是「暂时收起来」，用户随时会 Alt+C 再摆回来，
@@ -1727,9 +1737,9 @@ class WindowFeature {
         try {
             g.Show("Hide")
 
-            ; 终端在屏幕上时按「同宽上下堆叠」摆放 —— 两个窗口拼成一列，界面规整。
-            ; 摆不成（终端已被关掉、或屏幕塞不下两窗）才退回记忆位置 / 默认落点。
-            if !this._StackWithTerminal(ghwnd) {
+            ; 伴生窗口在屏幕上时按「同宽上下堆叠」摆放 —— 两个窗口拼成一列，界面规整。
+            ; 摆不成（伙伴已被关掉、或屏幕塞不下两窗）才退回记忆位置 / 默认落点。
+            if !this._StackWithPeer(ghwnd) {
                 rect := State.GetHiddenRect()
                 if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
                     ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
@@ -1749,24 +1759,27 @@ class WindowFeature {
         WinRestore("ahk_id " . ghwnd)
     }
 
-    ; 与终端上下堆叠成规整的一列：同宽、左边对齐、上下紧贴。
-    ; 笔记窗口固定在终端上方，顶边贴工作区顶部，宽度跟着终端走。
+    ; 与伴生窗口上下堆叠成规整的一列：同宽、左边对齐、上下紧贴。
+    ; 笔记窗口固定在伴生窗口上方，顶边贴工作区顶部，宽度跟着伴生窗口走。
     ;
-    ; 终端若已在屏幕下半区（上方能容下笔记窗口）就原地不动；
-    ; 若终端贴着屏幕顶部、上方塞不下，就把终端**下移**到底边贴工作区底 ——
+    ; 伴生窗口若已在屏幕下半区（上方能容下笔记窗口）就原地不动；
+    ; 若它贴着屏幕顶部、上方塞不下，就把它**下移**到底边贴工作区底 ——
     ; 只改位置、尺寸一字不动，腾出上半屏给笔记窗口。
     ; 两步都不成立（屏幕太矮、两窗叠起来放不下）才返回 false，交回记忆位置处置。
+    ;
+    ; ⚠ 这套算法假定「伙伴在下、笔记在上」。以后接入的窗口若更适合左右并排，
+    ;   改的就是这里 —— 发布方一行不用动（见 README 同名小节）。
     ; 调用方需已开 DetectHiddenWindows（窗口可能还是 Show("Hide") 状态）。
-    static _StackWithTerminal(ghwnd) {
-        tr := this._terminalRect
-        if !IsObject(tr)
+    static _StackWithPeer(ghwnd) {
+        pr := this._peerRect
+        if !IsObject(pr)
             return false
 
-        ; 终端可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
+        ; 伴生窗口可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
         detectOld := A_DetectHiddenWindows
         DetectHiddenWindows(true)
         try {
-            alive := WinExist("ahk_id " . tr.hwnd)
+            alive := WinExist("ahk_id " . pr.hwnd)
         } finally {
             DetectHiddenWindows(detectOld)
         }
@@ -1793,9 +1806,9 @@ class WindowFeature {
                 this._preStackRect := ""
         }
 
-        tx := tr.x, ty := tr.y, tw := tr.w, th := tr.h
+        tx := pr.x, ty := pr.y, tw := pr.w, th := pr.h
 
-        ; 工作区取终端所在的**那块**显示器 —— 终端可能被放到副屏上
+        ; 工作区取伴生窗口所在的**那块**显示器 —— 它可能被放到副屏上
         monIdx := 1
         cx := tx + tw // 2, cy := ty + th // 2
         loop MonitorGetCount() {
@@ -1815,33 +1828,33 @@ class WindowFeature {
 
         ; 摆位置一律按「可见边界」算 —— 直接拿 WinGetPos 的矩形去拼，
         ; 肉眼看会多出上窗那 9px 的不可见底边框（12 的缝看着像 21），显得松散。
-        tFrame := this._InvisibleFrame(tr.hwnd)
+        pFrame := this._InvisibleFrame(pr.hwnd)
         nFrame := this._InvisibleFrame(ghwnd)
-        termVisL := tx - tFrame.l, termVisT := ty - tFrame.t
-        termVisR := tx + tw - tFrame.r, termVisB := ty + th - tFrame.b
+        peerVisL := tx - pFrame.l, peerVisT := ty - pFrame.t
+        peerVisR := tx + tw - pFrame.r, peerVisB := ty + th - pFrame.b
 
-        ; 笔记窗口的可见目标：左边与终端对齐、同宽、顶边贴工作区顶、底边在终端上方留 gap
-        noteVisL := termVisL
-        noteVisW := termVisR - termVisL
+        ; 笔记窗口的可见目标：左边与伙伴对齐、同宽、顶边贴工作区顶、底边在伙伴上方留 gap
+        noteVisL := peerVisL
+        noteVisW := peerVisR - peerVisL
         noteVisT := wkTop + margin
 
-        ; 方案一：终端原地不动，笔记窗口填它上方的空间
-        noteVisB := termVisT - gap
+        ; 方案一：伴生窗口原地不动，笔记窗口填它上方的空间
+        noteVisB := peerVisT - gap
         if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
             this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
             this._stacked := true
             return true
         }
 
-        ; 方案二：终端已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
+        ; 方案二：伴生窗口已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
         ; 尺寸（宽高）原样保留，只挪位置
-        newTermVisT := (wkBottom - margin) - (termVisB - termVisT)
-        noteVisB := newTermVisT - gap
+        newPeerVisT := (wkBottom - margin) - (peerVisB - peerVisT)
+        noteVisB := newPeerVisT - gap
         if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
-            newTermY := newTermVisT + tFrame.t
-            WinMove(tx, newTermY, , , "ahk_id " . tr.hwnd)   ; 宽高留空 = 保持不变
-            ; 终端挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
-            this._terminalRect := {hwnd: tr.hwnd, x: tx, y: newTermY, w: tw, h: th}
+            newPeerY := newPeerVisT + pFrame.t
+            WinMove(tx, newPeerY, , , "ahk_id " . pr.hwnd)   ; 宽高留空 = 保持不变
+            ; 伴生窗口挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
+            this._peerRect := {hwnd: pr.hwnd, x: tx, y: newPeerY, w: tw, h: th}
             this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
             this._stacked := true
             return true
@@ -1982,6 +1995,14 @@ class UndoFeature {
 }
 
 
+; ─── 参考实现：Alt+C 呼出终端 ───
+; 本 Feature 是「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的示范用法。
+; 要接入别的外部窗口（资源管理器 / Obsidian / 浏览器…），照这四步抄即可：
+;   ① 确定能起来之后，先广播 Peer.Preparing —— 让笔记窗口退场
+;   ② 启动外部程序（⚠ 别传 Run 的 "Hide"，理由见 _LaunchPowerShell）
+;   ③ 轮询到它的窗口后 WinShow / WinActivate，再用 _BroadcastRect 广播 Peer.Placed
+;   ④ 任何一步失败（Run 抛错、等满超时）都要广播 Peer.Failed，把笔记窗口还回来
+; 逐条说明与必须守住的点见 README「开发指南 → 添加呼出外部窗口的功能」。
 class PowerShellFeature {
     static _initialized := false
     static _powershellPath := A_WinDir . "\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -2022,10 +2043,10 @@ class PowerShellFeature {
 
     static _ShowAndFocus(hwnd) {
         ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。理由详见
-        ; WindowFeature._CollapseForTerminal。重复发是无害的：窗口已经收起时那次调用会跳过。
+        ; WindowFeature._CollapseForPeer。重复发是无害的：窗口已经收起时那次调用会跳过。
         ; ⚠ 这条广播管的是笔记窗口，不是终端：终端的露面时机由它自己的宿主掌握
         ;   （为什么不能靠 Run 的 "Hide" 去藏它，见 _LaunchPowerShell）。
-        EventBus.Emit("Terminal.Preparing")
+        EventBus.Emit("Peer.Preparing")
 
         WinShow("ahk_id " . hwnd)
         WinActivate("ahk_id " . hwnd)
@@ -2042,8 +2063,8 @@ class PowerShellFeature {
         WinActivate("ahk_id " . hwnd)
     }
 
-    ; 广播终端此刻的实际位置与尺寸，供笔记窗口让位。
-    ; ⚠ 读之前要开 DetectHiddenWindows —— 终端刚 WinShow 出来，隐藏窗口 WinGetPos 会抛错。
+    ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; ⚠ 读之前要开 DetectHiddenWindows —— 它刚 WinShow 出来，隐藏窗口 WinGetPos 会抛错。
     static _BroadcastRect(hwnd) {
         detectOld := A_DetectHiddenWindows
         DetectHiddenWindows(true)
@@ -2055,7 +2076,7 @@ class PowerShellFeature {
             DetectHiddenWindows(detectOld)
         }
         if (w > 0 && h > 0)
-            EventBus.Emit("Terminal.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
+            EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
     }
 
     ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
@@ -2079,7 +2100,7 @@ class PowerShellFeature {
         }
 
         ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
-        EventBus.Emit("Terminal.Preparing")
+        EventBus.Emit("Peer.Preparing")
 
         try {
             command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
@@ -2103,7 +2124,7 @@ class PowerShellFeature {
             Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
         } catch as err {
             MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
-            EventBus.Emit("Terminal.Failed")
+            EventBus.Emit("Peer.Failed")
             return
         }
 
@@ -2123,7 +2144,7 @@ class PowerShellFeature {
             this._ShowAndFocus(hwnd)
         } else {
             MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
-            EventBus.Emit("Terminal.Failed")
+            EventBus.Emit("Peer.Failed")
         }
     }
 }

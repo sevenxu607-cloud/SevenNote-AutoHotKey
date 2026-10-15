@@ -516,6 +516,92 @@ BackdropOpacity=20      ; 0-100，越小图越亮越清晰
     , bgAlpha: 30}
 ```
 
+### 添加呼出外部窗口的功能（窗口自动适配）
+
+`Alt+C` 呼出终端时，笔记窗口会自动退场、让出上半屏、与终端上下拼成一列 —— 这**不是为终端写死的**。
+凡是「呼出一个外部窗口」的功能（资源管理器、Obsidian、浏览器、另一个编辑器…），都走同一份
+**伴生窗口适配契约**（peer docking）：发布方只管广播三个事件，摆放、记忆、失败兜底全在 `WindowFeature` 里。
+
+#### 机制：三个事件
+
+```
+发布方（你的 Feature）                    订阅方（WindowFeature）
+  ── Peer.Preparing ──────────────────▶  笔记窗口退场（只在显示着时才收）
+  ── 启动外部程序 / 轮询等它露面 ──────▶
+  ── Peer.Placed {hwnd,x,y,w,h} ──────▶  记下矩形 → 按堆叠位摆好 → 一次性露面
+  ── Peer.Failed ─────────────────────▶  把刚才退场的笔记窗口还回来
+```
+
+| 事件 | 何时发 | 带什么 | 笔记窗口的反应 |
+| --- | --- | --- | --- |
+| `Peer.Preparing` | 确定要启动了，**在外部窗口露面之前** | 无 | `_CollapseForPeer()` 收起自己 |
+| `Peer.Placed` | 外部窗口已落位 | `{hwnd, x, y, w, h}` —— **真实**窗口矩形 | `_OnPeerPlaced()` → `_AdaptToPeer()` 摆位并露面 |
+| `Peer.Failed` | 最终没起来 | 无 | `_RestoreAfterFailedPeer()` 把自己还回来 |
+
+> **为什么"先收再摆"**：把「搬窗口」和「露面」拆成两件事。`Show()` 本来就支持**隐藏态下算好位置、
+> 最后一次性露面**（见 `_PlaceWindow`）；若窗口已显示着去搬，平移会连着控件重排一起被看见 ——
+> 观感就是「飘一下」。
+
+#### 接入步骤
+
+`PowerShellFeature` 就是参考实现（类头注释里也标了），可直接对照：
+
+```ahk
+class MyWindowFeature {
+    static Open() {
+        ; ① 确定能起来之后才发 —— 早退分支不能白收一次笔记窗口
+        EventBus.Emit("Peer.Preparing")
+
+        try {
+            Run('"D:\我的程序\app.exe"')     ; ⚠ 第三个参数别传 "Hide"，见下表
+        } catch {
+            EventBus.Emit("Peer.Failed")      ; ④ 起不来就还回去
+            return
+        }
+
+        ; ② 等它的窗口出现（轮询要密：每档间隔都会叠进「按了没反应」的那段空白）
+        deadline := A_TickCount + 15000
+        while (A_TickCount < deadline) {
+            if (hwnd := this._FindIt()) {
+                WinShow("ahk_id " . hwnd)
+                WinActivate("ahk_id " . hwnd)
+                EventBus.Emit("Peer.Placed", this._Rect(hwnd))   ; ③ 广播真实矩形
+                WinActivate("ahk_id " . hwnd)                    ; 广播是同步的，还回前台
+                return
+            }
+            Sleep(20)
+        }
+        EventBus.Emit("Peer.Failed")          ; ④ 等满超时也算失败
+    }
+}
+```
+
+**完成。** `WindowFeature` 一行不用改 —— 让位、堆叠、失败兜底、位置记忆全部自动生效。
+
+#### 必须守住的点
+
+| 点 | 为什么 |
+| --- | --- |
+| **`Peer.Placed` 必须带真实矩形** | 内部要按「可见边界」换算（`_InvisibleFrame` 用 `DwmGetWindowAttribute` 量），自己拼坐标拼不准 —— 窗口矩形比肉眼看到的多一圈不可见边框（本机实测左 −9 / 右 9 / 下 9） |
+| **读矩形前开 `DetectHiddenWindows`** | 刚 `WinShow` 出来的窗口 `WS_VISIBLE` 可能仍是 `0`，此时 `WinGetPos` / `WinMove` **直接抛错**（默认忽略隐藏窗口）。用完恢复原值 `A_DetectHiddenWindows` |
+| **`Peer.Failed` 一定要有** | 少了它就是「按一下热键，屏幕上什么都不剩」—— 笔记窗口被收走却没还回来。`Run` 抛错和等满超时**两条**路径都要发 |
+| **别给 `Run` 传第三参数 `"Hide"`** | 隐藏启动会绕过系统把程序委派给现代宿主的机制，程序退回默认宿主（实测：Windows Terminal 变 conhost，`120x50` + `#012456` 经典蓝）。**要藏就由笔记窗口让位，别去动对方的窗口** |
+| **发布方别自己去摆笔记窗口** | 摆放算法（`_StackWithPeer`）与位置记忆（`_RememberPosition` / `_preStackRect`）都在 `WindowFeature` 里。发布方越界改坐标会和记忆打架 |
+| **`EventBus.Emit` 是同步的** | 广播那一行返回时笔记窗口已经露面了，而 `Show()` 末尾会激活自己、抢走前台。以你的窗口为主角的话，广播后要 `WinActivate` 还给它 |
+| **`Peer.Placed` 的 `hwnd` 不用你清理** | 每次呼出都重记一份；伙伴被关掉后 `_StackWithPeer` 开头有 `WinExist` 存活性检查，会自行退回记忆位置 |
+| **一套机制同时只服务一个伙伴** | `_peerRect` 是单值。将来若要「同时呼出 A 和 B 各占一边」，得先把它升级成列表 —— 那是重构，不是加一行 |
+
+#### 摆放策略在哪改
+
+当前算法是**上下堆叠**（笔记在上、伙伴在下，同宽左对齐），实现在 `WindowFeature._StackWithPeer`：
+
+1. 伙伴已在屏幕下半区 → 它**原地不动**，笔记窗口填它上方的空间
+2. 伙伴贴着屏幕顶部 → 把它**下移**到底边贴工作区底（只挪位置、尺寸一字不动），腾出上半屏
+3. 两条都不成立（屏幕太矮、两窗叠不下）→ 返回 `false`，笔记窗口退回记忆位置 / 默认落点
+
+要改成**左右并排**（比如浏览器更适合放右边），改的就是这一个方法 —— 发布方那三个事件的代码一行不用动。
+间距与边距调 `Config.DockGap` / `Config.DockMargin` 即可，不必碰算法。
+
 ### 关键坑点（踩过的坑）
 
 | 坑 | 说明 |
