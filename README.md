@@ -144,7 +144,7 @@ BackdropOpacity=20                      ; 0 或留空则用主题自带值；0-1
 
 ### ⌨️ 输入增强
 
-- `CapsLock+H/J/K/L` = 方向键（`Alt+C` 开关）
+- `CapsLock+H/J/K/L` = 方向键（`Alt+Shift+C` 开关）
 - 写长文时手不离主键区
 - 可选，不影响正常 CapsLock 使用
 
@@ -188,13 +188,14 @@ BackdropOpacity=20                      ; 0 或留空则用主题自带值；0-1
 | --- | --- |
 | `Alt+Z` | 呼出 / 隐藏 |
 | `Alt+Shift+Z` | 保存并退出 |
+| `Alt+C` | 呼出 / 隐藏 PowerShell（用它自己的默认位置和大小），笔记窗口自动让位 |
 | `Alt+H` | 显示快捷键帮助 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
 | `Alt+T` | 切换主题（含带背景图的「星空」） |
 | `Shift+Alt+T` | 切换字体 |
 | `Alt+= / Alt+-` | 调大 / 调小字号 |
-| `Alt+C` | 切换 CapsLock 键盘映射 |
+| `Alt+Shift+C` | 切换 CapsLock 键盘映射 |
 
 ### 编辑器内热键（窗口激活时）
 

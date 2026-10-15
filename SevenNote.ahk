@@ -75,6 +75,9 @@ class Config {
     static AutoSaveInterval := 120000
     static StatInterval := 500
     static TimestampInterval := 60
+    ; 双窗并存（Alt+C 唤起 PowerShell）时：两窗之间的间隙、距屏幕工作区的边距（物理像素）
+    static DockGap := 12
+    static DockMargin := 15
 }
 
 
@@ -1526,6 +1529,37 @@ class StatusBar {
 ; ═══════════════════════════════════════════════════════════════════════════
 
 class WindowFeature {
+    ; 终端窗口的位置与尺寸（PowerShellFeature 摆好后广播过来）。
+    ; 非对象 = 屏幕上没有终端，呼出时按记忆位置 / 默认落点走。
+    static _terminalRect := ""
+
+    ; ─── 挂载：订阅终端落点 ───
+    ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
+    static Init() {
+        EventBus.On("Terminal.Placed", (rect) => this._OnTerminalPlaced(rect))
+    }
+
+    ; 记下终端的位置，再让笔记窗口适配 —— 两步都要做，
+    ; 少记一步 _FitBesideTerminal 就没有分区依据，会直接退回记忆位置。
+    static _OnTerminalPlaced(rect) {
+        this._terminalRect := rect
+        this._AdaptToTerminal()
+    }
+
+    ; 终端出现了 → 笔记窗口自动适配：
+    ;   已显示 → 就地挪到不重叠处；正藏着 → 弹出来（Show 内部会直接按终端位置定位，
+    ;   不会先出现在原位再跳一下）。
+    static _AdaptToTerminal() {
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing() {
+            g := State.GetGui()
+            this._FitBesideTerminal(g.Hwnd)
+        } else {
+            this.Show()
+        }
+    }
+
     ; ─── 入口：Alt+Z ───
     static Toggle() {
         if this.IsShowing()
@@ -1626,15 +1660,19 @@ class WindowFeature {
         try {
             g.Show("Hide")
 
-            rect := State.GetHiddenRect()
-            if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
-                ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
-                ;   （本机 1.5）。而 rect 来自 WinGetPos，是「物理像素」——喂给 g.Move 会被
-                ;   二次放大（实测 1629,238 → 2444,357）。WinMove 与 WinGetPos 同一单位，配套。
-                WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
-            } else {
-                State.ClearHiddenRect()
-                this._MoveToDefault(g, ghwnd)
+            ; 终端在屏幕上时优先避让 —— 两个窗口同时可见、互不遮挡。
+            ; 避让失败（比如终端占满整屏）才退回记忆位置 / 默认落点。
+            if !this._FitBesideTerminal(ghwnd) {
+                rect := State.GetHiddenRect()
+                if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
+                    ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
+                    ;   （本机 1.5）。而 rect 来自 WinGetPos，是「物理像素」——喂给 g.Move 会被
+                    ;   二次放大（实测 1629,238 → 2444,357）。WinMove 与 WinGetPos 同一单位，配套。
+                    WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+                } else {
+                    State.ClearHiddenRect()
+                    this._MoveToDefault(g, ghwnd)
+                }
             }
         } finally {
             DetectHiddenWindows(detectOld)
@@ -1642,6 +1680,69 @@ class WindowFeature {
 
         g.Show()
         WinRestore("ahk_id " . ghwnd)
+    }
+
+    ; 按终端的实际位置，把笔记窗口安置到旁边的空区，两个窗口互不遮挡。
+    ; 终端不动 —— 它按自己的默认位置和大小出现，是「基准」；谁被动谁适配。
+    ;
+    ; 依次尝试终端右侧 → 下方 → 左侧 → 上方，取第一个放得下「窗口最小尺寸」的位置；
+    ; 该处空间不够原有尺寸就顺带压小（但不会小于最小尺寸）。四处都放不下则返回 false。
+    ; 调用方需已开 DetectHiddenWindows（窗口可能还是 Show("Hide") 状态）。
+    static _FitBesideTerminal(ghwnd) {
+        tr := this._terminalRect
+        if !IsObject(tr)
+            return false
+
+        ; 终端可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            alive := WinExist("ahk_id " . tr.hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if !alive
+            return false
+
+        ; 笔记窗口自身的实际尺寸 —— 窗口此刻多半是隐藏的，按 Show 前的定型值取
+        nw := 0, nh := 0
+        if !this._MeasureStable(ghwnd, &nw, &nh)
+            return false
+
+        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
+        minW := Config.WinW * A_ScreenDPI // 96
+        minH := Config.WinH * A_ScreenDPI // 96
+
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        gap := Config.DockGap, margin := Config.DockMargin
+        tx := tr.x, ty := tr.y, tw := tr.w, th := tr.h
+
+        loop 4 {
+            switch A_Index {
+                case 1:  ; 终端右侧
+                    posX := tx + tw + gap, posY := ty
+                    availW := wkRight - posX - margin
+                    availH := wkBottom - posY - margin
+                case 2:  ; 终端下方
+                    posX := tx, posY := ty + th + gap
+                    availW := tw
+                    availH := wkBottom - posY - margin
+                case 3:  ; 终端左侧
+                    availW := tx - gap - wkLeft - margin
+                    availH := wkBottom - ty - margin
+                    posX := wkLeft + margin, posY := ty
+                default: ; 终端上方
+                    availW := tw
+                    availH := ty - gap - wkTop - margin
+                    posX := tx, posY := wkTop + margin
+            }
+            if (availW < minW || availH < minH)
+                continue
+            ; 空间够就保持原尺寸，不够则压到可用范围内
+            WinMove(posX, posY, Min(nw, availW), Min(nh, availH), "ahk_id " . ghwnd)
+            return true
+        }
+        return false
     }
 
     ; 移到默认落点
@@ -1796,6 +1897,25 @@ class PowerShellFeature {
         try {
             WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
         }
+        ; 终端按它自己的默认位置和大小出现，这里不做任何 WinMove。
+        ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
+        this._BroadcastRect(hwnd)
+    }
+
+    ; 广播终端此刻的实际位置与尺寸，供笔记窗口让位。
+    ; ⚠ 读之前要开 DetectHiddenWindows —— 终端刚 WinShow 出来，隐藏窗口 WinGetPos 会抛错。
+    static _BroadcastRect(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (w > 0 && h > 0)
+            EventBus.Emit("Terminal.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
     }
 
     ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
@@ -2762,6 +2882,8 @@ OnSize(guiObj, MinMax, Width, Height) {
 }
 
 ; ═══ 挂载 Feature ═══
+; 最先挂 —— 它订阅「PowerShell 要出现了」，得赶在第一次 Alt+C 之前注册好
+WindowFeature.Init()
 StatusBar.Init(dateCtrl, tagCtrl, msgCtrl)
 SearchFeature.Init(searchBarBg, searchIcon, searchEdit, searchCount, stat, themeLabel, ed)
 AutoSaveFeature.Init(Config.AutoSaveInterval)
