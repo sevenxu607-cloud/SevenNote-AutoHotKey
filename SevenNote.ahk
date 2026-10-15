@@ -1533,6 +1533,14 @@ class WindowFeature {
     ; 非对象 = 屏幕上没有终端，呼出时按记忆位置 / 默认落点走。
     static _terminalRect := ""
 
+    ; 当前窗口位置是不是「与终端上下堆叠」摆出来的。是的话收窗口时不覆盖位置记忆 ——
+    ; 那份坐标和高度都是临时算的（见 _StackWithTerminal），不该被当成用户摆的格局。
+    static _stacked := false
+
+    ; 堆叠前窗口的位置与尺寸。堆叠是临时布局，脱离（终端关掉）后要照这份底稿还原 ——
+    ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
+    static _preStackRect := ""
+
     ; ─── 挂载：订阅终端落点 ───
     ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
     static Init() {
@@ -1547,14 +1555,14 @@ class WindowFeature {
     }
 
     ; 终端出现了 → 笔记窗口自动适配：
-    ;   已显示 → 就地挪到不重叠处；正藏着 → 弹出来（Show 内部会直接按终端位置定位，
+    ;   已显示 → 就地与终端重新堆叠；正藏着 → 弹出来（Show 内部会直接按堆叠位置定位，
     ;   不会先出现在原位再跳一下）。
     static _AdaptToTerminal() {
         if !State.GetGuiHwnd()
             return
         if this.IsShowing() {
             g := State.GetGui()
-            this._FitBesideTerminal(g.Hwnd)
+            this._StackWithTerminal(g.Hwnd)
         } else {
             this.Show()
         }
@@ -1611,7 +1619,23 @@ class WindowFeature {
     ; 记住当前窗口位置，供下次呼出还原。
     ; 只记屏幕内的有效位置；屏幕外坐标（最小化停放位、已拔掉的外接屏）一律丢弃
     ; 并清空记忆，让 Show() 回落到默认落点——否则窗口会被永久搬到看不见的地方。
+    ;
+    ; 若当前是按「与终端上下堆叠」摆出来的（位置和高度都是临时算的），就不覆盖记忆 ——
+    ; 否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
     static _RememberPosition(hwnd) {
+        ; 与终端堆叠时，位置和高度都是临时算出来的 —— 拿堆叠前的底稿还原再记。
+        ; 否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
+        if this._stacked {
+            this._stacked := false
+            pre := this._preStackRect
+            this._preStackRect := ""
+            if IsObject(pre) && this.IsUsableRect(pre.x, pre.y, pre.w, pre.h) {
+                State.SetHiddenRect(pre.x, pre.y, pre.w, pre.h)
+                return
+            }
+            State.ClearHiddenRect()
+            return
+        }
         try
             WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . hwnd)
         catch
@@ -1660,9 +1684,9 @@ class WindowFeature {
         try {
             g.Show("Hide")
 
-            ; 终端在屏幕上时优先避让 —— 两个窗口同时可见、互不遮挡。
-            ; 避让失败（比如终端占满整屏）才退回记忆位置 / 默认落点。
-            if !this._FitBesideTerminal(ghwnd) {
+            ; 终端在屏幕上时按「同宽上下堆叠」摆放 —— 两个窗口拼成一列，界面规整。
+            ; 摆不成（终端已被关掉、或屏幕塞不下两窗）才退回记忆位置 / 默认落点。
+            if !this._StackWithTerminal(ghwnd) {
                 rect := State.GetHiddenRect()
                 if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
                     ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
@@ -1682,13 +1706,15 @@ class WindowFeature {
         WinRestore("ahk_id " . ghwnd)
     }
 
-    ; 按终端的实际位置，把笔记窗口安置到旁边的空区，两个窗口互不遮挡。
-    ; 终端不动 —— 它按自己的默认位置和大小出现，是「基准」；谁被动谁适配。
+    ; 与终端上下堆叠成规整的一列：同宽、左边对齐、上下紧贴。
+    ; 笔记窗口固定在终端上方，顶边贴工作区顶部，宽度跟着终端走。
     ;
-    ; 依次尝试终端右侧 → 下方 → 左侧 → 上方，取第一个放得下「窗口最小尺寸」的位置；
-    ; 该处空间不够原有尺寸就顺带压小（但不会小于最小尺寸）。四处都放不下则返回 false。
+    ; 终端若已在屏幕下半区（上方能容下笔记窗口）就原地不动；
+    ; 若终端贴着屏幕顶部、上方塞不下，就把终端**下移**到底边贴工作区底 ——
+    ; 只改位置、尺寸一字不动，腾出上半屏给笔记窗口。
+    ; 两步都不成立（屏幕太矮、两窗叠起来放不下）才返回 false，交回记忆位置处置。
     ; 调用方需已开 DetectHiddenWindows（窗口可能还是 Show("Hide") 状态）。
-    static _FitBesideTerminal(ghwnd) {
+    static _StackWithTerminal(ghwnd) {
         tr := this._terminalRect
         if !IsObject(tr)
             return false
@@ -1704,44 +1730,67 @@ class WindowFeature {
         if !alive
             return false
 
-        ; 笔记窗口自身的实际尺寸 —— 窗口此刻多半是隐藏的，按 Show 前的定型值取
+        ; 先把窗口尺寸量定型：Show("Hide") 之后控件固有尺寸要等 OnSize 跑完才反映到
+        ; 外框上，这之后设的尺寸才不会被随后的布局盖回去
         nw := 0, nh := 0
         if !this._MeasureStable(ghwnd, &nw, &nh)
             return false
 
-        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
-        minW := Config.WinW * A_ScreenDPI // 96
-        minH := Config.WinH * A_ScreenDPI // 96
+        ; 头一次堆叠时留个底 —— 堆叠会把窗口压矮，收窗口时要照这份原始位置尺寸还原
+        if !this._stacked {
+            try {
+                WinGetPos(&ox, &oy, &ow, &oh, "ahk_id " . ghwnd)
+                this._preStackRect := {x: ox, y: oy, w: ow, h: oh}
+            } catch
+                this._preStackRect := ""
+        }
 
-        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
-        gap := Config.DockGap, margin := Config.DockMargin
         tx := tr.x, ty := tr.y, tw := tr.w, th := tr.h
 
-        loop 4 {
-            switch A_Index {
-                case 1:  ; 终端右侧
-                    posX := tx + tw + gap, posY := ty
-                    availW := wkRight - posX - margin
-                    availH := wkBottom - posY - margin
-                case 2:  ; 终端下方
-                    posX := tx, posY := ty + th + gap
-                    availW := tw
-                    availH := wkBottom - posY - margin
-                case 3:  ; 终端左侧
-                    availW := tx - gap - wkLeft - margin
-                    availH := wkBottom - ty - margin
-                    posX := wkLeft + margin, posY := ty
-                default: ; 终端上方
-                    availW := tw
-                    availH := ty - gap - wkTop - margin
-                    posX := tx, posY := wkTop + margin
+        ; 工作区取终端所在的**那块**显示器 —— 终端可能被放到副屏上
+        monIdx := 1
+        cx := tx + tw // 2, cy := ty + th // 2
+        loop MonitorGetCount() {
+            MonitorGet(A_Index, &mL, &mT, &mR, &mB)
+            if (cx >= mL && cx < mR && cy >= mT && cy < mB) {
+                monIdx := A_Index
+                break
             }
-            if (availW < minW || availH < minH)
-                continue
-            ; 空间够就保持原尺寸，不够则压到可用范围内
-            WinMove(posX, posY, Min(nw, availW), Min(nh, availH), "ahk_id " . ghwnd)
+        }
+        MonitorGetWorkArea(monIdx, &wkLeft, &wkTop, &wkRight, &wkBottom)
+
+        gap := Config.DockGap, margin := Config.DockMargin
+        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
+        ; （+MinSize450x300 → 本机 150% 缩放下的 675x450）
+        minW := 450 * A_ScreenDPI // 96
+        minH := 300 * A_ScreenDPI // 96
+
+        ; 笔记窗口：与终端同宽、左边对齐，顶边贴工作区顶部
+        noteX := tx
+        noteW := Max(tw, minW)     ; 终端比 MinSize 还窄时按 MinSize 走，免得 WinMove 被拒
+        noteY := wkTop + margin
+
+        ; 方案一：终端原地不动，笔记窗口填它上方的空间
+        availH := ty - gap - noteY
+        if (availH >= minH) {
+            WinMove(noteX, noteY, noteW, availH, "ahk_id " . ghwnd)
+            this._stacked := true
             return true
         }
+
+        ; 方案二：终端已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
+        ; 尺寸（宽高）原样保留，只挪位置
+        newTy := wkBottom - margin - th
+        availH := newTy - gap - noteY
+        if (availH >= minH) {
+            WinMove(tx, newTy, , , "ahk_id " . tr.hwnd)   ; 宽高留空 = 保持不变
+            ; 终端挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
+            this._terminalRect := {hwnd: tr.hwnd, x: tx, y: newTy, w: tw, h: th}
+            WinMove(noteX, noteY, noteW, availH, "ahk_id " . ghwnd)
+            this._stacked := true
+            return true
+        }
+
         return false
     }
 
