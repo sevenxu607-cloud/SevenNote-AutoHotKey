@@ -163,6 +163,9 @@ class State {
     static _tagCtrl := ""
 
     static GetGui() => this._guiObj
+    ; 供 #HotIf 等表达式安全取主窗口句柄：GUI 尚未创建时返回 0
+    ; （否则 "".Hwnd 会抛 "String has no property named Hwnd"）
+    static GetGuiHwnd() => IsObject(this._guiObj) ? this._guiObj.Hwnd : 0
     static SetGui(g) {
         this._guiObj := g
         EventBus.Emit("Gui.Ready", g)
@@ -1198,58 +1201,126 @@ class StatusBar {
 ; ═══════════════════════════════════════════════════════════════════════════
 
 class WindowFeature {
+    ; ─── 入口：Alt+Z ───
     static Toggle() {
-        g := State.GetGui()
-        if DllCall("IsWindowVisible", "ptr", g.Hwnd, "int") {
-            EventBus.Emit("Window.BeforeHide")
-            try {
-                WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . g.Hwnd)
-                State.SetHiddenRect(rectX, rectY, rectW, rectH)
-            }
-            g.Hide()
-        } else {
+        if this.IsShowing()
+            this.Hide()
+        else
             this.Show()
-        }
     }
 
+    ; 判断“当前是否正在显示”。
+    ; 注意：最小化窗口的 WS_VISIBLE 仍是 1，必须连同 IsIconic 一起排除；
+    ; 否则最小化状态下按 Alt+Z 会被误判成“正在显示”而执行隐藏，越按越找不着。
+    static IsShowing() {
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return false
+        return DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            && !DllCall("IsIconic", "ptr", hwnd, "int")
+    }
+
+    ; ─── 收起：先广播、再记位置、最后隐藏 ───
+    static Hide() {
+        g := State.GetGui()
+        EventBus.Emit("Window.BeforeHide")
+        this._RememberPosition(g.Hwnd)
+        g.Hide()
+    }
+
+    ; ─── 呼出：暂停重绘 → 定位 → 还原光标 → 恢复重绘 → 激活 ───
     static Show() {
         g := State.GetGui()
         hwnd := State.GetEd()
         ghwnd := g.Hwnd
         try {
-            SendMessage(0x000B, 0, 0, hwnd)
-            if State.HasHiddenRect() {
-                rect := State.GetHiddenRect()
-                g.Show()
-                WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
-            } else {
-                posX := A_ScreenWidth - Config.WinW - 220
-                posY := (A_ScreenHeight - Config.WinH) // 3
-                if (posX < 10)
-                    posX := 10
-                if (posY < 10)
-                    posY := 10
-                g.Show("x" . posX . " y" . posY
-                    . " w" . Config.WinW . " h" . Config.WinH)
-            }
-            if State.HasCaret() {
-                caret := State.GetCaret()
-                totalLen := SendMessage(0x000E, 0, 0, hwnd)
-                selMin := Min(caret.min, totalLen)
-                selMax := Min(caret.max, totalLen)
-                EditorService.SetSel(hwnd, selMin, selMax)
-            } else {
-                EditorService.MoveCaretToEnd(hwnd)
-            }
-            SendMessage(0x000B, 1, 0, hwnd)
+            this._SuspendRedraw(hwnd)
+            this._PlaceWindow(g, ghwnd)
+            this._RestoreCaret(hwnd)
+            this._ResumeRedraw(hwnd)
             DllCall("RedrawWindow", "ptr", hwnd, "ptr", 0, "ptr", 0
                 , "uint", 0x0001 | 0x0100)
         } finally {
-            try SendMessage(0x000B, 1, 0, hwnd)
+            try this._ResumeRedraw(hwnd)
         }
-        WinActivate(Config.AppName)
+        WinActivate("ahk_id " . ghwnd)
         EventBus.Emit("Window.Shown")
     }
+
+    ; ═══ 位置记忆与定位 ═══
+
+    ; 记住当前窗口位置，供下次呼出还原。
+    ; 只记屏幕内的有效位置；屏幕外坐标（最小化停放位、已拔掉的外接屏）一律丢弃
+    ; 并清空记忆，让 Show() 回落到默认落点——否则窗口会被永久搬到看不见的地方。
+    static _RememberPosition(hwnd) {
+        try
+            WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . hwnd)
+        catch
+            return
+        if this.IsUsableRect(rectX, rectY, rectW, rectH)
+            State.SetHiddenRect(rectX, rectY, rectW, rectH)
+        else
+            State.ClearHiddenRect()
+    }
+
+    ; 位置可用性：必须与某个显示器的工作区相交。
+    ; 最小化窗口的坐标是 -32000 一类的停放位（会按 DPI 缩放成 -21333 等），
+    ; 而它的 WS_VISIBLE 仍为真，只靠可见性判断拦不住。
+    static IsUsableRect(x, y, w, h) {
+        ; 数值守卫：State 里未初始化的记忆值是空字符串，
+        ; 而 AHK v2 的 <= 遇到空字符串会抛「Expected a Number」
+        if !(IsNumber(x) && IsNumber(y) && IsNumber(w) && IsNumber(h))
+            return false
+        if (w <= 0 || h <= 0)
+            return false
+        loop MonitorGetCount() {
+            MonitorGetWorkArea(A_Index, &wkLeft, &wkTop, &wkRight, &wkBottom)
+            if (x < wkRight && y < wkBottom && x + w > wkLeft && y + h > wkTop)
+                return true
+        }
+        return false
+    }
+
+    ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
+    ; 末尾补一次 WinRestore，覆盖“在最小化状态下呼出”的情形。
+    static _PlaceWindow(g, ghwnd) {
+        rect := State.GetHiddenRect()
+        if !(State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h)) {
+            State.ClearHiddenRect()
+            rect := this._DefaultRect()
+        }
+        g.Show()
+        WinRestore("ahk_id " . ghwnd)
+        WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+    }
+
+    ; 默认落点：屏幕右侧偏上，留 220px 边距，并保证不出屏
+    static _DefaultRect() {
+        posX := A_ScreenWidth - Config.WinW - 220
+        posY := (A_ScreenHeight - Config.WinH) // 3
+        if (posX < 10)
+            posX := 10
+        if (posY < 10)
+            posY := 10
+        return {x: posX, y: posY, w: Config.WinW, h: Config.WinH}
+    }
+
+    ; ═══ 光标与重绘 ═══
+
+    ; 还原光标：隐藏前记录的位置优先，没有记录就落到正文末尾
+    static _RestoreCaret(hwnd) {
+        if State.HasCaret() {
+            caret := State.GetCaret()
+            totalLen := SendMessage(0x000E, 0, 0, hwnd)
+            EditorService.SetSel(hwnd, Min(caret.min, totalLen), Min(caret.max, totalLen))
+        } else {
+            EditorService.MoveCaretToEnd(hwnd)
+        }
+    }
+
+    ; WM_SETREDRAW：批量改动期间关掉重绘，避免中间态闪烁
+    static _SuspendRedraw(hwnd) => SendMessage(0x000B, 0, 0, hwnd)
+    static _ResumeRedraw(hwnd) => SendMessage(0x000B, 1, 0, hwnd)
 }
 
 
@@ -1337,6 +1408,20 @@ class PowerShellFeature {
         }
     }
 
+    ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
+    ; 若目标目录不存在（如无 D 盘），依次回退到用户主目录、A_MyDocuments，避免启动失败
+    ; 注：AHK v2 没有 A_UserProfile 内置变量，用户主目录需取自 USERPROFILE 环境变量
+    static _StartDir() {
+        dir := ConfigService.Read("Paths", "PowerShellStartDir")
+        if (dir = "")
+            dir := "D:\"
+        if !DirExist(dir)
+            dir := EnvGet("USERPROFILE")
+        if !DirExist(dir)
+            dir := A_MyDocuments
+        return dir
+    }
+
     static _LaunchPowerShell() {
         if !FileExist(this._powershellPath) {
             MsgBox("未检测到 Windows PowerShell，无法使用 Alt+C 启动。", "SevenNote", "Icon!")
@@ -1345,7 +1430,7 @@ class PowerShellFeature {
 
         try {
             command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
-            Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', "D:\")
+            Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
         } catch as err {
             MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
             return
@@ -2138,6 +2223,10 @@ g.OnEvent("Close", (*) => (g.Hide(), true))
 g.OnEvent("Size", OnSize)
 
 OnSize(guiObj, MinMax, Width, Height) {
+    ; 最小化时 Width/Height 是图标尺寸（实测约 158x26），
+    ; 控件按它算会得到负尺寸，直接跳过
+    if (MinMax = -1)
+        return
     try stat.Move(8, 8, 60, 20)
     try tagCtrl.Move(72, 8, 190, 20)
     try themeLabel.Move(Width - 184, 8, 176, 20)
@@ -2185,7 +2274,7 @@ PowerShellFeature.Init()
 !-::FontFeature.SmallerSize()
 
 ; ═══ 编辑器内热键（按用户旅程排序）═══
-#HotIf WinActive(Config.AppName) && !SearchFeature.IsVisible()
+#HotIf WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible()
 ; ② 输入与编辑
 $^y::LineEditFeature.DeleteLine()
 $^d::LineEditFeature.DuplicateLine()
@@ -2212,7 +2301,7 @@ $^+t::TitleFeature.ShowDialog()
 #HotIf
 
 ; ④ 查看与浏览（搜索栏显示时）
-#HotIf WinActive(Config.AppName) && SearchFeature.IsVisible()
+#HotIf WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible()
 Enter::SearchFeature.Next()
 +Enter::SearchFeature.Prev()
 Esc::SearchFeature.Hide()
