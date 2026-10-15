@@ -116,6 +116,15 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 - **`Alt+T` 切主题，`Alt+Shift+T` 切字体，`Alt+=/-` 调字号**
 - 全部自动记忆，重启保留
 
+### 🖼 背景图（终端式）
+
+文字**直接浮在图上**，图铺满整个编辑区——不是相框式。
+
+- 在 `_config.ini` 的 `[Appearance]` 里填三项：`BackdropImage`（图片路径）、`BackdropOpacity`（遮罩不透明度 0-100，默认 80）、`BackdropOn`（1=启动即开启）
+- **`Alt+B`** 随手开关，状态栏会提示
+- 遮罩色**跟随当前主题的编辑区底色**，切主题时自动重合成，图不会和主题打架
+- 改窗口大小、切主题都会自动重新铺图
+
 ### ⌨️ 输入增强
 
 - `CapsLock+H/J/K/L` = 方向键（`Alt+C` 开关）
@@ -156,6 +165,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
 | `Alt+T` | 切换主题 |
+| `Alt+B` | 背景图 开 / 关 |
 | `Shift+Alt+T` | 切换字体 |
 | `Alt+= / Alt+-` | 调大 / 调小字号 |
 | `Alt+C` | 切换 CapsLock 键盘映射 |
