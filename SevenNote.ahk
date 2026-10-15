@@ -1291,6 +1291,86 @@ class UndoFeature {
 }
 
 
+class PowerShellFeature {
+    static _initialized := false
+    static _powershellPath := A_WinDir . "\System32\WindowsPowerShell\v1.0\powershell.exe"
+    static _windowTitle := "SevenNote PowerShell"
+
+    static Init() {
+        if (this._initialized)
+            return
+        Hotkey("!c", (*) => this.Toggle(), "On")
+        this._initialized := true
+    }
+
+    static Toggle() {
+        hwnd := this._FindPowerShellHwnd()
+        if (hwnd = 0) {
+            this._LaunchPowerShell()
+            return
+        }
+
+        if (WinActive("ahk_id " . hwnd)) {
+            WinHide("ahk_id " . hwnd)
+            return
+        }
+
+        this._ShowAndFocus(hwnd)
+    }
+
+    static _FindPowerShellHwnd() {
+        detectHidden := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            ids := WinGetList(this._windowTitle)
+            return ids.Length ? ids[1] : 0
+        } finally {
+            DetectHiddenWindows(detectHidden = "On")
+        }
+    }
+
+    static _ShowAndFocus(hwnd) {
+        WinShow("ahk_id " . hwnd)
+        WinActivate("ahk_id " . hwnd)
+        try {
+            WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
+        }
+    }
+
+    static _LaunchPowerShell() {
+        if !FileExist(this._powershellPath) {
+            MsgBox("未检测到 Windows PowerShell，无法使用 Alt+C 启动。", "SevenNote", "Icon!")
+            return
+        }
+
+        try {
+            command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
+            Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', "D:\")
+        } catch as err {
+            MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
+            return
+        }
+
+        deadline := A_TickCount + 15000
+        while (A_TickCount < deadline) {
+            hwnd := this._FindPowerShellHwnd()
+            if (hwnd != 0) {
+                this._ShowAndFocus(hwnd)
+                return
+            }
+            Sleep(150)
+        }
+
+        hwnd := this._FindPowerShellHwnd()
+        if (hwnd != 0) {
+            this._ShowAndFocus(hwnd)
+        } else {
+            MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+        }
+    }
+}
+
+
 class CapsLockFeature {
     static _enabled := false
     static _loading := false
@@ -2079,6 +2159,7 @@ SaveFeature.Init()
 CaretFeature.Init()
 StatFeature.Init(Config.StatInterval)
 TimestampFeature.Init()
+PowerShellFeature.Init()
 
 ; ═══ 全局热键（按用户旅程排序）═══
 ; ① 唤起与关闭
@@ -2090,7 +2171,7 @@ TimestampFeature.Init()
 !h::ShowHelp()
 
 ; ② 输入与编辑
-!c::CapsLockFeature.Toggle()
+!+c::CapsLockFeature.Toggle()
 
 ; ⑤ 组织与管理
 !Up::DateSwitchFeature.Switch(-1)
@@ -2216,7 +2297,8 @@ ShowHelp() {
         . "                      （外观设置自动保存）`n"
         . "`n"
         . "【输入增强】`n"
-        . "   Alt+C            切换 CapsLock 键盘映射`n"
+        . "   Alt+Shift+C      切换 CapsLock 键盘映射`n"
+        . "   Alt+C            唤出 / 隐藏 PowerShell`n"
         . "                      （开启后 CapsLock+H/J/K/L = 方向键）`n"
         . "`n"
         . "【搜索】`n"
