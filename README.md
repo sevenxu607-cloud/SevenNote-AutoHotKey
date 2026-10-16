@@ -5,7 +5,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
 
-![version](https://img.shields.io/badge/version-1.9-blue)
+![version](https://img.shields.io/badge/version-2.4-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
@@ -302,11 +302,11 @@ C:\Users\<用户名>\AppData\Roaming\SevenNote\
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│ FEATURE  功能层（18 项，按用户旅程排列）             │
+│ FEATURE  功能层（21 项，按用户旅程排列）             │
 │  · Feature 之间零调用，通过 EventBus 通信            │
 │  · 可插拔：删除任一 Feature 不影响其他               │
 ├─────────────────────────────────────────────────────┤
-│ SERVICE  服务层（6 项，纯能力）                     │
+│ SERVICE  服务层（7 项，纯能力）                     │
 │  · 无业务、无时间、无理由                            │
 │  · 被多个 Feature 共用                              │
 ├─────────────────────────────────────────────────────┤

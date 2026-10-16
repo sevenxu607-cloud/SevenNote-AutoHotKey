@@ -55,7 +55,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "2.1.1"
+    static Version := "2.4"
 
     static AppDataDir := A_AppData . "\SevenNote-Dev"
     static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
@@ -69,8 +69,6 @@ class Config {
     }
     static SetVault(path) => ConfigService.Write("Paths", "Vault", path)
 
-    static WinW := 450
-    static WinH := 550
     ; 首次呼出时窗口距屏幕工作区右边 / 顶边的距离（物理像素）
     static PlaceRight := 15
     static PlaceTop := 264
@@ -172,6 +170,7 @@ class State {
     static _msgCtrl := ""
     static _themeLabel := ""
     static _tagCtrl := ""
+    static _searchVisible := false   ; 搜索条是否展开（编辑区矩形要按它算）
 
     static GetGui() => this._guiObj
     ; 供 #HotIf 等表达式安全取主窗口句柄：GUI 尚未创建时返回 0
@@ -179,12 +178,14 @@ class State {
     static GetGuiHwnd() => IsObject(this._guiObj) ? this._guiObj.Hwnd : 0
     static SetGui(g) {
         this._guiObj := g
+        ; ⚠ 当前没有订阅者：这是「窗口就绪」扩展点，不是漏掉的接线（骨架层冻结，只加不改）
         EventBus.Emit("Gui.Ready", g)
     }
 
     static GetEd() => this._edHwnd
     static SetEd(hwnd) {
         this._edHwnd := hwnd
+        ; ⚠ 同上：暂无订阅者，保留作「编辑区就绪」扩展点
         EventBus.Emit("Editor.Ready", hwnd)
     }
 
@@ -199,6 +200,9 @@ class State {
     static SetThemeLabel(c) => this._themeLabel := c
     static GetTagCtrl() => this._tagCtrl
     static SetTagCtrl(c) => this._tagCtrl := c
+
+    static GetSearchVisible() => this._searchVisible
+    static SetSearchVisible(v) => this._searchVisible := v
 
     static GetDate() => this._loadedDate
     static SetDate(d) {
@@ -617,6 +621,12 @@ class EditorService {
         text := RegExReplace(text, "\s+", "")
         return (text = "")
     }
+
+    ; 新建日期 / 切到空日期时写给编辑区的日期头。
+    ; ⚠ 只能从这里取 —— 原先这段字符串在 LoadFeature / DateJumpFeature / DateSwitchFeature
+    ;   各写一遍（3 份），任一处与上面 IsEmptyNote 的剥离串脱钩，空笔记就会因「剥不干净」
+    ;   被判成非空，于是空笔记照样落盘。
+    static EmptyNoteHeader(date) => "# 📅 " . date . " 速记`n"
 }
 
 StreamOutCallback(cookie, pbBuff, byteCount, pcb) {
@@ -658,10 +668,6 @@ class ClipboardService {
 ; ─── NoteStoreService：笔记仓库管理员 ───
 class NoteStoreService {
     ; ─── 路径拼接 ───
-    static RtfPath(date)    => Config.GetVault() . "\" . date . ".rtf"
-    static MdPath(date)     => Config.GetVault() . "\" . date . ".md"
-
-    ; assets 统一收纳到 _assets/日期/ 下（只按日期，不含标签）
     static AssetsDir(date)  => Config.GetVault() . "\_assets\" . date
 
     static TempDir()        => Config.GetVault() . "\_tmp"
@@ -678,7 +684,7 @@ class NoteStoreService {
             return false
     }
 
-    ; ─── 默认路径（无标签时用）───
+    ; ─── 路径拼接：rtf / md 两条只此一处（无标签时的默认名，与带标签名同目录同名式）───
     static DefaultRtfPath(date) => Config.GetVault() . "\" . date . ".rtf"
     static DefaultMdPath(date)  => Config.GetVault() . "\" . date . ".md"
 
@@ -986,9 +992,11 @@ class ThemeService {
         StrPut(FontService.GetName(), cf.Ptr + 26, "UTF-16")
         SendMessage(0x0444, 4, cf.Ptr, hwndEd)
 
+        ; ⚠ 字号必须与 FontService.Apply 取同一档（size-4）：两处覆盖的是同一批控件，
+        ;   一处写死 s10、一处写 size-4，Alt+T 与 Alt+± 就会互相顶掉对方的字号。
         for ctrl in [State.GetStat(), State.GetDateCtrl()
             , State.GetMsgCtrl(), State.GetThemeLabel()] {
-            try ctrl.SetFont("c" . t.dim . " s10", FontService.GetName())
+            try ctrl.SetFont("c" . t.dim . " s" . (FontService.GetSize() - 4), FontService.GetName())
         }
         try State.GetThemeLabel().SetFont("c" . t.text . " s10", FontService.GetName())
         try State.GetTagCtrl().SetFont("c" . t.dim . " s10", FontService.GetName())
@@ -1217,7 +1225,8 @@ class FontService {
 ;
 ; ⚠ 两个 API 细节：
 ;   · 扩展样式必须在 Show() 之前设置；
-;   · 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 匹配不到，需 DetectHiddenWindows(true)。
+;   · 样式开关走 BackdropFeature._SetEdTransparent 的 DllCall，不用 AHK 的 WinSetExStyle ——
+;     后者在窗口**最小化**时会抛「(6) 句柄无效。」（原因见该方法的注释）。
 class BackdropService {
     static _picCtrl := ""        ; 承载背景图的 Static 控件（带 SS_BITMAP）
     static _srcBmp := 0          ; 原图 HBITMAP（只解码一次，反复复用）
@@ -1229,8 +1238,6 @@ class BackdropService {
     static _attached := false
     static _fit := "cover"       ; 缩放模式：cover = 等比裁剪铺满（默认）；contain = 整图缩放进内
 
-    static IsAttached() => this._attached
-    static GetPicCtrl() => this._picCtrl
     static HasImage() => (this._imgPath != "" && FileExist(this._imgPath))
 
     ; 遮罩色 + 不透明度（终端式做法的要点：把图压暗，前景文字才读得清）
@@ -1902,7 +1909,7 @@ class WindowFeature {
     ;
     ; ⚠ 尺寸不硬设 —— 本机 150% 缩放（A_ScreenDPI = 144）下 Gui 控件坐标会按 DPI 放大 1.5 倍，
     ;   窗口最小尺寸由控件固有尺寸决定（逻辑 +MinSize450x300 → 物理 675x450），
-    ;   而 Config.WinW/WinH 是「逻辑单位」、WinMove 收「物理像素」。
+    ;   而 Gui 控件坐标是「逻辑单位」、WinMove 收「物理像素」。
     ;   实测把 450x550 直接传给 WinMove：宽被 675 的最小宽拒绝、高却通过了，窗口被压矮
     ;   （881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
     static _PlaceWindow(g, ghwnd) {
@@ -2106,7 +2113,7 @@ class WindowFeature {
     ; 默认落点坐标：贴主屏工作区右上角 —— 右边距 Config.PlaceRight、顶边距 Config.PlaceTop。
     ;
     ; ⚠ 尺寸必须按窗口的「实际」值算 —— A_ScreenWidth 是物理像素，而窗口实际宽含 DPI
-    ;   放大后的控件与边框（本机约 711），远大于逻辑值 Config.WinW = 450。
+    ;   放大后的控件与边框（本机约 711），远大于 450 这样的逻辑值。
     ; ⚠ 用 MonitorGetWorkArea 而非 A_ScreenWidth / A_ScreenHeight：后者是全屏尺寸，
     ;   多屏时也只反映主屏。
     static _DefaultRect(winW, winH) {
@@ -2752,8 +2759,6 @@ class CapsLockFeature {
     static _enabled := false
     static _loading := false
 
-    static IsEnabled() => this._enabled
-
     static Enable() {
         if this._enabled
             return
@@ -2819,7 +2824,7 @@ class LoadFeature {
         hwnd := State.GetEd()
         rtfPath := NoteStoreService.FindRtf(date)
         if (rtfPath = "") {
-            EditorService.SetText(hwnd, "# 📅 " . date . " 速记`n")
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(date))
             return
         }
         EditorService.LoadRTFFromFile(hwnd, rtfPath)
@@ -2830,6 +2835,8 @@ class LoadFeature {
 class SaveFeature {
     static Init() {
         EventBus.On("Window.BeforeHide", (*) => SaveFeature.Save())
+        ; 别的 Feature 需要「先把当前这篇落盘」时发这个事件 —— Feature 之间不互相调用
+        EventBus.On("Save.Requested", (*) => SaveFeature.Save())
     }
 
     static Save() {
@@ -2840,8 +2847,6 @@ class SaveFeature {
                 date := FormatTime(, "yyyy-MM-dd")
             hwnd := State.GetEd()
 
-            EventBus.Emit("Save.Before", {date: date})
-
             ; 空笔记不落盘（含删除已有文件）
             if EditorService.IsEmptyNote(hwnd, date) {
                 rtfPath := NoteStoreService.FindRtf(date)
@@ -2850,7 +2855,6 @@ class SaveFeature {
                     try FileDelete(rtfPath)
                 if (mdPath != "" && FileExist(mdPath))
                     try FileDelete(mdPath)
-                EventBus.Emit("Save.After", {date: date, ok: true})
                 Critical(0)
                 return
             }
@@ -2872,7 +2876,7 @@ class SaveFeature {
             if !ok {
                 NoteStoreService.WriteFile(mdPath
                     , EditorService.GetText(hwnd), "UTF-8")
-                EventBus.Emit("Save.After", {date: date, ok: false})
+                EventBus.Emit("Error.Occurred", {msg: "保存失败：RTF 落盘失败"})
                 Critical(0)
                 return
             }
@@ -2887,7 +2891,6 @@ class SaveFeature {
                 NoteStoreService.WriteFile(mdPath
                     , EditorService.GetText(hwnd), "UTF-8")
             }
-            EventBus.Emit("Save.After", {date: date, ok: true})
             EventBus.Emit("Save.Completed", {time: FormatTime(, "HH:mm")})
         } catch as e {
             EventBus.Emit("Error.Occurred", {msg: "保存失败：" . e.Message})
@@ -2901,10 +2904,17 @@ class AutoSaveFeature {
     static Init(intervalMs := 120000) {
         SetTimer(() => AutoSaveFeature.Tick(), intervalMs)
     }
+    ; ⚠ 最小化窗口的 IsWindowVisible 仍是 1（见 README「六个必须守住的点」）——
+    ;   只看它就成了「窗口缩在任务栏里也每 2 分钟存一次盘」，故必须再排掉 IsIconic。
     static Tick() {
         g := State.GetGui()
-        if DllCall("IsWindowVisible", "ptr", g.Hwnd, "int")
-            SaveFeature.Save()
+        if !IsObject(g)
+            return
+        hwnd := g.Hwnd
+        if DllCall("IsIconic", "ptr", hwnd, "int")
+            return
+        if DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            EventBus.Emit("Save.Requested")
     }
 }
 
@@ -2973,6 +2983,17 @@ class SearchFeature {
         ; 搜索条配色跟着主题走：否则「星空」底下会横插一块浅米黄
         this._ApplyColors()
         EventBus.On("Theme.Changed", (*) => this._ApplyColors())
+        ; 换日期 = 换了一篇正文，照旧正文算出来的匹配偏移全部作废
+        EventBus.On("Date.Changed", (*) => this._ResetMatches())
+    }
+
+    ; 丢掉匹配缓存：关键字一起忘掉，逼下一次搜索重算。
+    ; ⚠ 不清会出事 —— 关键字没变就复用 _matches 里的旧字符偏移，
+    ;   而正文可能已经换了（切日期 / 手动编辑），SetSel 会选到错误位置。
+    static _ResetMatches() {
+        this._lastKeyword := ""
+        this._matches := []
+        this._current := 0
     }
 
     static IsVisible() => this._visible
@@ -2980,7 +3001,10 @@ class SearchFeature {
     static Show() {
         if this._visible
             return
+        ; 每次打开都丢掉上次的缓存：搜索条关着的时候正文是能改的
+        this._ResetMatches()
         this._visible := true
+        State.SetSearchVisible(true)
         this._SetVisible(true)
 
         g := State.GetGui()
@@ -3016,6 +3040,7 @@ class SearchFeature {
         if !this._visible
             return
         this._visible := false
+        State.SetSearchVisible(false)
         this._SetVisible(false)
 
         g := State.GetGui()
@@ -3096,6 +3121,7 @@ class SearchFeature {
         hwndEd := State.GetEd()
         kw := this._edit.Value
         if (kw = "") {
+            this._ResetMatches()
             this._count.Value := ""
             return
         }
@@ -3203,7 +3229,7 @@ class CaretFeature {
 
 class DateSwitchFeature {
     static Switch(offset) {
-        SaveFeature.Save()
+        EventBus.Emit("Save.Requested")   ; 切走之前先把当前这篇落盘
 
         curDate := State.GetDate()
         if (curDate = "")
@@ -3219,7 +3245,7 @@ class DateSwitchFeature {
         hwnd := State.GetEd()
         rtfPath := NoteStoreService.FindRtf(targetStr)
         if (rtfPath = "") {
-            EditorService.SetText(hwnd, "# 📅 " . targetStr . " 速记`n")
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(targetStr))
         } else {
             EditorService.LoadRTFFromFile(hwnd, rtfPath)
         }
@@ -3231,6 +3257,11 @@ class DateSwitchFeature {
 
 
 class DateJumpFeature {
+    ; 别的 Feature（今日）要跳日期时发这个事件 —— Feature 之间不互相调用
+    static Init() {
+        EventBus.On("Date.JumpRequested", (d) => this.JumpTo(d.date))
+    }
+
     static ShowDialog() {
         winTitle := Config.AppName . " · 搜索跳转"
         if WinExist(winTitle . " ahk_class AutoHotkeyGUI") {
@@ -3318,7 +3349,7 @@ class DateJumpFeature {
     }
 
     static JumpTo(dateStr) {
-        SaveFeature.Save()
+        EventBus.Emit("Save.Requested")   ; 跳走之前先把当前这篇落盘
         State.SetDate(dateStr)
         State.ResetCaret()
         hwnd := State.GetEd()
@@ -3327,7 +3358,7 @@ class DateJumpFeature {
         if (rtfPath != "") {
             EditorService.LoadRTFFromFile(hwnd, rtfPath)
         } else {
-            EditorService.SetText(hwnd, "# 📅 " . dateStr . " 速记`n")
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(dateStr))
         }
         EditorService.EmptyUndo(hwnd)
         EventBus.Emit("Date.Switched", {date: dateStr})
@@ -3382,7 +3413,7 @@ class TitleFeature {
     static _Apply(date, oldTag, newTag) {
         if (oldTag = newTag)
             return
-        SaveFeature.Save()
+        EventBus.Emit("Save.Requested")
         if (newTag != "" && NoteStoreService.FindRtf(date) = "") {
             EventBus.Emit("Error.Occurred"
                 , {msg: "空笔记无法设标签，请先写内容"})
@@ -3406,7 +3437,7 @@ class GoTodayFeature {
             EventBus.Emit("Error.Occurred", {msg: "已经是今天"})
             return
         }
-        DateJumpFeature.JumpTo(today)
+        EventBus.Emit("Date.JumpRequested", {date: today})
     }
 }
 
@@ -3448,7 +3479,7 @@ class BackdropFeature {
 
     ; ⚠ 必须与组合根 OnSize 里 ed.Move 的矩形完全一致，否则图层会与编辑区错位
     static _Rect(winW, winH) {
-        if SearchFeature.IsVisible()
+        if State.GetSearchVisible()
             return {x: 8, y: 72, w: winW - 16, h: winH - 110}
         return {x: 8, y: 32, w: winW - 16, h: winH - 70}
     }
@@ -3542,9 +3573,6 @@ class BackdropFeature {
         hwndEd := State.GetEd()
         if !hwndEd
             return
-        ; 未显示过的 Gui 窗口 WS_VISIBLE = 0，WinSetExStyle 会匹配不到
-        DetectHiddenWindows(true)
-
         useIt := this._applied := (this._bgPath != "" && BackdropService.HasImage()
             && this._lastW > 1 && this._lastH > 1)
 
@@ -3552,10 +3580,10 @@ class BackdropFeature {
             BackdropService.SetVisible(true)
             this._RenderNow(true)          ; 换主题 / 首次铺图：立即铺，不走 80ms 防抖
             ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
-            WinSetExStyle("+0x20", "ahk_id " . hwndEd)   ; WS_EX_TRANSPARENT
+            this._SetEdTransparent(hwndEd, true)   ; WS_EX_TRANSPARENT
         } else {
             ; 先恢复不透明再撤图，顺序反过来会闪一下白底
-            WinSetExStyle("-0x20", "ahk_id " . hwndEd)
+            this._SetEdTransparent(hwndEd, false)
             BackdropService.SetVisible(false)
             ; 撤图后清掉尺寸记忆，同尺寸再切回图主题时才会真的重铺
             this._doneW := 0, this._doneH := 0
@@ -3563,6 +3591,26 @@ class BackdropFeature {
 
         try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
             , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
+    }
+
+    ; ─── 编辑区的「透明」扩展样式（WS_EX_TRANSPARENT = 0x20）开关 ───
+    ; ⚠ 不能用 AHK 的 WinSetExStyle —— 窗口**最小化**时它必抛「(6) 句柄无效。」：
+    ;   实测最小化窗口上 SetWindowLongPtr 把样式**真写进去了**（读回 EXSTYLE 确实变了），
+    ;   却把 ERROR_INVALID_HANDLE 留在 LastError，而 AHK 据「返回 0（旧样式为 0）+ LastError≠0」
+    ;   判成失败。!t 又是全局热键（不在 #HotIf 内），窗口最小化着照样能切主题 ——
+    ;   于是「最小化状态下从无图主题切到带图主题」就是一次崩溃：模态错误框一弹、脚本停摆。
+    ;   改走 DllCall 直接写，**只认读回的样式、不看 LastError**，最小化下照设不误。
+    ;   顺带也不再需要 DetectHiddenWindows(true)：这条路不经过 AHK 的窗口查找，不会把
+    ;   全局可见性语义永久改成 true（原来那行只开不还原，是另一处隐患）。
+    static _SetEdTransparent(hwndEd, on) {
+        ; 32 位没有 SetWindowLongPtr，退回 SetWindowLong（本机要求 64 位运行，这里只为不抛错）
+        get := (A_PtrSize = 8) ? "GetWindowLongPtr" : "GetWindowLong"
+        set := (A_PtrSize = 8) ? "SetWindowLongPtr" : "SetWindowLong"
+        ex := DllCall(get, "ptr", hwndEd, "int", -20, "ptr")   ; GWL_EXSTYLE
+        want := on ? (ex | 0x20) : (ex & ~0x20)
+        if (want = ex)
+            return
+        DllCall(set, "ptr", hwndEd, "int", -20, "ptr", want, "ptr")
     }
 }
 
@@ -3704,6 +3752,7 @@ CaretFeature.Init()
 StatFeature.Init(Config.StatInterval)
 PowerShellFeature.Init()
 DeepSeekFeature.Init()
+DateJumpFeature.Init()
 BackdropFeature.Init(g)
 
 ; ═══ 全局热键（按用户旅程排序）═══
