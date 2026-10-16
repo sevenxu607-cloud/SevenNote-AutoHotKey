@@ -2248,7 +2248,8 @@ class PowerShellFeature {
         try {
             WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
         }
-        ; 终端按它自己的默认位置和大小出现，这里不做任何 WinMove。
+        this._PlaceLikeDeepSeek(hwnd)
+
         ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
         this._BroadcastRect(hwnd)
 
@@ -2256,6 +2257,34 @@ class PowerShellFeature {
         ; 露面了 —— 而 Show() 末尾会激活窗口自身，把前台从刚呼出的终端手里夺走。
         ; 按 Alt+C 是要用终端，这里还回去。
         WinActivate("ahk_id " . hwnd)
+    }
+
+    ; 摆到「和 DeepSeek 窗口同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
+    ; 底边贴工作区底。与 DeepSeekFeature._PlaceLikeTerminal 是同一份公式 ——
+    ; Feature 之间不许互相调用，所以各留一份；两处要同步改。
+    ;
+    ; 为什么需要这一步：终端的落点由 Windows Terminal 的 initialPosition 决定，
+    ; 那份值是用户当年按「有任务栏」设的。本机实测 —— 终端 1803,540（底边 1560，
+    ; 离工作区底 40px），而 DeepSeek 按公式落在 1801,580（底边贴 1600，任务栏已
+    ; 改为自动隐藏），两个伙伴高度不齐、堆叠观感不一致。对齐后两者落在同一处。
+    ;
+    ; ⚠ 只挪位置，**尺寸一个不动**：终端的尺寸归 Windows Terminal 的 profile 管
+    ;   （本机 744x1020），夺过来会和用户自己的终端设置打架。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static _PlaceLikeDeepSeek(hwnd) {
+        WinGetPos(, , &w, &h, "ahk_id " . hwnd)
+        if (w <= 0 || h <= 0)
+            return
+
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        x := wkRight - w - Config.PlaceRight
+        y := wkBottom - h
+        ; 兜底：工作区比窗口还小时别落到屏幕外
+        if (x < wkLeft + 10)
+            x := wkLeft + 10
+        if (y < wkTop + 10)
+            y := wkTop + 10
+        WinMove(x, y, , , "ahk_id " . hwnd)
     }
 
     ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
@@ -2588,9 +2617,9 @@ class DeepSeekFeature {
         WinActivate("ahk_id " . hwnd)
     }
 
-    ; 摆到「和 PowerShell 终端同一处」：右侧贴工作区右缘、底边贴工作区底。
-    ; 本机实测终端落在 (1803, 540) 744x1020，底边 1560 正是工作区底 ——
-    ; 所以两种伙伴产出的堆叠效果一模一样。
+    ; 摆到「和 PowerShell 终端同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
+    ; 底边贴工作区底。终端那边的同一份公式是 PowerShellFeature._PlaceLikeDeepSeek ——
+    ; Feature 之间不许互相调用，所以各留一份；两处要同步改。
     ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
     static _PlaceLikeTerminal(hwnd) {
         w := this._TargetW(), h := this._TargetH()

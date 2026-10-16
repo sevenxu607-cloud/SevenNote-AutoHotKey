@@ -722,7 +722,7 @@ BackdropOpacity=20      ; 0-100；0 或留空 = 用主题自带的 bgAlpha
 
 | 参考 | 起什么 | 特殊在哪 |
 | --- | --- | --- |
-| `PowerShellFeature`（`Alt+C`） | 本机 PowerShell 终端 | 最简形态：靠窗口标题认窗，位置尺寸全交给 Windows Terminal |
+| `PowerShellFeature`（`Alt+C`） | 本机 PowerShell 终端 | 靠窗口标题认窗；**尺寸**交给 Windows Terminal profile，**位置**由 `_PlaceLikeDeepSeek()` 对齐到与 DeepSeek 同一处 |
 | `DeepSeekFeature`（`Alt+X`） | DeepSeek 网页（Edge 应用窗口） | 得「自己认窗 + 自己定尺寸位置」，多出来的两处坑见下表与实例二 |
 
 骨架长这样（`PowerShellFeature` 的简化版）：
@@ -815,9 +815,21 @@ class MyWindowFeature {
 
    顺便说清「认窗」的两级兜底：进程内 `_hwnd` 缓存 → `_deepseek.pid` → 都没有才重新拉起。
    所以**只在真正拉新窗口时**才走上面那段 PID 轮询。
-2. **尺寸位置**：终端的位置尺寸由 Windows Terminal 的 profile 决定，浏览器却每次落在 Chromium
-   的默认点。所以启动时给 `--window-size` 定尺寸，露面前再由 `_PlaceLikeTerminal()` 摆到终端
-   那一处（右侧贴工作区右缘、底边贴工作区底），于是 `Alt+C` 与 `Alt+X` 两种堆叠观感一致。
+2. **尺寸位置**：两个伙伴各有各的「谁来管」——
+   - **浏览器**：尺寸由 `--window-size` 在启动时定下，位置它自己不记（每次都在 Chromium 的
+     默认点），所以露面前由 `_PlaceLikeTerminal()` 摆到位。
+   - **终端**：尺寸归 Windows Terminal 的 profile，位置由 WT 的 `initialPosition` 决定 ——
+     而那份值可能早就过时。本机实测：任务栏改成自动隐藏后工作区变成 2560x1600，终端却仍落在
+     `1803,540`（底边 1560，离工作区底 40px = 当年任务栏的高度），而 DeepSeek 按公式落在
+     `1801,580`（贴底）—— 两个伙伴并排高矮不齐。`PowerShellFeature._PlaceLikeDeepSeek()`
+     把终端的位置也按同一公式校正。
+
+   两处落点公式相同：**右侧贴工作区右缘（离缘 `Config.PlaceRight`）、底边贴工作区底**，
+   于是 `Alt+C` 与 `Alt+X` 两种堆叠观感一致。终端那一步**只挪位置、尺寸一个不动** ——
+   尺寸夺过来会和用户自己的终端设置打架。
+
+   > 同公式的两个实现（`_PlaceLikeTerminal` / `_PlaceLikeDeepSeek`）各留一份：Feature 之间
+   > 不许互相调用，**改一处要同步另一处**。
 
 可配置项（`_config.ini`，都可留空走默认）：
 
