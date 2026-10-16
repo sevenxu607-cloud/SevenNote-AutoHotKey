@@ -962,7 +962,38 @@ class ThemeService {
         ;   不想改源码就换图：在 _config.ini 的 [Appearance] 里写 BackdropImage / BackdropOpacity。
         {name: "星空", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
             , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
-            , bgAlpha: 0}
+            , bgAlpha: 0},
+
+        ; ⚠ 竖版人物图和横版漫射图是两种铺法 —— 但**别拿 contain 兜竖图**：
+        ;   · 星空是漫射横图，cover 裁掉左右各 45% 也看不出；
+        ;   · 竖版人物图（0.676）塞进编辑区（0.917）若走 contain，两侧会留出
+        ;     一大条 edBg 底色、人物缩在中间。正解是**先按编辑区比例裁好再铺**：
+        ;     裁剪框专挑人物（见下），图本身就是 0.917，cover 即铺满、一个细节不浪费。
+        ; ⚠ 这套是「暗图 + 亮字」，和「星空」同族 —— 别被"人物图得提亮"带偏：
+        ;   源图是 5897x8719 的高清原图，全图均亮度只有 **75**，本来就满足「亮字」的
+        ;   WCAG 4.5:1 那条线（背景 ≤ 118），**根本不需要提亮**。上一版为了迁就深色字
+        ;   把它抬到均亮 170，整张图当场像蒙了层灰 —— 提亮不等于"更清晰"，是把原图洗白。
+        ;   现在这条路反过来：暗部一个像素都不动，只把压在文字下面的**最亮部分**滚降。
+        ; ⚠ 烘焙由 tools\rebake-backdrop.ps1 一次跑完，输入只有那张高清原图：
+        ;   ① 裁：crop x=0.10 / w=0.72 / y=0  (4246x4630) —— 专挑人物上半身，
+        ;      顺手把原图右侧那片白墙亮雾裁出框外（留着它会在右下角把字吞掉）；
+        ;   ② 缩：2400x2617（0.917，与编辑区严格同比例，SS_BITMAP 不再重采样）；
+        ;   ③ 色调：**在 V（明度）上等比缩放**，绝不混色 ——
+        ;        V ≤ 116 原样不动，V > 116 线性滚降到 152。
+        ;      实测只动到 ~15% 的像素（脸、手、那点雾），全图均亮度 75.1 → 74.9，
+        ;      最彩 5% 像素的饱和度 45.8% → 45.1%，而亮度 >118 的像素从 20.5% 降到
+        ;      9.1% —— 那正是亮字要躲开的地方。
+        ;   ④ unsharp 半径 4 强度 0.9（在**成品尺寸**上做，不是源图尺寸）。
+        ;   还想再暗/再亮：优先改 Knee（BackdropOpacity 是运行时遮罩，会减饱和）。
+        ; ⚠ 素材是 5897x8719 的高清原图「金克斯竖版.png」，别退回去用 2000x2300 的
+        ;   「金克斯竖版02.png」—— 那张缩到编辑区只剩 3 倍余量，锐化后更容易发糊。
+        ; ⚠ 配色全在图里（图是冷调，B > R）：win / edBg = 0B1624（比图的暗部再蓝一档，
+        ;   深色标题栏随之自动打开），text = EAF2FF、dim = 93AACB —— 亮字压深底，
+        ;   对比度 16:1 / 7.6:1，都远超 4.5:1。
+        {name: "金克斯", win: "0B1624", edBg: "0B1624", text: "EAF2FF", dim: "93AACB"
+            , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\动漫\金克斯主题.png"
+            , bgAlpha: 0
+            , bgFit: "cover"}
     ]
 
     static _current := 1
@@ -1036,6 +1067,20 @@ class ThemeService {
                     , "int", attr, "ptr", v, "int", 4, "int")
                     break
             }
+        }
+
+        ; 标题栏整块染成主题色（Win11 build 22000+ 才有 35 / 36 / 34 这三个属性）：
+        ;   35 = CAPTION_COLOR  标题栏底色，取 win
+        ;   36 = TEXT_COLOR     标题文字色，取 text —— 深底配亮字、浅底配深字，自动成对
+        ;   34 = BORDER_COLOR   外框，与标题栏同色
+        ;   颜色是 COLORREF（0x00BBGGRR），正好复用 _RGBtoBGR()。
+        ; ⚠ Win10 上这三个属性不存在，DllCall 直接返回非 0 —— 静默丢掉、系统配色照旧，
+        ;   所以不必写版本判断（上面那段 immersive dark mode 已经兜住了深浅）。
+        for it in [[35, t.win], [36, t.text], [34, t.win]] {
+            cv := Buffer(4, 0)
+            NumPut("uint", this._RGBtoBGR(it[2]), cv, 0)
+            try DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
+                , "int", it[1], "ptr", cv, "int", 4, "int")
         }
     }
 
@@ -1180,6 +1225,7 @@ class BackdropService {
     static _maskColor := "FFF8E7"   ; 遮罩色，十六进制 RGB（取主题编辑区底色）
     static _maskAlpha := 204        ; 遮罩不透明度 0-255（204 ≈ 80%）
     static _attached := false
+    static _fit := "cover"       ; 缩放模式：cover = 等比裁剪铺满（默认）；contain = 整图缩放进内
 
     static IsAttached() => this._attached
     static GetPicCtrl() => this._picCtrl
@@ -1199,6 +1245,11 @@ class BackdropService {
             return
         this._ReleaseSource()
         this._imgPath := path
+    }
+
+    ; 缩放模式。缺省 cover —— 老主题（含「星空」）不写这个字段，行为分毫不变。
+    static SetFit(mode) {
+        this._fit := (mode = "contain") ? "contain" : "cover"
     }
 
     ; ─── 图层控件：创建后压到编辑区之下 ───
@@ -1324,9 +1375,12 @@ class BackdropService {
         oldMem := DllCall("SelectObject", "ptr", hdcMem, "ptr", hbm, "ptr")
 
         ; ① 原图 → 目标尺寸，逐级对折（每级最多缩一半）。
-        ;    等比裁剪（cover）而非拉伸：3840x2400（16:10）硬塞进 665x725（0.92）会被压扁，
-        ;    星云拉成竖条就"不清晰"了。按 max 缩放系数放大到刚好盖满，再从中心裁出与目标
-        ;    同比例的一块来画 —— 只裁不压，画面比例保持原样。
+        ;    等比缩放而非拉伸：3840x2400（16:10）硬塞进 665x725（0.92）会被压扁，
+        ;    星云拉成竖条就"不清晰"了。两种铺法的比例都保持原样：
+        ;      · cover（默认）：按 max 缩放系数放大到刚好盖满，再从中心裁出与目标同比例
+        ;        的一块来画 —— 只裁不压。适合横版漫射图（星空 1.6 裁掉左右也看不出）。
+        ;      · contain（bgFit 指定）：按 min 系数把整张图缩到能放进目标区，居中摆放 ——
+        ;        一个像素都不裁。竖版人物图必须用它，否则 cover 会把上下裁掉、人物被切。
         ;
         ;    ⚠ 为什么不能一步缩到位：HALFTONE 本质是 box 采样，一次缩 5.8 倍等于源图上
         ;      每 5.8 个像素只留 1 个进结果，中间的亮度被直接丢掉 —— 星点被采成锯齿、
@@ -1336,20 +1390,55 @@ class BackdropService {
         hdcSrc := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
         oldSrc := DllCall("SelectObject", "ptr", hdcSrc, "ptr", this._srcBmp, "ptr")
 
-        k  := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
-        cw := Round(w / k)
-        ch := Round(h / k)
+        ; 目标绘制矩形（物理像素）：cover 铺满整块，contain 缩进内、四周留底色。
+        dstX := 0, dstY := 0, dstW := w, dstH := h
+
+        if (this._fit = "contain") {
+            ; contain：整张源图等比缩到能放进 w×h，居中摆放 —— 一个像素都不裁。
+            k := (w / this._srcW < h / this._srcH) ? w / this._srcW : h / this._srcH
+            dstW := Round(this._srcW * k)
+            dstH := Round(this._srcH * k)
+            dstX := (w - dstW) // 2
+            dstY := (h - dstH) // 2
+
+            ; ⚠ 留边会露出 CreateCompatibleBitmap 从未初始化过的内存（花屏 / 黑块），
+            ;   必须先用遮罩色铺一层底。遮罩色就是主题的 edBg，留边与窗框同色、浑然一体。
+            ;   cover 铺满整块用不着，也就不碰它 —— 老主题的画面分毫不变。
+            hbr := DllCall("CreateSolidBrush", "uint", this._RGBtoBGR(this._maskColor), "ptr")
+            if hbr {
+                rc := Buffer(16, 0)
+                NumPut("int", 0, rc, 0)
+                NumPut("int", 0, rc, 4)
+                NumPut("int", w, rc, 8)
+                NumPut("int", h, rc, 12)
+                DllCall("FillRect", "ptr", hdcMem, "ptr", rc, "ptr", hbr)
+                DllCall("DeleteObject", "ptr", hbr)
+            }
+
+            cw := this._srcW           ; 源取整张
+            ch := this._srcH
+            cX := 0, cY := 0
+        } else {
+            ; cover：等比放大到刚好盖满，再从中心裁出与目标同比例的一块。
+            k  := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
+            cw := Round(w / k)
+            ch := Round(h / k)
+            cX := Round((this._srcW - cw) / 2)
+            cY := Round((this._srcH - ch) / 2)
+        }
 
         curDC := hdcSrc
-        curX  := Round((this._srcW - cw) / 2)
-        curY  := Round((this._srcH - ch) / 2)
+        curX  := cX
+        curY  := cY
         curW  := cw
         curH  := ch
         mids  := []                ; 逐级产生的临时位图/DC，画完统一回收
 
-        while (curW > w * 2 && curH > h * 2) {
-            nw := Max(w, curW // 2)
-            nh := Max(h, curH // 2)
+        ; ⚠ 分级对折的判据和目标要用「图的落点尺寸」(dstW/dstH)，不是整块区域 ——
+        ;   contain 时图只占中间一小块，用 w/h 会让分级提前收手、缩出来发糙。
+        while (curW > dstW * 2 && curH > dstH * 2) {
+            nw := Max(dstW, curW // 2)
+            nh := Max(dstH, curH // 2)
             nb := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", nw, "int", nh, "ptr")
             nd := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
             if !(nb && nd) {
@@ -1372,7 +1461,7 @@ class BackdropService {
 
         DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
         DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
-        DllCall("StretchBlt", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
+        DllCall("StretchBlt", "ptr", hdcMem, "int", dstX, "int", dstY, "int", dstW, "int", dstH
             , "ptr", curDC, "int", curX, "int", curY, "int", curW, "int", curH
             , "uint", 0x00CC0020)                                  ; SRCCOPY
 
@@ -3290,6 +3379,12 @@ class BackdropFeature {
     static _bgPath := ""      ; 当前主题生效的背景图路径（空 = 该主题没有背景图）
     static _bgAlpha := 60     ; 当前生效的遮罩不透明度（0-100）
 
+    static _pending := false  ; 已排入一次延迟铺图（防抖合并中）
+    static _doneX := 0        ; 上一次真正铺图用的矩形：同尺寸的 WM_SIZE 直接跳过
+    static _doneY := 0
+    static _doneW := 0
+    static _doneH := 0
+
     ; ⚠ 必须与组合根 OnSize 里 ed.Move 的矩形完全一致，否则图层会与编辑区错位
     static _Rect(winW, winH) {
         if SearchFeature.IsVisible()
@@ -3323,6 +3418,10 @@ class BackdropFeature {
             a := hasBg ? t.bgAlpha : 60
         this._bgAlpha := a
 
+        ; 缩放模式：主题写了 bgFit 就按它来（竖版人物图得用 contain，否则上下会被裁掉），
+        ; 没写的（含「星空」等老主题）一律 cover —— 铺图行为分毫不变。
+        BackdropService.SetFit(hasBg && t.HasProp("bgFit") ? t.bgFit : "cover")
+
         ; 遮罩色取主题编辑区底色，图的色调就跟着主题走（图缺失时它就是那块纯底色）
         BackdropService.SetMask(hasBg ? t.edBg : "", this._bgAlpha)
     }
@@ -3343,8 +3442,38 @@ class BackdropFeature {
                 this._Apply()
             return
         }
-        rect := this._Rect(winW, winH)
-        BackdropService.Render(rect.x, rect.y, rect.w, rect.h)
+        ; ⚠ 拉伸窗口时 WM_SIZE 每秒触发几十次，而每次都重做整张合成 —— 2400 宽的图
+        ;   逐级对折 + HALFTONE 缩放本机要几十毫秒，绘制队列被塞满，编辑区文字跟着
+        ;   反复重画，看上去就是「文字时隐时无」。这里改成防抖：先记下尺寸，停手
+        ;   80ms 后才铺一次；拖动过程中背景停在上一帧，不再与文字抢绘制。
+        this._ScheduleRender()
+    }
+
+    ; 把 80ms 内的连续尺寸变化合并成一次铺图（拖窗口时每秒几十次 WM_SIZE 只干一次活）
+    static _ScheduleRender() {
+        if this._pending
+            return
+        this._pending := true
+        SetTimer(() => this._RenderNow(), -80)
+    }
+
+    ; 真正铺图。矩形与上次相同就不重做合成（同尺寸的 WM_SIZE 是空转）。
+    ; force = true 用于换主题 —— 那时尺寸可能没变，但图换了，必须重铺。
+    static _RenderNow(force := false) {
+        this._pending := false
+        rect := this._Rect(this._lastW, this._lastH)
+        if (!force && (rect.x = this._doneX) && (rect.y = this._doneY)
+            && (rect.w = this._doneW) && (rect.h = this._doneH))
+            return
+        if BackdropService.Render(rect.x, rect.y, rect.w, rect.h) {
+            this._doneX := rect.x, this._doneY := rect.y
+            this._doneW := rect.w, this._doneH := rect.h
+            ; 位图刚换过，而编辑区是 WS_EX_TRANSPARENT（自己不画背景），面上留着的
+            ; 还是上一帧的文字 —— 让它重画一次，免得拉伸后出现「文字缺一块」。
+            ; 不带 UPDATENOW：走正常消息队列，别在拖动时同步阻塞。
+            try DllCall("RedrawWindow", "ptr", State.GetEd(), "ptr", 0, "ptr", 0
+                , "uint", 0x0001 | 0x0004)      ; INVALIDATE | ERASE
+        }
     }
 
     ; 按 _bgPath 决定铺图还是撤图：主题没带 bg、图片不存在、窗口还没尺寸 —— 三种都走撤图。
@@ -3360,13 +3489,15 @@ class BackdropFeature {
 
         if useIt {
             BackdropService.SetVisible(true)
-            this.Layout(this._lastW, this._lastH)
+            this._RenderNow(true)          ; 换主题 / 首次铺图：立即铺，不走 80ms 防抖
             ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
             WinSetExStyle("+0x20", "ahk_id " . hwndEd)   ; WS_EX_TRANSPARENT
         } else {
             ; 先恢复不透明再撤图，顺序反过来会闪一下白底
             WinSetExStyle("-0x20", "ahk_id " . hwndEd)
             BackdropService.SetVisible(false)
+            ; 撤图后清掉尺寸记忆，同尺寸再切回图主题时才会真的重铺
+            this._doneW := 0, this._doneH := 0
         }
 
         try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0

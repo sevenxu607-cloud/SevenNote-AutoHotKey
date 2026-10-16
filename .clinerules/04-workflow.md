@@ -4,7 +4,7 @@
 
 **不要只靠"读代码觉得没问题"就宣称改好了。** 改完 `.ahk` 必须用真实解释器跑一次语法检查。
 
-### 语法检查（本项目已实测有效）
+### 语法检查
 
 ⚠️ **`/validate` 不可用** —— 本机 AHK v2.0.27 不识别该参数。别用。
 
@@ -12,7 +12,7 @@
 （标题是脚本名，正文形如 `Error: Invalid assignment.`），进程**卡住不退出**，
 窗口一直挡在屏幕上，只能手动杀进程收拾。
 
-正确做法：**复制源码 + 注入 `ExitApp()` + `/ErrorStdOut`**。
+#### 方案 A（预检，有盲区）：注入 `ExitApp()`
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
@@ -20,17 +20,71 @@ $src = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
 $L   = Get-Content -LiteralPath $src -Encoding UTF8
 $tmp = "$env:TEMP\SevenNoteDev\_syn_check.ahk"
 New-Item -ItemType Directory -Force -Path (Split-Path $tmp) | Out-Null
-# 保留 #Requires 行，紧跟 ExitApp()，让脚本解析完立刻退出、不产生运行时副作用
 Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()') + $L[1..($L.Count-1)]) -Encoding UTF8
 & $exe /ErrorStdOut $tmp
-"退出码 = $LASTEXITCODE"     # 0 = 语法通过；非 0 = 有语法错误，stderr 会给出行号
+"退出码 = $LASTEXITCODE"     # 0 = 通过
 ```
 
-**实测基准**：`SevenNote.ahk`（2365 行）退出码 `0`；故意写坏的脚本退出码 `2`，
+**实测基准**：`SevenNote.ahk` 退出码 `0`；故意写坏的赋值语句退出码 `2`，
 并打印 `(3) : Invalid assignment`。
 
-> 原理：AHK v2 在**加载时完整解析整个文件**。所以在开头注入 `ExitApp()`
-> 既不会跳过语法检查，也不会触发建窗 / 写文件等副作用。
+> ⚠ **但它有盲区，别只靠它。** 实测踩到：往 `ThemeService.Themes` 数组追加主题时漏了元素间
+> 的逗号，这个预检**退出码照样是 `0`**，而真机启动立刻报
+> `SevenNote.ahk (946) : ==> Unexpected "{"`。
+>
+> 原因：`ExitApp()` 在第 2 行，AHK v2 **并非**「加载时完整解析整个文件」——
+> auto-execute 段跑到 `ExitApp()` 就退出了，**后面那些 class 定义根本没被解析**。
+> 所以这个预检能抓「auto-execute 段及其之前」的错误，**抓不到 class 体内的**。
+
+#### 方案 B（真机验证，必做）：直接启动 + 抓 stderr
+
+改完必须用这个兜底 —— 它就是方案 A 漏掉的那一半：
+
+```powershell
+$exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
+$script = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
+$se = "$env:TEMP\SevenNoteDev\_run_err.txt"
+Remove-Item $se -Force -ErrorAction SilentlyContinue
+Start-Process -FilePath $exe -ArgumentList @('/ErrorStdOut', "`"$script`"") `
+    -RedirectStandardError $se | Out-Null
+Start-Sleep -Seconds 6
+Get-Content $se          # 空 = 没有运行时/语法错误
+Get-Process -Name AutoHotkey64 | Stop-Process -Force   # 收工，别留实例
+```
+
+⚠️ **两种错误形态要分清**：
+
+| 现象 | 含义 | 怎么查 |
+| --- | --- | --- |
+| stderr **有内容** | 有语法/运行时错误，AHK 已退出 | 直接读 stderr，给出行号 |
+| stderr **为空**、但多出一个标题是**脚本名**（`SevenNote.ahk`）的窗口 | 弹了模态错误框，进程**卡着不退**，`ExitApp` 也没用 | 见下方「错误框抓法」 |
+
+⚠️ **窗口没出来 ≠ 出错**。`SevenNote` 的窗口**启动时不显示**——
+`g.Show()` 只在 `WindowFeature.Show()`（`!z` 热键）路径里由 `_PlaceWindow` 调用。
+所以启动后枚举窗口会看到 `AutoHotkeyGUI / title=SevenNote / vis=False / 0x0 at 0,0`，
+那是**正常**的。要看到窗口得先发一次 `Alt+Z`：
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.SendKeys]::SendWait('%z')
+```
+
+**错误框抓法**（stderr 为空却卡着时）：
+
+```powershell
+# AHK 报错框的类名是 #32770、标题是脚本名；正文在 Static 子控件里，
+# 跨进程 GetWindowText 读不到 —— 用本机 AHK 的 WinGetText 最省事
+DetectHiddenWindows true
+Loop {
+    hwnd := WinExist("ahk_class #32770")
+    if !hwnd
+        break
+    MsgBox WinGetText("ahk_id " . hwnd)   ; 或写文件后读
+}
+```
+
+> 更快的路子：**改完直接按方案 B 跑一遍**。它同时覆盖 auto-execute 段和全部 class 定义，
+> 是唯一能证明「程序真能起来」的检查。方案 A 只当写代码中途的快速预检。
 
 ## 端到端演示测试
 
@@ -40,6 +94,32 @@ Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()')
 - 参数：`-AutoHotkeyPath`、`-PaceMs`、`-TypeDelayMs`、`-SpeedMode`
 - 产物：`results.tsv`、`trace.log`、`user-journey-report.html`
 - 内置防冲突：若已有隔离演示在运行，会直接报错拒绝（避免向歧义窗口发送输入）
+
+## 看主题效果时的窗口截图坑
+
+验证背景图主题**别只看成品图**，要**在真窗口里看文字压上去的效果**。实测三个坑：
+
+| 坑 | 现象 | 绕法 |
+| --- | --- | --- |
+| `PrintWindow` 抓不全 | 窗口一大（实测 1361x1084），右半边全是空白，**文字和背景同时断在同一列** —— 那是截图边界，**不是应用 bug**（474 宽的小窗口抓得完整） | 用 **900 宽以内**的窗口抓，或改用 `CopyFromScreen`（截屏前先确认窗口没被别的窗口压住） |
+| **最小化窗口的 `IsWindowVisible` 仍是 `1`** | 以为窗口显示着，`GetWindowRect` 却返回 `-21333,-21333`（150% DPI 下的最小化停放位），抓出来只有 158x26 | 先 `IsIconic()` 判断、再 `ShowWindow(hwnd, 9)` 恢复；`GetWindowRect` 拿到负数坐标就一律当没显示 |
+| 一条 PowerShell 里塞「`SendKeys` + 截屏 + 杀进程」会被**防病毒拦** | 整条命令一行都不执行，报 `ScriptContainedMaliciousContent` | **拆成多条**：类型定义 / 发热键 / 截屏各自一条 |
+
+**回写、重铺这类改动的验收公式**：连打 N 次 `SetWindowPos` + 前后各截一张图逐字节比对。
+
+```powershell
+# 0x0004 = SWP_NOZORDER；打一串不同尺寸，测总耗时
+for ($i = 1; $i -le 40; $i++) {
+    [PW7]::SetWindowPos($h, [IntPtr]::Zero, $x, $y, ($w + ($i % 9) * 7), ($hgt + ($i % 11) * 9), 0x0004)
+}
+```
+
+- 每次 **几毫秒**（实测 40 次共 392ms）说明合成被合并了；秒级说明还在逐帧重铺。
+- 打完把尺寸**调回原值**再截第二张 —— 两张 PNG **字节数完全相同**（1302123 = 1302123）
+  就是逐像素一致，即「文字没丢、图没错位」。
+
+> **判构图和明暗请直接读成品 PNG。** 成品图就是铺进编辑区的内容（`bgAlpha = 0` 时无遮罩、
+> 无裁切），比隔着截图猜准得多；截图只用来看「文字压在图上读不读得清」。
 
 ## 临时脚本放哪（别污染「问题」面板）
 
@@ -81,6 +161,24 @@ Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()')
   # 路径的目录名本身是中文也没关系，通配符里不含中文即可
   $src = (Get-ChildItem -Path 'D:\00-SevenFiles\Pictures\*\*\*\2026-10-14_*.png' | Select-Object -First 1).FullName
   ```
+
+## PowerShell 持久会话的坑（Add-Type 会沿用旧编译类型）
+
+命令是在**同一个持久 `powershell.exe` 会话**里跑的。用 `Add-Type` 定义 C# 辅助类时，
+第二次运行会抛「类型名称 `X` 已存在」，并且**静默沿用第一次编译的那个类型** ——
+你改了 C# 逻辑，脚本还在跑旧代码，**而输出看起来完全正常**。
+
+实测（给主题烘图那个脚本）：改完提亮曲线后重跑，输出与旧公式**逐像素完全一致**；
+只有拿源图某个点手算「预期值 vs 实际值」比对才暴露 —— 实际值精确等于**旧公式**的结果。
+
+对策：
+
+- `Add-Type` 外面套 `if (-not ("Name" -as [type])) { ... }`，让重复运行不再报错；
+- **改了 C# 逻辑就递增类名**（`X` → `X2`），强制重新编译；
+- 验收别只看图、只看统计 —— **取一个已知输入算预期输出，再读实际输出比对**。
+
+⚠️ 同一次响应里「编辑文件 + 运行脚本」**不保证先编辑后运行**（实测编辑器调用与命令
+并行执行，脚本跑到的是**编辑前**的版本）。要跑改过的脚本，**先发编辑，下一轮再运行**。
 
 ## 提交信息
 
