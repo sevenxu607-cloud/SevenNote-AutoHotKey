@@ -76,7 +76,6 @@ class Config {
     static PlaceTop := 264
     static AutoSaveInterval := 120000
     static StatInterval := 500
-    static TimestampInterval := 60
     ; 双窗并存（Alt+C 唤起 PowerShell / Alt+X 唤起 DeepSeek）时的「可见」间距（物理像素）：
     ; 两窗之间的缝、窗口到工作区顶/底的边距。
     ; ⚠ 这里算的是**肉眼看到**的距离 —— 按 DWM 的可见边界算，不含 Win11 的不可见调整边框。
@@ -483,28 +482,6 @@ class EditorService {
         }
     }
 
-    static FindLastTimestamp(hwnd) {
-        text := this.GetText(hwnd)
-        return this.FindLastTimestampInText(text)
-    }
-
-    static FindLastTimestampInText(text) {
-        lastMin := -1
-        p := 1
-        while ((p := InStr(text, this.CLOCK,, p)) > 0) {
-            rest := SubStr(text, p + 2)
-            if RegExMatch(rest, "^\s*(\d{2}):(\d{2})", &m) {
-                lastMin := m[1] * 60 + m[2]
-            }
-            p++
-        }
-        return lastMin
-    }
-
-    static DiffMinutes(nowMin, lastMin) {
-        return Mod(nowMin - lastMin + 1440, 1440)
-    }
-
     static AppendTimestamp(hwnd) {
         text := this.GetText(hwnd)
         trimmed := RTrim(text, "`t`r`n")
@@ -513,29 +490,6 @@ class EditorService {
         this.MoveCaretToEnd(hwnd)
         now := FormatTime(, "HH:mm")
         this.InsertText(hwnd, "`n`n" . this.CLOCK . " " . now . "`n")
-    }
-
-    static StripEmptyTimestamp(hwnd) {
-        text := this.GetText(hwnd)
-        pattern := "\s*" . this.CLOCK . "\s+\d{2}:\d{2}\s*$"
-        if RegExMatch(text, pattern, &m) {
-            sel := this.GetSel(hwnd)
-            firstVisible := SendMessage(0x00CE, 0, 0, hwnd)
-            prefix := SubStr(text, 1, m.Pos - 1)
-            delStart := StrLen(prefix)
-            totalLen := SendMessage(0x000E, 0, 0, hwnd)
-            this.SetSel(hwnd, delStart, totalLen)
-            SendMessage(0x00C2, 1, StrPtr(""), hwnd)
-            newLen := SendMessage(0x000E, 0, 0, hwnd)
-            newMin := Min(sel.min, newLen)
-            newMax := Min(sel.max, newLen)
-            this.SetSel(hwnd, newMin, newMax)
-            newFirst := SendMessage(0x00CE, 0, 0, hwnd)
-            if (newFirst != firstVisible)
-                SendMessage(0x00B6, 0, firstVisible - newFirst, hwnd)
-            return true
-        }
-        return false
     }
 
     static InsertSeparator(hwnd) {
@@ -944,11 +898,14 @@ class PandocService {
 ; ─── ThemeService：主题应用 ───
 class ThemeService {
     static Themes := [
+        ; ⚠ 主题表在 v2.4 精简过一次（8 套 → 5 套）：删掉天空蓝 / 薄荷绿 / 高雅灰，
+        ;   留下「纯米黄 / 护眼绿」两套浅色底 + 「纸白」中性白 + 「星空 / 金克斯」两套图主题。
+        ;   被删的各有替代：薄荷绿 → 护眼绿，天空蓝 / 高雅灰 → 纸白。
+        ; ⚠ 删主题会让**其后所有元素的下标往前挪**，而配置里存的正是下标 —— 老用户会被
+        ;   换成另一套主题，甚至越界兜底。故 _MigrateIndex() 里留了一次性下标迁移。
+        ;   加主题仍应**追加到数组末尾**（同样是为了不动已有下标）。
         {name: "纯米黄", win: "FFF8E7", edBg: "FFF8E7", text: "3D2B1F", dim: "A89880"},
         {name: "护眼绿", win: "CCE8CF", edBg: "E0F0E3", text: "2D4A30", dim: "6B8E6E"},
-        {name: "天空蓝", win: "EAF4FF", edBg: "DCEBFA", text: "1F3A5C", dim: "7A92AA"},
-        {name: "薄荷绿", win: "E8F5F0", edBg: "DAEEE8", text: "1F4A3D", dim: "7A9E92"},
-        {name: "高雅灰", win: "F0F0F0", edBg: "E8E8E8", text: "2A2A2A", dim: "808080"},
         {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"},
         ; ⚠ 带背景图的主题：bg 是图片路径，bgAlpha 是把图压暗的遮罩不透明度（0-100）。
         ;   这套配色取自那张星空图（实测全图均色 #181C25、平均亮度仅 28）：win / edBg 都
@@ -1114,10 +1071,32 @@ class ThemeService {
     static LoadFromConfig() {
         this._loading := true
         idx := ConfigService.ReadInt("Appearance", "ThemeIndex", 1)
+        idx := this._MigrateIndex(idx)
         if (idx < 1 || idx > this.Themes.Length)
             idx := 1
         this.Apply(idx)
         this._loading := false
+    }
+
+    ; ─── 旧下标迁移（v2.4 精简主题表：8 套 → 5 套）───
+    ; 主题表删掉 3 套之后，配置里存的老下标语义全变了 —— 本机实测老配置是 ThemeIndex=8
+    ; （金克斯），而新表只有 5 套：不迁移就**越界**，被下面那句兜底成「纯米黄」，
+    ; 等于把用户的主题悄悄换掉。按下表把被删主题映到最相近的保留主题：
+    ;     旧 1 米黄 → 1    旧 2 护眼绿 → 2    旧 3 天空蓝 → 3 纸白
+    ;     旧 4 薄荷绿 → 2  旧 5 高雅灰 → 3    旧 6 纸白 → 3
+    ;     旧 7 星空 → 4    旧 8 金克斯 → 5
+    ; ⚠ 迁移**只能做一次**：同一个数字在新旧语义下含义不同（新表 4 = 星空、旧表 4 =
+    ;   薄荷绿），再映射一遍会把用户刚选的主题又改掉。故用 [Appearance] ThemeSchema=2
+    ;   打标记；并且**必须把新下标写回配置** —— Apply 在 _loading 期间不落盘，不写回的
+    ;   话下次启动又拿旧值去走越界兜底，迁移成了摆设。
+    static _MigrateIndex(idx) {
+        if (ConfigService.ReadInt("Appearance", "ThemeSchema", 1) >= 2)
+            return idx
+        idxMap := [1, 2, 3, 2, 3, 3, 4, 5]
+        newIdx := (idx >= 1 && idx <= idxMap.Length) ? idxMap[idx] : idx
+        ConfigService.Write("Appearance", "ThemeIndex", newIdx)
+        ConfigService.Write("Appearance", "ThemeSchema", 2)
+        return newIdx
     }
 
     static _BuildLabel() {
@@ -2930,33 +2909,14 @@ class AutoSaveFeature {
 }
 
 
+; ⚠ 时间戳**一律手动**（v2.4 起）：只在用户按下 Ctrl+T 时插入，程序任何时候都不自作主张。
+;   原先的两条自动路径已删除 ——
+;     · 启动时 CheckAndAppend()：无戳就塞一个；
+;     · 切日期时同一函数：距上一戳 ≥ Config.TimestampInterval（60 分钟）再补一个。
+;   它们会在用户只想随手记两笔时也往笔记里加时间戳，还得靠「保存前剥掉空戳」来兜底。
+;   现在连带 StripIfEmpty 一起去掉：用户手动加的戳就是他想要的，程序不擅自删。
+;   想恢复自动：在组合根按需调 TimestampFeature.Append()，或把 CheckAndAppend 加回来。
 class TimestampFeature {
-    static Init() {
-        EventBus.On("Save.Before",   (*) => TimestampFeature.StripIfEmpty())
-        EventBus.On("Date.Switched", (*) => TimestampFeature.CheckAndAppend())
-    }
-
-    static CheckAndAppend() {
-        hwnd := State.GetEd()
-        lastMin := EditorService.FindLastTimestamp(hwnd)
-        if (lastMin < 0) {
-            EditorService.AppendTimestamp(hwnd)
-            return true
-        }
-        nowMin := FormatTime(, "HH") * 60 + FormatTime(, "mm")
-        diff := EditorService.DiffMinutes(nowMin, lastMin)
-        if (diff >= Config.TimestampInterval) {
-            EditorService.AppendTimestamp(hwnd)
-            return true
-        }
-        return false
-    }
-
-    static StripIfEmpty() {
-        hwnd := State.GetEd()
-        return EditorService.StripEmptyTimestamp(hwnd)
-    }
-
     static Append() {
         hwnd := State.GetEd()
         EditorService.AppendTimestamp(hwnd)
@@ -3633,6 +3593,8 @@ DllCall("LoadLibrary", "str", "msftedit.dll", "ptr")
 ; ═══ 配置服务初始化 ═══
 ConfigService.Init(Config.ConfigPath)
 ConfigService.SetDefault("Appearance", "ThemeIndex", "1")
+; 主题表「结构版本」：主题表精简 / 重排过就 +1，ThemeService._MigrateIndex 据此只跑一次下标迁移
+ConfigService.SetDefault("Appearance", "ThemeSchema", "1")
 ConfigService.SetDefault("Appearance", "FontIndex", "1")
 ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
 ; 背景图：图片路径（留空=不启用）、遮罩不透明度 0-100、开关状态
@@ -3740,7 +3702,6 @@ AutoSaveFeature.Init(Config.AutoSaveInterval)
 SaveFeature.Init()
 CaretFeature.Init()
 StatFeature.Init(Config.StatInterval)
-TimestampFeature.Init()
 PowerShellFeature.Init()
 DeepSeekFeature.Init()
 BackdropFeature.Init(g)
@@ -3804,7 +3765,6 @@ Esc::SearchFeature.Hide()
 
 ; ═══ 启动 ═══
 LoadFeature.Load()
-TimestampFeature.CheckAndAppend()
 StatusBar.RefreshTag()
 
 ThemeFeature.LoadFromConfig()

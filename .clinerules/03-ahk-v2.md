@@ -21,6 +21,7 @@
 | 坑 | 说明 |
 | --- | --- |
 | `Clear` / `log` / `min` / `max` / `Indent` 不能做变量名 | 它们是 AHK v2 内置函数名 |
+| **`Gui` 也不能做变量名** | 它是内置**类**名（同类还有 `Object` / `Map` / `Array` / `Buffer` / `Func` / `File` / `Clipboard`）。实测 `gui := WinExist(...)` 直接报 `This Class cannot be used as an output variable. Specifically: Gui`；**没加 `/ErrorStdOut` 时会弹模态框并卡住不退出**，表现为平白多出一个 `AutoHotkey64` 进程。变量名写长一点最省事（`guiHwnd` / `idxMap`） |
 | AHK v2 的 `<` `>` 是数值比较 | 字符串比较用 `StrCompare` |
 | AHK v2 的 `<=` / `>=` 遇**空字符串**会抛错 | 报 `Expected a Number but got an empty string`；数值比较前先 `IsNumber()` 守卫（`State` 未初始化的记忆值就是 `""`，实测踩到） |
 | `EM_SETSEL` / `EM_GETSEL` 要用 DllCall | 内置 `SendMessage` 对 INT 参数有歧义 |
