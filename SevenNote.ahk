@@ -2525,7 +2525,11 @@ class DeepSeekFeature {
             ;   换个缩放比例就得跟着变，所以按 A_ScreenDPI 反算，别写死。
             w := this._TargetW() * 96 // A_ScreenDPI
             h := this._TargetH() * 96 // A_ScreenDPI
-            ; --app：无地址栏的独立窗口，观感接近桌面应用，而不是「浏览器里多开了个标签」；
+            ; --app：独立的应用窗口（无标签栏），观感接近桌面应用，而不是「浏览器里多开了个标签」。
+            ;       ⚠ 它有地址栏 —— 原以为「无地址栏」，实测 Edge 155 起 app 窗口就自带
+            ;       （UIA 查到 view_1017「地址和搜索栏」，换全新 profile 启动也一样，是 Edge 的产品
+            ;       行为，不是本项目的代码效果）。副作用挺好：这扇窗能直接输网址浏览其他网页，
+            ;       当轻量浏览器用。若哪天 Edge 改回无地址栏而仍要导航，换 --new-window 即可。
             ;       app 窗口的标题归页面管（本机实测为 "DeepSeek"），所以别拿标题找它。
             ; --user-data-dir：独立 profile（理由见类头）。
             ; --no-first-run / --no-default-browser-check：跳过首次运行的欢迎页与
