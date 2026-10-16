@@ -3,11 +3,30 @@
 Persistent()
 
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenNote —— v2.4.1
+;  【警告策略 —— 改默认动作，别再让警告拦住程序】
+;  AHK v2 对「未赋值变量」（VarUnset）默认既开警告、动作又是 **MsgBox** ——
+;  一弹就停摆：模态框挡在屏幕上、热键全无反应，只能手动杀进程。
+;  项目在 v2 迁移期连踩三次（`JSON.Stringify` / `Gui` 当变量名 / 空串比较），
+;  每次症状都是「Alt+Z 没反应」，排查还得先枚举 #32770 读正文。
+;  这里把动作改成 OutputDebug —— VS Code 的 AHK++ 调试器里照样看得到，
+;  但不再拦路。未赋值变量的根本预防手段仍是「变量名写长一点」（guiHwnd / idxMap），
+;  见 .clinerules/03。
+; ═══════════════════════════════════════════════════════════════════════════
+#Warn VarUnset, OutputDebug
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  SevenNote —— v2.4.2
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
 ;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+H 帮助窗口底部），改这里要一并改它。
 ;
 ;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
+;    v2.4.2  补齐运行时兜底与三处实测到的浪费：① 注册 OnError —— 未捕获异常写
+;            %AppData%\SevenNote-Dev\_error.log 并**继续跑**，不再弹模态框停摆；
+;            同时把 VarUnset 警告动作改成 OutputDebug（同上，不再拦路）。
+;            ② pandoc 可用性探测缓存（原先每次保存都 RunWait 起一个 200MB 进程）、
+;            ConfigService 加进程内读缓存（GetVault 在保存链路上就要读 6 次盘）。
+;            ③ ListAllTags 冒泡 O(n²) 换内置 Sort；SetTimer 回调统一过一遍
+;            「窗口还在不在」守卫（照 AutoSaveFeature.Tick 的写法）
 ;    v2.4.1  修复连按 Alt+C / Alt+X 弹模态框卡死（异步复核去摆一个已隐藏的窗口）；
 ;            终端宽度与另外两个窗口统一，目标宽定 772（实测 Edge 会吸附 --window-size 的宽度）
 ;    v2.4    主题表精简 8 → 5 套并做一次性旧下标迁移（[Appearance] ThemeSchema）；
@@ -81,7 +100,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "2.4.1"
+    static Version := "2.4.2"
 
     ; ⚠ 配置目录与 pandoc 目录**故意不同**，不是笔误：
     ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按版本隔离 ——
@@ -117,9 +136,15 @@ class Config {
 class ConfigService {
     static _path := ""
     static _defaults := Map()
+    ; 读缓存：section|key → 值。IniRead **没有内部缓存**，每次 Read 都是一次磁盘命中，
+    ; 而 GetVault() 在保存链路上要被调至少 6 次（FindRtf / DefaultRtfPath / FindMd /
+    ; DefaultMdPath / TempDir / AssetsDir），RenameWithTag 的双扩展名循环里还要再翻倍。
+    ; 缓存只在进程内有效：Write 时同步、Init 时清空。
+    static _cache := Map()
 
     static Init(path) {
         this._path := path
+        this._cache := Map()   ; 换配置路径（含测试沙箱注入）后旧值一律作废
     }
 
     static SetDefault(section, key, value) {
@@ -129,17 +154,21 @@ class ConfigService {
     static Read(section, key) {
         if !this._path
             return ""
+        ck := section . "|" . key
+        if this._cache.Has(ck)
+            return this._cache[ck]
         try {
             val := IniRead(this._path, section, key, "")
         } catch {
             val := ""
         }
         if (val = "") {
-            dk := section . "|" . key
-            if this._defaults.Has(dk)
-                return this._defaults[dk]
-            return ""
+            if this._defaults.Has(ck)
+                val := this._defaults[ck]
         }
+        ; 空串同样入缓存：缺键也走默认值，没必要每次都问一遍磁盘。
+        ; ⚠ 代价是**运行期手改 _config.ini 不再被读到** —— 改配置请重启程序。
+        this._cache[ck] := val
         return val
     }
 
@@ -157,6 +186,7 @@ class ConfigService {
             return false
         try {
             IniWrite(value, this._path, section, key)
+            this._cache[section . "|" . key] := "" . value   ; 写后同步，免得紧接着读到旧值
             return true
         } catch {
             return false
@@ -782,6 +812,14 @@ class NoteStoreService {
         return SubStr(name, 12)
     }
 
+    ; 把字符串数组拼成「行分隔列表」—— 内置 Sort 收的是字符串，不是数组
+    static _JoinLines(arr) {
+        s := ""
+        for i, v in arr
+            s .= (i = 1 ? "" : "`n") . v
+        return s
+    }
+
     ; ─── 枚举所有标签（扫 Vault 目录）───
     static ListAllTags() {
         result := []
@@ -795,20 +833,28 @@ class NoteStoreService {
             tag := (m.Count >= 2 && m[2] != "") ? m[2] : ""
             result.Push({date: date, tag: tag})
         }
-        ; 按日期倒序（字符串比较用 StrCompare）
+        ; 按日期倒序。原先用冒泡（O(n²)）—— 1000 篇笔记要约 50 万次 StrCompare，
+        ; 在 AHK 解释器里是数百 ms 级；换成内置 Sort（C 层实现，O(n log n)）。
+        ; 排序键 = 「日期 + TAB + 6 位下标」：
+        ;   · 日期在前 = 主序，等价于原先的「按 date 比较」；
+        ;   · TAB(0x09) 比任何日期字符都小，同一天的多条（2026-09-19-a.md /
+        ;     2026-09-19-b.md 这类）不会互相串位；
+        ;   · 下标后缀保证键唯一，顺带让同一天的多条保持目录枚举顺序（排序稳定）。
+        ; 选项 "CR"：C = 区分大小写 → 纯字典序（日期是 `YYYY-MM-DD`，字典序即时间序，
+        ;           也避开系统区域设置的自然排序，结果只取决于字节）；
+        ;          R = 降序。
         n := result.Length
         if (n > 1) {
-            Loop n - 1 {
-                i := A_Index
-                Loop n - i {
-                    j := A_Index
-                    if (StrCompare(result[j].date, result[j+1].date) < 0) {
-                        tmp := result[j]
-                        result[j] := result[j+1]
-                        result[j+1] := tmp
-                    }
-                }
+            byKey := Map()
+            keys := []
+            for i, item in result {
+                k := item.date . "`t" . Format("{:06}", i)
+                byKey[k] := item
+                keys.Push(k)
             }
+            result := []
+            for k in StrSplit(Sort(this._JoinLines(keys), "CR"), "`n")
+                result.Push(byKey[k])
         }
         return result
     }
@@ -839,6 +885,14 @@ class NoteStoreService {
 ;   · GetCmd / IsAvailable 加文件大小检查（> 1MB 才用）
 ;   · 避免 0KB 坏 pandoc 阻塞系统 PATH 里的好 pandoc
 class PandocService {
+    ; 探测过一次「可用」就永久记住。pandoc 是本程序自带的（或系统装的），
+    ; 运行期间不会凭空消失 —— 而每次探测都要 RunWait 起一个 conhost + 一个 200MB 的
+    ; pandoc 进程（实测几十到几百 ms，冷启动更久）。而探测点在保存链路上：
+    ; Window.BeforeHide → Save → IsAvailable，也就是**每次 Alt+Z 隐藏都跑一次**，
+    ; 外加 120s 自动保存。只有「探测不到」才每次都重试，好让用户中途装好 pandoc
+    ; 之后不必重启程序。
+    static _availCache := false
+
     ; ─── 判断 pandoc 文件是否"有效" ───（v1.9 新增）
     ; 有效定义：文件存在 且 大小 > 1MB（正常 pandoc 约 150-230MB）
     static _IsValidPandoc(path) {
@@ -857,23 +911,27 @@ class PandocService {
 
     ; ─── 检测 pandoc 是否可用 ───（v1.9 修复：加大小检查）
     static IsAvailable() {
+        if this._availCache
+            return true
         ; 优先 AppData 打包版（必须大小 > 1MB）
         p := Config.PandocPath
         if this._IsValidPandoc(p) {
             try {
                 code := RunWait(A_ComSpec . ' /c "' . p
                     . '" --version >nul 2>&1', , "Hide")
-                return code = 0
+                if (code = 0)
+                    return this._availCache := true
             } catch {
             }
         }
         ; 退化系统 PATH
         try {
             code := RunWait(A_ComSpec . " /c pandoc --version >nul 2>&1", , "Hide")
-            return code = 0
+            if (code = 0)
+                return this._availCache := true
         } catch {
-            return false
         }
+        return false
     }
 
     ; ─── 主流程：RTF → MD ───
@@ -1648,8 +1706,17 @@ class StatusBar {
         this._msgCtrl.Value := msg
         if this._clearTimer
             SetTimer(this._clearTimer, 0)
-        this._clearTimer := () => (this._msgCtrl.Value := "")
+        ; ⚠ 回调里摸控件，得先过一道闸（见 .clinerules/03「异步定时器里操作窗口」）：
+        ;   提示是 2 秒后才清的，这期间窗口可能已被收走甚至销毁（Alt+Shift+Z 退出），
+        ;   那时 `_msgCtrl.Value` 会抛异常 —— 而 SetTimer 回调没有外层 try，
+        ;   异常直接变成模态框，整个程序停摆。
+        this._clearTimer := () => this._ClearMsg()
         SetTimer(this._clearTimer, -2000)
+    }
+
+    ; 清空提示栏。失败（控件已随窗口销毁）就让它失败 —— 这正是 try 的用途。
+    static _ClearMsg() {
+        try this._msgCtrl.Value := ""
     }
 }
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -3202,6 +3269,8 @@ class SearchFeature {
 
     static _visible := false
     static _lastKeyword := ""
+    ; 正文长度 —— 缓存的第二把锁（见 _DoSearch）：关键字没变但正文变了，旧偏移同样作废
+    static _lastLen := -1
     static _matches := []
     static _current := 0
 
@@ -3226,6 +3295,7 @@ class SearchFeature {
     ;   而正文可能已经换了（切日期 / 手动编辑），SetSel 会选到错误位置。
     static _ResetMatches() {
         this._lastKeyword := ""
+        this._lastLen := -1
         this._matches := []
         this._current := 0
     }
@@ -3360,8 +3430,15 @@ class SearchFeature {
             return
         }
 
-        if (kw != this._lastKeyword) {
+        ; 缓存复用条件：关键字没变**且**正文长度没变。
+        ; ⚠ 搜索条开着时编辑器热键被 #HotIf 挡掉，但鼠标点进编辑区照样能打字 ——
+        ;   那时关键字不变而正文已变，复用旧偏移会让下面 SetSel 选到错误位置。
+        ;   用「正文长度」当脏标记：字数一变长度必变，代价一次 WM_GETTEXTLENGTH（O(1)）。
+        ;   已知残留：等长替换（改掉一个字符而不改字数）测不出来，属罕见边缘。
+        lenNow := EditorService.GetLength(hwndEd)
+        if (kw != this._lastKeyword || lenNow != this._lastLen) {
             this._lastKeyword := kw
+            this._lastLen := lenNow
             this._matches := []
             pos := 0
             while (true) {
@@ -3401,9 +3478,20 @@ class SearchFeature {
         lineIdx := SendMessage(0x00C9, m.start, 0, hwndEd)
         EditorService.ScrollToLineFixed(hwndEd, lineIdx)
 
-        SetTimer(() => this._edit.Focus(), -300)
+        ; 焦点还给搜索框 —— 延迟 300ms 是因为刚把焦点交给编辑区选词，抢太早会丢选中。
+        ; ⚠ 走守卫：这 300ms 内用户可能已经 Esc 关掉搜索条、或收起整个窗口，
+        ;   那时直接 Focus() 会抛异常，而 SetTimer 回调没有外层 try（弹框停摆）。
+        SetTimer(() => this._RefocusSearchBox(), -300)
 
         this._count.Value := this._current . "/" . this._matches.Length
+    }
+
+    ; 把焦点还给搜索框。搜索条已隐藏或尚未初始化就不动 ——
+    ; 免得把焦点塞给一个看不见的控件（那会把焦点赶到别处去）。
+    static _RefocusSearchBox() {
+        if !this._visible || !this._edit
+            return
+        try this._edit.Focus()
     }
 }
 
@@ -3853,6 +3941,39 @@ class BackdropFeature {
 ;  组合根 —— 装配 + 启动
 ; ═══════════════════════════════════════════════════════════════════════════
 
+; ═══ 全局异常兜底 ═══
+; AHK v2 对未捕获异常默认是**弹模态框**：框一弹脚本就停摆（热键全无反应、框还挂在
+; 屏幕上），只能手动杀进程 —— 项目在 v2 迁移期踩过三次（见 .clinerules/03）。
+; 这里改成「写日志 + 继续跑」：单个 Feature 出错不该拖垮整个程序。
+; 注册点放在这里（而不是文件更早处）是因为 LogError 要写
+; %AppData%\SevenNote-Dev\，而那目录就在下面两行才建。
+OnError(OnScriptError)
+
+; AHK 的异常回调。返回 **1** = 已处理，不弹默认错误框（返回 0 就会弹）。
+; ⚠ 回调自身绝不能抛异常 —— 会递归回到这里，所以全程 try，见 LogError。
+OnScriptError(err, mode) {
+    stack := err.HasProp("Stack") ? err.Stack : ""
+    LogError(mode . "  " . err.Message
+        . "`n      文件  " . err.File . "   行  " . err.Line
+        . (Trim(stack) != ""
+            ? "`n      调用栈：`n      " . StrReplace(Trim(stack, "`n"), "`n", "`n      ")
+            : ""))
+    return 1
+}
+
+; 追加一条到 %AppData%\SevenNote-Dev\_error.log。
+; 超 512 KB 就轮转（删掉重来）—— 日志只用来事后定位，不归档。
+LogError(msg) {
+    try {
+        DirCreate(Config.AppDataDir)      ; 启动极早期出错时，这个目录可能还没建
+        logPath := Config.AppDataDir . "\_error.log"
+        if (FileExist(logPath) && FileGetSize(logPath) > 524288)
+            FileDelete(logPath)
+        FileAppend("── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n"
+            . msg . "`r`n`r`n", logPath, "UTF-8")
+    }
+}
+
 ; ═══ 确保 AppData 目录存在 ═══
 DirCreate(Config.AppDataDir)
 
@@ -4093,7 +4214,14 @@ ShowStartupTip() {
     tip.AddText("x20 y20 w200 Center c3D5166", Config.AppName . " 已启动！Alt+Z 呼出")
     tipY := A_ScreenHeight * 0.65
     tip.Show("w240 h80 y" . tipY)
-    SetTimer(() => tip.Destroy(), -1500)
+    ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，
+    ;   而 SetTimer 回调没有外层 try，异常即弹模态框（见 .clinerules/03）。
+    SetTimer(() => DestroyTipWindow(tip), -1500)
+}
+
+; 关掉启动提示。已经关过就算了 —— 这正是 try 的用途。
+DestroyTipWindow(tip) {
+    try tip.Destroy()
 }
 
 

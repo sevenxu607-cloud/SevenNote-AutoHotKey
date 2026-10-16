@@ -36,3 +36,18 @@
 | **异步定时器里操作窗口，窗口可能已经藏了** | AHK v2 的 `WinMove` / `WinGetPos` / `WinActivate` **默认忽略隐藏窗口**（对 `WinHide` 过的窗口抛 `Target window not found`），而 `SetTimer` 排下的复核回调跑起来时，用户很可能已经按热键把窗口收起。实测：`Alt+X` 呼出后排 350/950/1550/2150ms 四轮尺寸复核，用户在 350ms 内再按一次 → 回调里 `WinMove` 抛错 → 弹**模态框**、整个脚本卡死（热键全无反应，框还留在屏幕上）。**规则**：凡在异步回调里碰窗口，都先过一道闸 —— `DetectHiddenWindows(false)` + `WinExist` + `!DllCall("IsIconic", "ptr", hwnd, "int")`，不满足即 `return`；「窗口已被用户收起」这种判断还要**顺手停掉后续复核**（不再排下一轮 `SetTimer`），否则会反复重摆一个看不见的窗口 |
 | **先 `Show` 再 `WinMove` 会让窗口「飘一下」** | `g.Show()` 先让窗口在 AHK 的默认落点露面，随后 `WinMove` 才把它挪到目标位置，中间那一帧是**可见**的（实测 `+31ms` 出现在 `(924,357)`，`+219ms` 才跳到 `(1629,238)`）。**定位要在隐藏状态下完成**：`Show("Hide")` → 量尺寸 / `WinMove` → 最后 `g.Show()` 一次性露面，实测从诞生起就只有一个位置 |
 | **AHK v2 没有内置 `JSON` 对象** | `JSON.Stringify` 是 v2.1 alpha 才有的，v2.0.27 上会把它当**未赋值变量**。项目没写 `#Warn`，但 **v2 默认就开 `VarUnset` 警告且默认动作是弹模态框** —— 于是「Warning: This local variable appears to never be assigned a value. Specifically: JSON」直接卡死整个脚本，`Alt+Z` 全无反应，窗口标题是脚本名的 `#32770` 对话框挡住一切。**排查手段**：`DetectHiddenWindows(true)` 后枚举窗口找 `#32770`，再 `WinGetText` 读出正文 |
+| **未捕获异常默认弹模态框卡死（v2.4.2 起已有全局兜底）** | 未处理异常 + `SetTimer` 回调 / `EventBus.Emit` 里的订阅者都没有外层 try → 任一处漏 try 就弹 `#32770` 停摆、热键全无反应。v2.4.2 起在组合根注册了 `OnError`（写 `_error.log` 后 `return 1` 继续跑），`#Warn VarUnset` 的动作也从 MsgBox 改成 OutputDebug。⚠ **兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前仍须自己过闸（见上一条） |
+
+## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
+
+- `OnError(OnScriptError)` —— 未捕获异常 → `%AppData%\SevenNote-Dev\_error.log`
+  （含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
+- `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
+
+⚠ **别把兜底当挡箭牌**：
+
+- `OnError` 只保证「程序不倒」—— 出错那句会被跳过，后续可能拿到半成品状态；
+- 新增异步回调（`SetTimer` / `OnMessage`）时，碰窗口或控件前仍要自己守卫
+  （照 `AutoSaveFeature.Tick` 的写法）；「这个分支很少发生」不是不写的理由，
+  它们最终都会以一个留在屏幕上的模态框收场；
+- 用户报「按了没反应」时，**先看 `_error.log`**，再去枚举 `#32770` 读正文。
