@@ -1,0 +1,8 @@
+# 端到端演示测试的运行产物（每次跑 tests\run_user_journey_demo.ps1 都会重写）
+tests/user-journey-report.html
+tests/results.tsv
+tests/trace.log
+
+# 系统 / 编辑器杂物
+Thumbs.db
+desktop.ini

@@ -5,7 +5,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
 
-![version](https://img.shields.io/badge/version-2.4.1-blue)
+![version](https://img.shields.io/badge/version-2.4.3-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
@@ -158,15 +158,9 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 想再加一套**别的图**当主题（极光、雪原……）？见
 [开发指南 → 添加带背景图的主题](#添加带背景图的主题)，配 `tools\pick-theme-colors.ps1` 一键取色。
 
-**换图 / 调遮罩浓淡**（不用改源码）—— 在 `_config.ini` 的 `[Appearance]` 里加：
-
-```ini
-BackdropImage=D:\Pictures\你的星空.png  ; 留空则用主题自带的那张
-BackdropOpacity=20                      ; 0-100；0/留空=用主题自带值；遮罩色取主题 edBg，暗主题压暗、亮主题加白纱
-```
-
-> ⚠ `BackdropImage` 是**全局覆盖**，写上会盖掉**所有**带 `bg` 的主题 ——
-> 现在有星空、金克斯两套图主题，别用它换图，改主题自己的 `bg`。
+**换图 / 调浓淡**都改**主题自己**：`ThemeService.Themes` 里那一条的 `bg`（图路径）与
+`bgAlpha`（遮罩不透明度 0-100；遮罩色取该主题 `edBg`，暗主题压暗、亮主题加白纱）。
+不设全局开关 —— 多套图主题才能各调各的（换图后**重启程序**才生效，位图有缓存）。
 
 ### ⌨️ 输入增强
 
@@ -326,7 +320,7 @@ C:\Users\<用户名>\AppData\Roaming\SevenNote-Dev\
 │  · Feature 之间零调用，通过 EventBus 通信            │
 │  · 可插拔：删除任一 Feature 不影响其他               │
 ├─────────────────────────────────────────────────────┤
-│ SERVICE  服务层（7 项，纯能力）                     │
+│ SERVICE  服务层（8 项，纯能力）                     │
 │  · 无业务、无时间、无理由                            │
 │  · 被多个 Feature 共用                              │
 ├─────────────────────────────────────────────────────┤
@@ -659,7 +653,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\rebake-backdrop.ps1 `
 | **`edBg` 兼作遮罩色 / 留边色，必须和图的明暗同档** | `BackdropService.SetMask` 拿 `edBg` 当遮罩色、`_Compose` 拿它铺 `contain` 留边。两套图主题都走暗色，`edBg` 也在暗档；图暗却配亮 `edBg`，整张图会发灰、留边像贴了张纸条 |
 | **`bgAlpha = 0` 时字色要配图，别配习惯** | 图不压不抬时文字直接压在图上：暗图配 `text` 近白（`#F5F9FF` / `#EAF2FF`）且**带图的色相**、`dim` 不低于 `#93AACB`；图真亮（均亮 ≥ 130）才走深色字（取自图色相的 `#12172B`） |
 | **竖版 / 人物图别写 `bgFit: "contain"`，改成烘焙时裁好** | contain 会把人物缩进中间、两侧留一大条底色。用 `rebake-backdrop.ps1` 的 `-CropX/-CropW/-CropY` 裁成编辑区比例（0.917）再铺 cover。见上面第 3 步 |
-| **别用 `_config.ini` 的 `BackdropImage` 换图** | 它是**全局覆盖**，一旦写上会盖掉**所有**带 `bg` 的主题。多套图主题并存时，换图请直接改主题自己的 `bg` |
+| **换图 / 调浓淡都改主题自己** | 图与浓淡（`bg` / `bgAlpha`）只写在 `Themes` 条目上，没有全局开关 —— 多套图主题才能各调各的（早先那对 `[Appearance] BackdropImage` / `BackdropOpacity` 已删） |
 
 > **数组元素之间的逗号别漏**。给 `Themes` 追加新条目时，前一条结尾补上 `},` ——
 > 漏了逗号不是「少一个元素」那么温柔，AHK 会报 `(946) : ==> Unexpected "{"`
@@ -683,7 +677,7 @@ BORDER_COLOR`(35/36/34) 把标题栏底色 / 标题文字 / 外框分别染成 `
 
 #### 想调图的浓淡
 
-`BackdropOpacity`（全局）和 `bgAlpha`（每套主题）都是**遮罩不透明度**，
+`bgAlpha`（**每套主题各一个**）是**遮罩不透明度**，
 遮罩色取该主题的 `edBg` —— 两套图主题的 `edBg` 都在暗档，所以加遮罩 = **压暗**：
 
 - **暗色 `edBg`**（星空 `#0D0F14` / 金克斯 `#0B1624`）：加遮罩 = **压暗**，值越大图越暗、
@@ -691,19 +685,13 @@ BORDER_COLOR`(35/36/34) 把标题栏底色 / 标题文字 / 外框分别染成 `
 - ⚠️ 遮罩是**按色混合**、不是等比缩放 —— 它会减饱和。想调暗**优先改烘焙的 `-Knee`**
   （V 空间等比缩放，不减饱和），遮罩只当临时手段
 
-```ini
-; 1) _config.ini 全局调 —— 注意：对「所有」图主题生效，多套图主题并存时别用这招
-[Appearance]
-BackdropOpacity=20      ; 0-100；0 或留空 = 用主题自带的 bgAlpha
-```
-
 ```ahk
-; 2) 只改这一套主题自带的值
+; 调这一套主题自带的浓淡
 , bgAlpha: 20
 ```
 
 ```ahk
-; 3) 再添一套图主题的完整示例（暗图 + 亮字，裁剪与滚降都烘进图片，见上面第 3、4 步）
+; 再添一套图主题的完整示例（暗图 + 亮字，裁剪与滚降都烘进图片，见上面第 3、4 步）
 {name: "雪原", win: "0A1420", edBg: "0A1420", text: "EAF2FF", dim: "93AACB"
     , bg: "D:\Pictures\snow-baked.png"
     , bgAlpha: 0}
@@ -899,8 +887,9 @@ class MyWindowFeature {
    到位；连按 3 次 `Alt+X` 隐藏 / 显示切换正常、PID 不变、不弹「找不到窗口」；程序重启后
    再按 `Alt+X` 认回同一扇窗口，不新开。
 
-   > 同公式的两个实现（`_PlaceLikeTerminal` / `_PlaceLikeDeepSeek`）各留一份：Feature 之间
-   > 不许互相调用，**改一处要同步另一处**。
+   > 同公式的两个实现（`_PlaceLikeTerminal` / `_PlaceLikeDeepSeek`）现在共用**一份**代码：
+   > 落点算式与「可摆性闸」都在 `PeerLayoutService`（`CornerRect` / `TargetW` / `TargetH` /
+   > `IsPlaceable` / `RectOf`）里，两个 Feature 各调一次 —— 不再需要「改一处同步另一处」。
 
 可配置项（`_config.ini`，都可留空走默认）：
 
@@ -925,18 +914,16 @@ DeepSeekH=1020
 
 ### 关键坑点（踩过的坑）
 
+> AHK v2 **语言级**的坑，权威表在 [`.clinerules/03-ahk-v2.md`](.clinerules/03-ahk-v2.md) ——
+> 那里更全（多了 `Gui` 不能做变量名、`<=` 遇空串抛错、`WinMove` 与 `Gui.Move` 的单位差、
+> `Show("Hide")` 后 `WinGetPos` 读不到窗口、最小化窗口 `IsWindowVisible` 仍是 1 等），
+> 此处只留与**本应用行为**直接相关、且上文没讲到的几条。
+
 | 坑 | 说明 |
 | --- | --- |
 | **`--app` 应用窗口不值得用，改开普通窗口** | 早先用 `--app=<url>` 让 Edge 开「应用窗口」图的是桌面应用观感，实测两头不占：Edge 155 起 app 窗口**照样自带地址栏**（UIA 查到 `view_1017`「地址和搜索栏」，换全新 `--user-data-dir` 亦然，是产品行为），却**没有标签栏** —— 既不像应用，也不算好用的浏览器。改用 `--new-window <url>` 开**普通窗口**：标签栏与完整工具栏都在，窗口内能直接浏览网页（实测窗口标题带「和另外 1 个页面」= 多标签、以及「Microsoft Edge」后缀，app 窗口两者皆无）。认窗逻辑一行不用改（普通窗口 class 同为 `Chrome_WidgetWin_1`，仍按专用 profile 的 PID 认）。⚠ 外框尺寸别指望 `--window-size`：实测宽度请求会被 Edge **吸附**到它自己的值（探针：请求 506 / 512 逻辑都落 773），高度却准（680 → 1020）；本机 SevenNote profile 上稳定在 **772**，目标宽就以这个实测值为准 —— 见上文「目标宽」一节 |
 | **换了窗口模式必须退掉老实例** | Chromium 单实例复用会让「最先那次启动」的窗口类型沿用到该进程结束 —— 老实例还活着，改了命令行也白改（实测从 `--app` 升级后按 `Alt+X` 仍开应用窗口）。更隐蔽的是 `Toggle()` 会**先把老窗口认回来**，于是根本走不到 `_Launch()`。故落盘模式标记 `_deepseek.mode` 做升级清理：`_FindBrowserHwnd()` 开头就校验它，不符即当「没有窗口」，再由 `_RetireLegacyInstance()` 先 `WM_CLOSE` 后强杀。⚠ 老实例的识别别只信 `_deepseek.pid`（可能落后或指向已退出进程），用 WMI 按命令行里的 profile 路径筛才全（实测该 profile 下有 9 个同族进程：主进程 + crashpad / gpu / renderer…） |
 | **异步定时器会去操作一个已经藏起来的窗口** | AHK v2 的 `WinMove` / `WinGetPos` / `WinActivate` **默认忽略隐藏窗口**，对 `WinHide` 过的窗口直接抛 `Target window not found` —— 表现是弹**模态框**、整个脚本卡死（之后 `Alt+X` / `Alt+C` 全无反应，那框还留在屏幕上）。实测路径很具体：`Alt+X` 呼出 `_PlaceLikeTerminal()` 会排 350 / 950 / 1550 / 2150ms 四轮尺寸复核（`_CheckSize`），用户在 350ms 内再按一次 `Alt+X` 把窗口藏了 → 定时器照跑 → `_CheckSize` 读到尺寸不符 → `_PlaceTarget` → **`WinMove` 对隐藏窗口抛错**。修法两条：① `_CheckSize` 里加 `IsWindowVisible` 检查，**不可见就直接返回、且不再排下一轮**（用户收起了就不该再管它）；② `_PlaceTarget` / `_PlaceLikeDeepSeek` 这类「摆位」函数开头统一加闸：`DetectHiddenWindows(false)` + `WinExist` + `!IsIconic`，不满足即 `return`。⚠ 同文件的 `_CheckSize` / `_BroadcastRect` 本来就写了 `DetectHiddenWindows` + `try/finally` 守卫，**只有摆位这条路漏了** —— 凡是「异步回调里碰窗口」的地方都要过同一道闸。实测 `Alt+X`×3 @200ms + `Alt+C`×2 @200ms 暴力连打，模态框 **0** 个 |
-| `Clear` / `log` / `min` / `max` 不能做变量名 | AHK v2 内置函数名 |
-| AHK v2 的 `<` `>` 是数值比较 | 字符串比较用 `StrCompare` |
-| `EM_SETSEL` / `EM_GETSEL` 用 DllCall | 内置 SendMessage 对 INT 参数有歧义 |
-| `FINDTEXTEXW` 读偏移 16/20 | 误读 0/4 会导致搜索只找到 1 个 |
-| 32 位编译导致 RichEdit 下划线 | **必须 64 位编译** |
-| `FileInstall` 必须一行 | 折行会导致打包 0KB 空文件 |
-| `FileExist` 返回 `"A"` 不是 `true` | 断言需 `!!` |
 | **未捕获异常默认弹模态框，把程序卡死** | AHK v2 对未处理异常的默认动作是 `MsgBox` + 停摆（热键全无反应、框还留在屏幕上）。而 `SetTimer` 回调、`EventBus.Emit` 里的订阅者**都没有外层 try** —— 任一处漏 try，都能让整个程序失去响应（v2.4.1 的 `Alt+C` / `Alt+X` 连打卡死就是这一类）。v2.4.2 起注册了 `OnError`（写 `_error.log` 后继续跑）兜住事故，`#Warn VarUnset` 也从 MsgBox 改成 `OutputDebug`。⚠ **但兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前，仍须自己过一遍「还在不在」的闸 |
 
 ---
@@ -983,6 +970,7 @@ DeepSeekH=1020
 | 版本 | 日期 | 变化 |
 | --- | --- | --- |
 | **v2.4** | 2026-10-16 | 两项精简：①**时间戳一律手动** —— 删掉「启动时无戳就自动补一个」与「切日期时距上一戳 ≥60 分钟再补一个」两条自动路径，连带 `EditorService` 的 `FindLastTimestamp` / `FindLastTimestampInText` / `DiffMinutes`、`Config.TimestampInterval`、以及为自动模式兜底的「保存前剥掉空戳」`StripIfEmpty` 一并删除；`Ctrl+T` 手动路径不变。实测切到一个**空的新日期**，编辑区里只有日期头、没有 `🕐 HH:mm`（旧版此处必有一个）。②**主题精简 8 套 → 5 套**：删掉天空蓝 / 薄荷绿 / 高雅灰，留下纯米黄 / 护眼绿 / 纸白 / 星空 / 金克斯（两套浅色底 + 一套中性白 + 两套图主题）。⚠ 删主题会让**其后元素的下标整体前挪** —— 老用户的 `ThemeIndex` 会指向另一套主题、指向末尾的还会越界兜底，故新增 `ThemeService._MigrateIndex`（旧→新映射表 + `[Appearance] ThemeSchema=2` 一次性标记 + 把新下标写回配置）。实测本机老配置 `ThemeIndex=8` 启动后自动变 **5**，**主题仍是金克斯、背景图照旧**；再按 `Alt+T` 循环得 `1→2→3→4→5`，正好 5 套 |
+| **v2.4.3** | 2026-10-17 | 一轮**去重与仓库卫生**，不改功能语义：① **两处重复的布局算法收拢成一份** —— `Alt+C` 终端与 `Alt+X` DeepSeek 都要摆到右下角同一列（离工作区右缘 `Config.PlaceRight`、底边贴工作区底、宽取 `[Paths] DeepSeekW`），原先因为「Feature 之间不许互相调用」而在 `PowerShellFeature._PlaceLikeDeepSeek` / `DeepSeekFeature._PlaceTarget` 里**各留一份**（注释写着「两处要同步改」），连同「隐藏 / 最小化闸」（`WinExist` + `!IsIconic`）与「读外框广播 `Peer.Placed`」一起上收到新增 Service **`PeerLayoutService`**（`IsPlaceable` / `TargetW` / `TargetH` / `CornerRect` / `RectOf`）—— 两个 Feature 各调一次，改一处即可。⚠ 这是**纯搬运**，落点数值与守卫语义一字未改：实测 `CornerRect(772,1020)` = `1773,580`（与工作区算术一致），`IsPlaceable` 对「可见 / 隐藏 / 不存在」三种窗口分别 `1 / 0 / 0`，`RectOf` 隐藏窗口也能读到外框；真机 A/B 对照（旧版 vs 新版）终端与笔记窗口外框**逐项相同**（`1182,387 515x680` / `1182,7 515x382`）。② **删掉全局背景图覆盖键** —— `[Appearance] BackdropImage` / `BackdropOpacity` 是**全局覆盖**，一旦写上会盖掉**所有**带 `bg` 的主题（多套图主题并存时没法定制各自的浓淡），现予删除：图的路径与浓淡只写在主题自己的 `bg` / `bgAlpha` 上。实测五套主题轮切，图主题 `_bgPath` 指向各自图片、无图主题为空且 `bgAlpha` 走兜底 `60`。③ `StatFeature.Tick`（500ms 常驻计时器）补上窗口可见性守卫 —— 窗口收起 / 最小化时不再白读编辑区长度，写法与 `AutoSaveFeature.Tick` 对齐。④ 仓库卫生：新增 `.gitignore`（演示测试产物 `user-journey-report.html` / `results.tsv` / `trace.log` 不再入库），已跟踪的报告文件 `git rm --cached` 出库 |
 | **v2.4.2** | 2026-10-16 | 一轮**健壮性与非功能性**补强，四项改动都不改功能语义：① **补全局异常兜底** —— 原先全库 `OnError` 定义 **0 处**，AHK v2 对未捕获异常默认动作是**弹模态框**，一弹脚本就停摆（热键全无反应、框还挂在屏幕上），项目在 v2 迁移期连踩三次（`JSON.Stringify` 未赋值 / `Gui` 当变量名 / 空串比较）。现在注册 `OnError(OnScriptError)`：异常写 `%AppData%\SevenNote-Dev\_error.log`（带文件 / 行 / 调用栈，超 512KB 自动轮转）后 **`return 1` 继续跑** —— 单个 Feature 出错不再拖垮整个程序；同因把 `#Warn VarUnset` 的动作从默认 MsgBox 改成 `OutputDebug`（VS Code 的 AHK++ 调试器仍看得到，但不再拦路）。② **砍掉保存链路上最贵的一步** —— `PandocService.IsAvailable()` 每次调用都要 `RunWait` 起一个 conhost + 一个 200MB 的 `pandoc --version` 进程，而它的触发点是 `Window.BeforeHide → Save`（**每次 `Alt+Z` 隐藏都跑**）加 120s 自动保存；现在探测到「可用」就永久缓存（只有探测不到才重试，用户中途装好 pandoc 不必重启）。③ **`ConfigService` 加进程内读缓存** —— `IniRead` 没有内部缓存，而 `Config.GetVault()` 在单次保存里至少被调 6 次（`FindRtf` / `DefaultRtfPath` / `FindMd` / `DefaultMdPath` / `TempDir` / `AssetsDir`），`RenameWithTag` 的双扩展名循环里还要翻倍；写入时同步缓存、`Init` 时清空（沙箱注入新路径不会读到旧值）。⚠ 代价：**运行期手改 `_config.ini` 不再被读到，改配置请重启程序**。④ **两处明细优化** —— `NoteStoreService.ListAllTags` 原先用冒泡（1000 篇笔记约 50 万次 `StrCompare`，解释器里数百 ms）换成内置 `Sort`（C 层，O(n log n)），排序键用「日期 + TAB + 6 位下标」以保住「同一天多条（`2026-09-19-a.md` / `-b.md`）不串位」与稳定性；`SetTimer` 回调统一过一遍「窗口还在不在」守卫（`StatFeature.Tick` / `AutoSaveFeature.Tick` 本就有，本轮给 `StatusBar` 的 2s 清屏、`SearchFeature` 的 300ms 回焦、`ShowStartupTip` 的 1.5s 关闭补上）—— 回调里异常同样会弹模态框，而这三处原先都是裸的 |
 | **v2.4.1** | 2026-10-16 | 两处修整：① **`Alt+C` / `Alt+X` 快速切换不再弹模态框卡死** —— 根因是**异步定时器去摆一个已经藏起来的窗口**：`Alt+X` 呼出后排下的四轮尺寸复核（350/950/1550/2150ms）照跑，而 `WinMove` / `WinGetPos` 在 AHK v2 里默认忽略隐藏窗口、对 `WinHide` 过的窗口直接抛 `Target window not found`，模态框一弹整个脚本就卡住（热键全无反应、框留在屏幕上）。修法两条：`_CheckSize` 加 `IsWindowVisible` 检查（不可见即返回、**且不再排下一轮复核**）；`_PlaceTarget` / `_PlaceLikeDeepSeek` 开头补 `WinExist` + `!IsIconic` 守卫（同文件的 `_CheckSize` / `_BroadcastRect` 本就有这道闸，只有摆位这条路漏了）。实测 `Alt+X`×3 @200ms + `Alt+C`×2 @200ms 暴力连打，模态框 **0** 个。② **终端宽度与其他两个统一** —— 早先终端那一步「只挪位置、尺寸一个不动」，于是两个伙伴都按右缘摆、宽度各是各的（用户 WT profile 实测 **744** vs 目标 770）：右缘齐、**左缘差 26px**，堆叠处左边露出一条底色（终端可见 `1810..2536` / DeepSeek `1784..2538`）—— 就是「终端比别人窄一点、缺口在左边」。现在终端按**同一目标宽**摆（只改宽、高度仍归 profile）。目标宽同时从 **770 改为 772**：实测 `--window-size` 的宽度**会被 Edge 吸附**（临时 profile 探针：请求 506 / 512 逻辑都落 773；高度 680 → 1020 却准），砍请求值补边框没用 —— 以 Edge 自己稳定停住的 772 为目标，`_CheckSize` 复核才收敛（否则每轮判「不符 → 重摆 → Edge 又套回去」来回弹）。实测终态三者外框同为 **772**、x 同为 `1773`，可见边界左 **1782** / 右 **2536** / 底 **1591** 完全一致，笔记窗口底边 574 到伙伴顶边 580 正好 6px = `DockGap` |
 | **v2.3.3** | 2026-10-16 | `Alt+X` 改为**带完整浏览器功能的普通窗口**，放弃 `--app` 应用窗口：实测 app 窗口「有地址栏、无标签栏」，既不像桌面应用也不算好用的浏览器 —— 改用 `--new-window <url>` 后窗口内可直接浏览网页（实测标题带上「和另外 1 个页面」= 多标签、以及「Microsoft Edge」后缀，app 窗口两者皆无）。顺带补三处健壮性：① **升级时必须退掉老实例** —— 这是最隐蔽的一处：Chromium 单实例复用让「最先那次启动」的窗口类型沿用到该进程结束，实测那个 `--app` 进程一直活着（用户只关了窗口、没退进程），改了命令行也照旧开应用窗口；而且 `Toggle()` 会**先把老窗口认回来**、根本走不到 `_Launch()`。故新增落盘模式标记 `_deepseek.mode`（本版写 `window`，缺失/不符 = 老实例）+ `_FindBrowserHwnd()` 开头的模式校验 + `_RetireLegacyInstance()`（先 `WM_CLOSE` 后 `ProcessClose`）；老实例识别用 WMI 按命令行里的 profile 路径全库筛（实测 **9** 个：主进程 + crashpad / gpu / renderer…），不再只信可能落后的 `_deepseek.pid`，WMI 拿不到时退回那一支。② **Chromium 单实例复用进程** —— 用户只关了窗口没退进程时二次启动不产生新进程，原来只认新 PID 会空等 15 秒弹「找不到窗口」（实测二次启动后新窗口仍属老进程 14452），现按 `_deepseek.pid` 里的老 PID 兜底认窗。③ **同 profile 可能同时开着多扇窗**（实测二次启动后同 PID 下有 3 扇），`_TopWindowOf` 改为**优先取尺寸等于目标**的那扇，而非「第一个可见的」。实测终态：老实例退掉后新起 `msedge.exe --new-window https://chat.deepseek.com/ ...`，窗口 `1775,580 772x1020`（与终端左缘 / 底边严格相同，右缘差 2px 系 Edge 外框取整）；连按 3 次 `Alt+X` 隐藏 / 显示切换正常、PID 不变、不弹错误框；程序重启后再按 `Alt+X` 认回同一扇窗口、不新开。另修 `tests\user_journey_driver.ahk` 引用已删除的 `Config.WinW/WinH` 导致的演示脚本启动失败 |

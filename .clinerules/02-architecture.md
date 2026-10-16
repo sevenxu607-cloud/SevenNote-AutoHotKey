@@ -8,7 +8,7 @@
 │  · Feature 之间零调用，通过 EventBus 通信            │
 │  · 可插拔：删除任一 Feature 不影响其他               │
 ├─────────────────────────────────────────────────────┤
-│ SERVICE  服务层（7 项，纯能力）                     │
+│ SERVICE  服务层（8 项，纯能力）                     │
 │  · 无业务、无时间、无理由                            │
 │  · 被多个 Feature 共用                              │
 ├─────────────────────────────────────────────────────┤
@@ -136,6 +136,7 @@ class ExportFeature {
   用 `_ScheduleRender()`（`SetTimer -80` 合并抖动）+ `_RenderNow()`（同矩形直接跳过，真重铺过
   才 `RedrawWindow(ed, INVALIDATE|ERASE)`）解决；`_Apply` 走 `_RenderNow(true)` 绕过防抖。
   实测 1361x1084 连打 40 次 resize 共 392ms、前后截图逐像素一致。
-- **`BackdropImage` 是全局覆盖**，会盖掉所有带 `bg` 的主题 → 多套图主题并存时别设它。
+- **图与浓淡都写在主题自己的 `bg` / `bgAlpha` 上**（v2.4.3 起删掉了那对全局覆盖键
+  `[Appearance] BackdropImage` / `BackdropOpacity`）—— 多套图主题才能各调各的。
 
 完整步骤、图片规格与压暗三法见 README「开发指南 → 添加带背景图的主题」。

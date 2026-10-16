@@ -127,6 +127,25 @@ Loop {
 锚点失配会在启动前就 `throw`，比事后再发现演示跑不起来省事。
 **给这四行加缩进、折行、行尾注释都会让它失配。**
 
+### 单测一个 Service / Feature 的方法（探针脚本）
+
+不必起真窗口：把主脚本读进内存、末尾追加驱动（与 demo 脚本同一手法），驱动里直接调
+`SomeService.Method()`、把结果写文件，最后 `ExitApp()`。实测用它一次跑完 `PeerLayoutService`
+的四项对拍 —— `CornerRect` 与工作区算术比对、`IsPlaceable` 对「可见 / 隐藏 / 不存在」三态、
+`RectOf` 读隐藏窗口的外框：
+
+```powershell
+$L = Get-Content -LiteralPath $src -Encoding UTF8
+$d = @('f := FileOpen(A_Temp . "\SevenNoteDev\_probe.txt", "w", "UTF-8")'
+     , 'gh := Gui("-Caption")', 'gh.Show("Hide")   ; 造一个"隐藏窗口"样本'
+     , 'f.Write("IsPlaceable(hidden)=" . PeerLayoutService.IsPlaceable(gh.Hwnd) . "`r`n")'
+     , 'f.Close()', 'ExitApp()')
+Set-Content -LiteralPath "$dir\_probe.ahk" -Value ($L + $d) -Encoding UTF8
+```
+
+⚠ **跑之前先 `Stop-Process` 掉已在运行的实例** —— 否则两个实例抢同一批热键，
+后起的那个注册失败、可能弹出模态框把结论搅浑。
+
 ## 看主题效果时的窗口截图坑
 
 验证背景图主题**别只看成品图**，要**在真窗口里看文字压上去的效果**。实测三个坑：
@@ -180,6 +199,17 @@ for ($i = 1; $i -le 40; $i++) {
 早已删除，面板里那 3 条告警仍旧挂着，与磁盘状态无关）。
 
 ## 给 PowerShell 写脚本时的编码坑
+
+⚠ **`git show` 之类外部命令的输出别再经 PowerShell 管道**：`git show HEAD:x.ahk | Set-Content out.ahk`
+看着正常，实际 `powershell.exe`（5.1）会按系统 ANSI（本机 GBK）解码子进程吐出的 UTF-8 字节 ——
+中文变乱码，而且 **GBK 的双字节解码还会吃掉紧跟其后的 ASCII 字符**（引号 / 括号），把类体边界
+一起破坏。实测导出 HEAD 版 `SevenNote.ahk` 后启动，AHK 报
+`(278) : ==> Not a valid method, class or property definition. Specifically: SendMessage(0x00B1, 0, 0,hwnd)`
+—— 看着像源码坏了，其实是被**解码**坏的。要字节级搬运就走 cmd 重定向：
+
+```powershell
+cmd /c "git -C <repo> show HEAD:SevenNote.ahk > <temp>\_old.ahk"
+```
 
 `powershell.exe`（5.1）**按系统 ANSI（本机 GBK）读取无 BOM 的 `.ps1`**。用 UTF-8 无 BOM
 写含中文的脚本，中文会变乱码；GBK 双字节解码还会**吃掉紧跟其后的 ASCII 字符** ——

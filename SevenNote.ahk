@@ -15,11 +15,17 @@ Persistent()
 #Warn VarUnset, OutputDebug
 
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenNote —— v2.4.2
+;  SevenNote —— v2.4.3
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
 ;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+H 帮助窗口底部），改这里要一并改它。
 ;
 ;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
+;    v2.4.3  一轮「去重与仓库卫生」：① 新增 Service `PeerLayoutService` —— 终端 / DeepSeek
+;            两处各自留底的「右下角落点公式 + 可摆性闸 + 矩形读取」收拢成一份（原先改
+;            一处要记着同步另一处；实测两版摆位逐项一致）；② 删掉全局覆盖键
+;            [Appearance] BackdropImage / BackdropOpacity（它会盖掉所有带 bg 的主题）
+;            —— 图的路径与浓淡只写在主题自己的 bg / bgAlpha 上；③ StatFeature.Tick
+;            补窗口可见性守卫；④ 加 .gitignore，演示测试产物出库。
 ;    v2.4.2  补齐运行时兜底与三处实测到的浪费：① 注册 OnError —— 未捕获异常写
 ;            %AppData%\SevenNote-Dev\_error.log 并**继续跑**，不再弹模态框停摆；
 ;            同时把 VarUnset 警告动作改成 OutputDebug（同上，不再拦路）。
@@ -100,7 +106,7 @@ Persistent()
 
 class Config {
     static AppName := "SevenNote"
-    static Version := "2.4.2"
+    static Version := "2.4.3"
 
     ; ⚠ 配置目录与 pandoc 目录**故意不同**，不是笔误：
     ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按版本隔离 ——
@@ -1006,11 +1012,11 @@ class ThemeService {
         ;   贴着图的暗部走（亮度 ≈15），编辑区内外浑然一体，没有色块割裂感。
         ;   bgAlpha = 0 表示不压暗：Windows Terminal 用的就是同一张图、backgroundImageOpacity
         ;     设成 1（完全不压暗），这里对齐它 —— 星云保持原样、最亮也最清楚。
-        ;     想压暗就在 _config.ini 写 BackdropOpacity=20（越小越亮），或改这里的 bgAlpha。
+        ;     想压暗就改这里的 bgAlpha（值越大越暗）。
         ;   ⚠ 不压暗之后前景色必须够亮：文字取近白、次级文字也抬到浅灰蓝，
         ;     否则压在星云亮部（亮度约 60-130）上会发灰读不清。
         ;   图片缺失时自动降级成纯深色底（edBg），浅色文字照样读得清。
-        ;   不想改源码就换图：在 _config.ini 的 [Appearance] 里写 BackdropImage / BackdropOpacity。
+        ;   不想改源码就换图：改这条目里的 bg（换图后要重启程序才生效）。
         {name: "星空", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
             , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
             , bgAlpha: 0},
@@ -1033,7 +1039,7 @@ class ThemeService {
         ;        V ≤ 138 原样不动，V > 138 线性滚降到 200。只动亮部（脸 / 手 / 白墙），
         ;      暗部一像素不改，饱和度一丝不掉。
         ;   ④ unsharp 半径 4 强度 0.9（在**成品尺寸**上做，不是源图尺寸）。
-        ;   还想再暗/再亮：优先改 -Knee / -HiMax 重烘（BackdropOpacity 是运行时遮罩，会减饱和）。
+        ;   还想再暗/再亮：优先改 -Knee / -HiMax 重烘（运行时遮罩会减饱和，别当常法）。
         ; ⚠⚠ 这套图烘过**三代**，别照抄旧账：
         ;     一代  -CropW 0.72 / -Knee 116 -HiMax 152  ← 大特写（脸顶到框）、亮部压得太狠，已废
         ;     二代  -CropW 0.85                          ← 过渡档，已废
@@ -1632,8 +1638,83 @@ class BackdropService {
 }
 
 
+; ─── PeerLayoutService：伴生窗口的落点与可摆性（纯几何 + 窗口状态查询）───
+; 终端（Alt+C）与 DeepSeek（Alt+X）必须摆到**同一处**：右缘贴工作区右缘（离缘
+; Config.PlaceRight）、底边贴工作区底、宽度同为 [Paths] DeepSeekW。这份「同列同宽」
+; 的算式原本在两个 Feature 里各留一份（Feature 之间不许互相调用），改一处就得记着
+; 改另一处。它不属于任何单个 Feature、是纯计算与纯查询，故上收到 Service 层。
+class PeerLayoutService {
+    ; 隐藏 / 最小化的窗口一律当「不能摆」，调用方直接 return。
+    ; ⚠ AHK v2 默认忽略隐藏窗口 —— 对 WinHide 过的窗口做 WinGetPos / WinMove 会抛
+    ;   "Target window not found"，而调用方里有一支是异步 SetTimer 复核，等它跑起来时
+    ;   用户很可能已经按热键把窗口收起了（实测弹模态框、整个脚本卡死，之后 Alt+X /
+    ;   Alt+C 全无反应）。最小化态也别动：位置停在 -32000 停放位，量到的尺寸是垃圾值。
+    static IsPlaceable(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(false)
+        try {
+            return !!WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+    }
+
+    ; 目标尺寸（物理像素）。默认 772x1020 —— 772 不是「照 WT profile 推算」的，而是
+    ; **实测 Edge 自己会稳定停住的外框宽**（请求 513 逻辑像素落到 772），终端也按同一
+    ; 宽度摆，于是 Alt+C 与 Alt+X 两种堆叠布局的左 / 右 / 底三条边全齐。
+    ; ⚠ 为什么不写 770：Edge 把内容区尺寸套到窗口外框上时会再补一圈调整边框，WinMove
+    ;   摆到 770 后它自己又套回 772 —— 跟它抢只会来回弹，尺寸复核每轮都判「不符」。
+    ; ⚠ 实测过：直接砍 --window-size 的宽度请求值没用，Edge 会把宽度吸附到自己的值
+    ;   （请求 506 / 512 逻辑都落在 773）。换机器 / 换缩放若要重定：先 WinGetPos 量一次
+    ;   外框，再改这里的默认值；也可在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
+    static TargetW() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
+        return v > 0 ? v : 772
+    }
+
+    static TargetH() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekH", 0)
+        return v > 0 ? v : 1020
+    }
+
+    ; 右下角对齐的落点：右侧贴工作区右缘（离缘 Config.PlaceRight）、底边贴工作区底。
+    ; 返回 {x, y}；尺寸由调用方决定（终端只改宽，高度仍归 Windows Terminal 的 profile）。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static CornerRect(w, h) {
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        x := wkRight - w - Config.PlaceRight
+        y := wkBottom - h
+        ; 兜底：工作区比窗口还小时别落到屏幕外
+        if (x < wkLeft + 10)
+            x := wkLeft + 10
+        if (y < wkTop + 10)
+            y := wkTop + 10
+        return {x: x, y: y}
+    }
+
+    ; 读伴生窗口此刻的**真实**外框矩形，供 Peer.Placed 广播（笔记窗口据此避让）。
+    ; ⚠ 读之前要开 DetectHiddenWindows —— 伙伴刚 WinShow 出来，隐藏态下 WinGetPos 会抛错。
+    ; 窗口已不在 / 尺寸为 0 时返回 ""（调用方用 IsObject 判断）。
+    static RectOf(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return ""
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (w > 0 && h > 0)
+            return {x: x, y: y, w: w, h: h}
+        return ""
+    }
+}
+
+
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  表示层组件
+
 ; ═══════════════════════════════════════════════════════════════════════════
 
 ; ─── StatusBar：状态栏 ───
@@ -2373,8 +2454,8 @@ class PowerShellFeature {
     }
 
     ; 摆到「和 DeepSeek 窗口同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
-    ; 底边贴工作区底。与 DeepSeekFeature._PlaceLikeTerminal 是同一份公式 ——
-    ; Feature 之间不许互相调用，所以各留一份；两处要同步改。
+    ; 底边贴工作区底。「可摆性闸」与落点算式都在 PeerLayoutService 里 ——
+    ; 终端与 DeepSeek 共用同一份，不必再两处同步。
     ;
     ; 为什么需要这一步：终端的落点由 Windows Terminal 的 initialPosition 决定，
     ; 那份值是用户当年按「有任务栏」设的。本机实测 —— 终端 1803,540（底边 1560，
@@ -2385,16 +2466,8 @@ class PowerShellFeature {
     ;   DeepSeek 的 770 都按右缘摆，左缘就差 26px、堆叠处露出一条底色。高度仍归 profile。
     ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
     static _PlaceLikeDeepSeek(hwnd) {
-        ; ⚠ 隐藏 / 最小化的窗口一律不碰：隐藏窗口在 AHK v2 里默认「不存在」，
-        ;   WinGetPos 会直接抛 "Target window not found"（本机实测弹模态框、卡死脚本）。
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(false)
-        try {
-            hwndOk := WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
-        if !hwndOk
+        ; ⚠ 隐藏 / 最小化的窗口一律不碰 —— 闸的实现与实测账见 PeerLayoutService.IsPlaceable。
+        if !PeerLayoutService.IsPlaceable(hwnd)
             return
         WinGetPos(, , &w, &h, "ahk_id " . hwnd)
         if (w <= 0 || h <= 0)
@@ -2406,36 +2479,18 @@ class PowerShellFeature {
         ;   DeepSeek 可见 1784..2538），堆叠处左边露出一条底色 —— 看起来就是「终端比
         ;   其他两个窄一点、缺口在左边」。宽度统一后左 / 右 / 底三条边全齐。
         ;   只改宽，高度仍归 Windows Terminal 的 profile。
-        ; ⚠ 与 DeepSeekFeature._TargetW 是同一份取值逻辑 —— Feature 之间不许互相调用，
-        ;   所以各留一份，两处要同步改。
-        tw := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
-        tw := tw > 0 ? tw : 772
-
-        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
-        x := wkRight - tw - Config.PlaceRight
-        y := wkBottom - h
-        ; 兜底：工作区比窗口还小时别落到屏幕外
-        if (x < wkLeft + 10)
-            x := wkLeft + 10
-        if (y < wkTop + 10)
-            y := wkTop + 10
-        WinMove(x, y, tw, , "ahk_id " . hwnd)
+        tw := PeerLayoutService.TargetW()
+        rect := PeerLayoutService.CornerRect(tw, h)
+        WinMove(rect.x, rect.y, tw, , "ahk_id " . hwnd)
     }
 
     ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
-    ; ⚠ 读之前要开 DetectHiddenWindows —— 它刚 WinShow 出来，隐藏窗口 WinGetPos 会抛错。
+    ; 读矩形的细节（隐藏态要开 DetectHiddenWindows）见 PeerLayoutService.RectOf。
     static _BroadcastRect(hwnd) {
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(true)
-        try {
-            if !WinExist("ahk_id " . hwnd)
-                return
-            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
-        if (w > 0 && h > 0)
-            EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
+        rect := PeerLayoutService.RectOf(hwnd)
+        if !IsObject(rect)
+            return
+        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
     }
 
     ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
@@ -2615,7 +2670,7 @@ class DeepSeekFeature {
         DetectHiddenWindows(true)
         fallback := 0        ; 第一扇「不可见」的候选（认回被藏起来的窗口用）
         visibleAny := 0      ; 第一扇「可见」的候选（尺寸对不上时的退路）
-        tw := this._TargetW(), th := this._TargetH()
+        tw := PeerLayoutService.TargetW(), th := PeerLayoutService.TargetH()
         try {
             for h in WinGetList("ahk_exe " . this._ExeName()) {
                 if (WinGetPID("ahk_id " . h) != pid)
@@ -2794,8 +2849,8 @@ class DeepSeekFeature {
             ;   2px。请求值先扣掉它，外框才与终端严格等宽（高度实测不差，不用减）。
             ;   真机上若换版本后仍差，以 WinGetPos 量到的**外框**为准调这个常量 ——
             ;   别去猜那圈边框算几像素（随系统版本与缩放而变）。
-            w := (this._TargetW() - 2) * 96 // A_ScreenDPI
-            h := this._TargetH() * 96 // A_ScreenDPI
+            w := (PeerLayoutService.TargetW() - 2) * 96 // A_ScreenDPI
+            h := PeerLayoutService.TargetH() * 96 // A_ScreenDPI
             ; --new-window：开一扇**普通浏览器窗口**（有标签栏与完整工具栏），窗口内可直接浏览网页。
             ;       早先走 --app=<url> 开「应用窗口」求桌面应用观感，实测不划算 —— Edge 155 起
             ;       app 窗口照样自带地址栏（UIA 查到 view_1017「地址和搜索栏」），却没有标签栏：
@@ -2908,8 +2963,7 @@ class DeepSeekFeature {
     }
 
     ; 摆到「和 PowerShell 终端同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
-    ; 底边贴工作区底。终端那边的同一份公式是 PowerShellFeature._PlaceLikeDeepSeek ——
-    ; Feature 之间不许互相调用，所以各留一份；两处要同步改。
+    ; 底边贴工作区底。「可摆性闸」与落点算式都在 PeerLayoutService 里。
     ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
     static _PlaceLikeTerminal(hwnd) {
         this._PlaceTarget(hwnd)
@@ -2917,34 +2971,16 @@ class DeepSeekFeature {
     }
 
     ; 按目标尺寸摆到「和终端同一处」（右侧贴工作区右缘、底边贴工作区底）。
-    ; 与 _PlaceLikeDeepSeek 是同一份公式：那边只挪位置（尺寸归 Windows Terminal 的
-    ; profile），这边位置尺寸一起定。
+    ; 终端那边只挪位置、尺寸归 Windows Terminal 的 profile，这边位置尺寸一起定。
     static _PlaceTarget(hwnd) {
         ; ⚠ 隐藏 / 最小化的窗口一律不摆 —— 本函数有两个调用来源，其中 _CheckSize 是
         ;   **异步定时器**（350 / 950 / 1550 / 2150ms），等它跑起来时用户很可能已经
-        ;   连按一次 Alt+X 把窗口藏了。隐藏窗口在 AHK v2 里默认「不存在」，WinMove
-        ;   直接抛 "Target window not found"（实测弹模态框、整个脚本卡死，
-        ;   表现为之后 Alt+X / Alt+C 全无反应）。
-        ;   最小化态也别动：位置停在 -32000 的停放位，量到的尺寸是垃圾值。
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(false)
-        try {
-            hwndOk := WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
-        if !hwndOk
+        ;   连按一次 Alt+X 把窗口藏了。闸的实现与实测账见 PeerLayoutService.IsPlaceable。
+        if !PeerLayoutService.IsPlaceable(hwnd)
             return
-        w := this._TargetW(), h := this._TargetH()
-        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
-        x := wkRight - w - Config.PlaceRight
-        y := wkBottom - h
-        ; 兜底：工作区比目标窗口还小时别落到屏幕外
-        if (x < wkLeft + 10)
-            x := wkLeft + 10
-        if (y < wkTop + 10)
-            y := wkTop + 10
-        WinMove(x, y, w, h, "ahk_id " . hwnd)
+        w := PeerLayoutService.TargetW(), h := PeerLayoutService.TargetH()
+        rect := PeerLayoutService.CornerRect(w, h)
+        WinMove(rect.x, rect.y, w, h, "ahk_id " . hwnd)
     }
 
     ; ─── 尺寸复核：Edge 会在窗口露面之后重新套用它自己的 --window-size ───
@@ -2982,46 +3018,18 @@ class DeepSeekFeature {
         } finally {
             DetectHiddenWindows(detectOld)
         }
-        if (aw != this._TargetW() || ah != this._TargetH())
+        if (aw != PeerLayoutService.TargetW() || ah != PeerLayoutService.TargetH())
             this._PlaceTarget(hwnd)
         this._WatchSize(hwnd, round + 1)
     }
 
     ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
-    ; 与 PowerShellFeature._BroadcastRect 是同一份逻辑 —— Feature 之间不许互相调用，
-    ; 所以各留一份；两处要同步改。
-    ; ⚠ 读之前要开 DetectHiddenWindows —— 窗口刚 WinShow 出来，隐藏态 WinGetPos 会抛错。
+    ; 读矩形的细节见 PeerLayoutService.RectOf。
     static _BroadcastRect(hwnd) {
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(true)
-        try {
-            if !WinExist("ahk_id " . hwnd)
-                return
-            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
-        if (w > 0 && h > 0)
-            EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
-    }
-
-    ; 目标窗口尺寸（物理像素）。默认 772x1020 —— 这是**实测 Edge 自己会稳定保持的外框宽**
-    ; （请求 513 逻辑像素时落在 772，见 _Launch 里 --window-size 的说明），终端也按同一
-    ; 宽度摆，于是 Alt+C 与 Alt+X 两种堆叠布局的左 / 右 / 底三条边全齐。
-    ; ⚠ 为什么不写 770：Edge 把内容区尺寸套到外框上时会再补一圈调整边框，WinMove 摆到
-    ;   770 后它自己又套回 772 —— 跟它抢只会来回弹，_CheckSize 每轮复核都判「不符」。
-    ;   以「它自己稳定停在的宽度」为目标，复核才会收敛。⚠ 实测过：直接砍 --window-size
-    ;   的宽度请求值没用，Edge 会把宽度吸附到自己的值（请求 506 / 512 逻辑都落在 773）。
-    ; 换机器 / 换缩放若要重定：先 WinGetPos 量一次外框，再改这里的默认值。
-    ; 换机器 / 换终端尺寸：在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
-    static _TargetW() {
-        v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
-        return v > 0 ? v : 772
-    }
-
-    static _TargetH() {
-        v := ConfigService.ReadInt("Paths", "DeepSeekH", 0)
-        return v > 0 ? v : 1020
+        rect := PeerLayoutService.RectOf(hwnd)
+        if !IsObject(rect)
+            return
+        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
     }
 
     ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，
@@ -3501,12 +3509,19 @@ class StatFeature {
     static Init(intervalMs := 500) {
         SetTimer(() => StatFeature.Tick(), intervalMs)
     }
+    ; ⚠ 500ms 一次的常驻计时器：窗口收起 / 最小化时不必刷新字数 —— 隐藏态照跑
+    ;   SendMessage 读长度是纯白耗。守卫与 AutoSaveFeature.Tick 同一套：
+    ;   最小化窗口的 IsWindowVisible 仍是 1，必须再排掉 IsIconic。
     static Tick() {
         stat := State.GetStat()
         if !stat
             return
         hwnd := State.GetEd()
         if !hwnd
+            return
+        if !DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            return
+        if DllCall("IsIconic", "ptr", hwnd, "int")
             return
         len := EditorService.GetLength(hwnd)
         if (len != this._lastLen) {
@@ -3813,24 +3828,20 @@ class BackdropFeature {
         EventBus.On("Theme.Changed", (*) => this.Refresh())
     }
 
-    ; 按当前主题刷新「图路径 + 遮罩色 + 不透明度」缓存。配置优先于主题自带，
-    ; 这样不动源码也能换图 / 调压暗程度：
-    ;   [Appearance] BackdropImage   —— 非空则覆盖主题的 bg
-    ;   [Appearance] BackdropOpacity —— >0 则覆盖主题的 bgAlpha
+    ; 按当前主题刷新「图路径 + 遮罩色 + 不透明度」缓存 —— 图只认主题自带的 bg / bgAlpha。
+    ; ⚠ 原先还有一对全局覆盖键（[Appearance] BackdropImage / BackdropOpacity），已删：
+    ;   它是「全局覆盖」，一旦写上会盖掉**所有**带 bg 的主题（多套图主题并存时没法定制
+    ;   各自的浓淡）；换图 / 调压暗的正确做法就是改主题自己的 bg / bgAlpha，重烘走
+    ;   tools\rebake-backdrop.ps1。
     static _Sync() {
         t := ThemeService.Themes[ThemeService.GetCurrent()]
         hasBg := (IsObject(t) && t.HasProp("bg"))
 
-        p := ConfigService.Read("Appearance", "BackdropImage")
-        if (p = "" && hasBg)
-            p := t.bg
-        this._bgPath := p
-        BackdropService.SetImage(p)
+        this._bgPath := hasBg ? t.bg : ""
+        BackdropService.SetImage(this._bgPath)
 
-        a := ConfigService.ReadInt("Appearance", "BackdropOpacity", 0)
-        if (a <= 0)
-            a := hasBg ? t.bgAlpha : 60
-        this._bgAlpha := a
+        ; 没图的主题给 60：那是「图缺失时铺底色」用的遮罩不透明度
+        this._bgAlpha := hasBg ? t.bgAlpha : 60
 
         ; 缩放模式：主题写了 bgFit 就按它来（竖版人物图得用 contain，否则上下会被裁掉），
         ; 没写的（含「星空」等老主题）一律 cover —— 铺图行为分毫不变。
@@ -4000,9 +4011,7 @@ ConfigService.SetDefault("Appearance", "ThemeIndex", "1")
 ConfigService.SetDefault("Appearance", "ThemeSchema", "1")
 ConfigService.SetDefault("Appearance", "FontIndex", "1")
 ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
-; 背景图：图片路径（留空=不启用）、遮罩不透明度 0-100、开关状态
-ConfigService.SetDefault("Appearance", "BackdropImage", "")
-ConfigService.SetDefault("Appearance", "BackdropOpacity", "0")
+; 背景图不再有全局键：图与浓淡都写在主题自己的 bg / bgAlpha 上（见 ThemeService.Themes）
 ConfigService.SetDefault("Input", "CapsLockMap", "0")
 ConfigService.SetDefault("Paths", "Vault", "")
 
