@@ -95,6 +95,38 @@ Loop {
 - 产物：`results.tsv`、`trace.log`、`user-journey-report.html`
 - 内置防冲突：若已有隔离演示在运行，会直接报错拒绝（避免向歧义窗口发送输入）
 
+### ⚠ 主脚本里有几行是沙箱的**锚点**，写法不能动
+
+`.ps1` **不是** `#Include` 驱动，而是把主脚本源码读进内存、用 `Replace-ExactlyOnce`
+（正则精确匹配，**匹配不到就 `throw` 拒绝启动**）改掉几处，再把驱动拼在主脚本之后
+（`$source + CRLF + $driver`），以 **UTF-8 无 BOM** 写成一份临时脚本运行。
+正因为是「拼接 + 同进程」，驱动才能直调主脚本的 `State.*` / `EditorService.*`。
+
+主脚本侧 6 个锚点：
+
+| 锚点（正则） | 被改成 | 为什么 |
+| --- | --- | --- |
+| `^\s*static AppName := "SevenNote"\s*$` | `SevenNote-JourneyDemo` | 进程/窗口名字与真实实例区分开，免得互相抢窗口 |
+| `^\s*static AppDataDir := .+$` | 沙箱 AppData 的绝对路径 | 隔离配置 |
+| `^\s*static ConfigPath := .+$` | 沙箱 `_config.ini` 的绝对路径 | 隔离配置 |
+| `(?m)^if !FileExist\(A_AppData \. "\\SevenNote\\pandoc\.exe"\) \|\| FileGetSize\(...\) < 1048576 \{\r?$` | `if false {` | 跳过 pandoc 释放，不动真实 AppData |
+| `(?m)^!z::WindowFeature\.Toggle\(\)\r?$` | 原样（只作校验） | 确认组合根仍在 |
+| `(?m)^ShowStartupTip\(\)\r?$` | 注释掉 | 演示时不弹启动提示 |
+
+⚠️ `Replace-ExactlyOnce` 要求**恰好命中 1 次**，多一次少一次都 `throw`。所以：
+
+- `Config` 里那三行 `static` 声明**必须各只出现一次** —— 别在注释里抄写它们的字面写法；
+- `ShowStartupTip()` 的**调用行**必须顶格独占一行（它的**定义行** `ShowStartupTip() {`
+  因为行尾带 ` {`，天然不匹配，是安全的）；
+- `!z::WindowFeature.Toggle()` 也是顶格独占一行。
+
+驱动侧 3 个：`^global JourneyPaceMs := \d+\r?$`、`^global JourneyTypeDelayMs := \d+\r?$`、
+`^global JourneySpeedMode := "balanced"\r?$`（由 `-PaceMs` / `-TypeDelayMs` / `-SpeedMode` 覆盖）。
+
+**实务建议**：动到组合根（尤其 `!z::` 那行与启动段）之后，先跑一次演示脚本 ——
+锚点失配会在启动前就 `throw`，比事后再发现演示跑不起来省事。
+**给这四行加缩进、折行、行尾注释都会让它失配。**
+
 ## 看主题效果时的窗口截图坑
 
 验证背景图主题**别只看成品图**，要**在真窗口里看文字压上去的效果**。实测三个坑：

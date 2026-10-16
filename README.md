@@ -5,7 +5,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
 
-![version](https://img.shields.io/badge/version-2.4-blue)
+![version](https://img.shields.io/badge/version-2.4.1-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
@@ -200,7 +200,7 @@ BackdropOpacity=20                      ; 0-100；0/留空=用主题自带值；
 | --- | --- |
 | `SevenNote.ahk` | 全部源码，单文件 |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
-| `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault） |
+| `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault）。`run_user_journey_demo.ps1` 把主脚本**源码读进内存做定点替换**再与驱动**拼成一份临时脚本**运行（不是 `#Include`），所以驱动能直调 `State.*` / `EditorService.*`；也正因如此，主脚本里被替换的那几行**写法不能变**，见 `.clinerules\04-workflow.md` |
 | `screenshots\` | README 配图 |
 | `.clinerules\` | 架构约定与踩坑记录（`05-theme-image.md` 是「看图生成主题」的配方 + 偏好） |
 
@@ -219,7 +219,7 @@ BackdropOpacity=20                      ; 0-100；0/留空=用主题自带值；
 | `Alt+H` | 显示快捷键帮助 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
-| `Alt+T` | 切换主题（含带背景图的「星空」） |
+| `Alt+T` | 切换主题（含两套背景图主题「星空 / 金克斯」） |
 | `Shift+Alt+T` | 切换字体 |
 | `Alt+= / Alt+-` | 调大 / 调小字号 |
 | `Alt+Shift+C` | 切换 CapsLock 键盘映射 |
@@ -271,11 +271,24 @@ BackdropOpacity=20                      ; 0-100；0/留空=用主题自带值；
 
 ### 配置目录（AppData）
 
+程序用**两个**目录，故意分开：
+
 ```
 C:\Users\<用户名>\AppData\Roaming\SevenNote\
-├── _config.ini                   配置（几百字节）
-└── pandoc.exe                    内嵌的 Pandoc（仅 EXE 版）
+└── pandoc.exe                    内嵌的 Pandoc（仅 EXE 版，100+MB，跨版本共用一份）
+
+C:\Users\<用户名>\AppData\Roaming\SevenNote-Dev\
+└── _config.ini                   配置（几百字节）
 ```
+
+⚠️ **`SevenNote-Dev` 是开发版的配置目录**（`Config.ConfigPath`）。`_config.ini` 存的是
+使用者状态（主题 / 字体 / Vault 路径），按版本隔离更安全：两版并存时各改各的、不互相覆盖。
+`pandoc.exe` 太大、又不随版本变，所以留在 `SevenNote\` 共用 —— 源码里
+`Config.PandocPath` 与 `Config.ConfigPath` 指向不同目录**不是笔误**。
+
+⚠️ **`_config.ini` 里可能残留不再被读取的键**（历史版本留下的，例如 `[Appearance]`
+`BackdropOn`）。程序只读 `ConfigService.SetDefault` 里声明过的键，多余的键既不读也不报错，
+删不删都行 —— **别因为某个键在代码里搜不到就当成"漏接线"**。
 
 ### 笔记内容示例
 
@@ -340,7 +353,7 @@ RichEdit 只输出非标编码，Pandoc/Word 认的标准不同——**三方各
 | --- | --- | --- |
 | **代码** | `SevenNote.exe`（放哪都行） | ❌ 不需 |
 | **笔记数据** | Vault 目录（用户选的） | ✅ **只需备份这个** |
-| **程序配置** | `%AppData%\SevenNote\_config.ini` | ⚠️ 可选 |
+| **程序配置** | `%AppData%\SevenNote-Dev\_config.ini`（发布版为 `%AppData%\SevenNote\`） | ⚠️ 可选 |
 | **内嵌 Pandoc** | `%AppData%\SevenNote\pandoc.exe` | ❌ 自动释放 |
 
 **备份策略**：只拷 Vault 目录，其他丢了都能重建。
@@ -389,13 +402,13 @@ Pandoc 不可用，走了降级路径。
 ### Q5：找不到 Vault 路径
 
 - `Alt+H` → 帮助窗口底部显示"当前笔记目录"
-- 或看 `%AppData%\SevenNote\_config.ini` 里的 `Vault=`
+- 或看 `%AppData%\SevenNote-Dev\_config.ini` 里的 `Vault=`（发布版路径为 `%AppData%\SevenNote\`）
 
 **换 Vault**：编辑 `_config.ini` 改 `Vault=`，或删这行重启让程序弹框重选。
 
 ### Q6：改了主题/字体，重启后没保存
 
-`%AppData%\SevenNote\_config.ini` 没有写权限或被占用。
+`%AppData%\SevenNote-Dev\_config.ini`（发布版为 `%AppData%\SevenNote\`）没有写权限或被占用。
 
 **修复**：
 1. 关闭 SevenNote
@@ -730,7 +743,7 @@ BackdropOpacity=20      ; 0-100；0 或留空 = 用主题自带的 bgAlpha
 
 | 参考 | 起什么 | 特殊在哪 |
 | --- | --- | --- |
-| `PowerShellFeature`（`Alt+C`） | 本机 PowerShell 终端 | 靠窗口标题认窗；**尺寸**交给 Windows Terminal profile，**位置**由 `_PlaceLikeDeepSeek()` 对齐到与 DeepSeek 同一处 |
+| `PowerShellFeature`（`Alt+C`） | 本机 PowerShell 终端 | 靠窗口标题认窗；**位置与宽度**由 `_PlaceLikeDeepSeek()` 对齐到与 DeepSeek / 笔记窗口同一处（只改宽，**高度仍归 Windows Terminal profile**） |
 | `DeepSeekFeature`（`Alt+X`） | DeepSeek 网页（普通 Edge 窗口 + 专用 profile） | 得「自己认窗 + 自己定尺寸位置」，多出来的两处坑见下表与实例二 |
 
 骨架长这样（`PowerShellFeature` 的简化版）：
