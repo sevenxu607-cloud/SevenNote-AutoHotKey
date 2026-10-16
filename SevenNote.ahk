@@ -1041,6 +1041,10 @@ class ThemeService {
         ; 深色主题连标题栏一起变深 —— Windows 默认画白标题栏，压在深色窗口上很扎眼
         this._SetDarkTitleBar(t)
 
+        ; 编辑区滚动条一并跟主题：它画在**非客户区**、由系统主题上色，深色主题下会留下
+        ; 一条亮白竖条，压在暗底上格外突兀
+        this._SetScrollBarTheme(hwndEd, this._IsDarkHex(t.win))
+
         if !this._loading
             this.SaveToConfig()
 
@@ -1054,10 +1058,7 @@ class ThemeService {
         hwnd := State.GetGuiHwnd()
         if !hwnd
             return
-        r  := Integer("0x" . SubStr(t.win, 1, 2))
-        gg := Integer("0x" . SubStr(t.win, 3, 2))
-        b  := Integer("0x" . SubStr(t.win, 5, 2))
-        dark := (0.299 * r + 0.587 * gg + 0.114 * b) < 128 ? 1 : 0
+        dark := this._IsDarkHex(t.win) ? 1 : 0
 
         v := Buffer(4, 0)
         NumPut("int", dark, v, 0)
@@ -1082,6 +1083,28 @@ class ThemeService {
             try DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
                 , "int", it[1], "ptr", cv, "int", 4, "int")
         }
+    }
+
+    ; 「深色」判据：底色按加权亮度 < 128 即视为深色。标题栏与滚动条共用这一条。
+    static _IsDarkHex(hex) {
+        r  := Integer("0x" . SubStr(hex, 1, 2))
+        gg := Integer("0x" . SubStr(hex, 3, 2))
+        b  := Integer("0x" . SubStr(hex, 5, 2))
+        return (0.299 * r + 0.587 * gg + 0.114 * b) < 128
+    }
+
+    ; 编辑区的滚动条是**非客户区**、由系统主题上色 —— 深色主题下它仍是亮白一条，压在
+    ; 暗底上格外扎眼（浅色主题下则相反：深色滚动条同样突兀）。把窗口主题交给
+    ; DarkMode_Explorer / Explorer，滚动条即随之变暗或变亮，其余观感分毫不动。
+    ; ⚠ 走 DllCall 而不是内置的 SetWindowTheme()：第三参恒为 0（不重置子控件主题），
+    ;   这里写全参数最省心。
+    ; ⚠ 老系统上没有 DarkMode_Explorer 这个主题，DllCall 静默失败、退回系统配色 ——
+    ;   不必写版本判断。
+    static _SetScrollBarTheme(hwndEd, dark) {
+        if !hwndEd
+            return
+        theme := dark ? "DarkMode_Explorer" : "Explorer"
+        try DllCall("uxtheme\SetWindowTheme", "ptr", hwndEd, "wstr", theme, "ptr", 0)
     }
 
     static SaveToConfig() {
@@ -2626,6 +2649,14 @@ class DeepSeekFeature {
     ; Feature 之间不许互相调用，所以各留一份；两处要同步改。
     ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
     static _PlaceLikeTerminal(hwnd) {
+        this._PlaceTarget(hwnd)
+        this._WatchSize(hwnd, 0)
+    }
+
+    ; 按目标尺寸摆到「和终端同一处」（右侧贴工作区右缘、底边贴工作区底）。
+    ; 与 _PlaceLikeDeepSeek 是同一份公式：那边只挪位置（尺寸归 Windows Terminal 的
+    ; profile），这边位置尺寸一起定。
+    static _PlaceTarget(hwnd) {
         w := this._TargetW(), h := this._TargetH()
         MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
         x := wkRight - w - Config.PlaceRight
@@ -2636,6 +2667,41 @@ class DeepSeekFeature {
         if (y < wkTop + 10)
             y := wkTop + 10
         WinMove(x, y, w, h, "ahk_id " . hwnd)
+    }
+
+    ; ─── 尺寸复核：Edge 会在窗口露面之后重新套用它自己的 --window-size ───
+    ; ⚠ `--window-size` 说的是**内容区**，Edge 套到窗口外框上还要再补一圈调整边框 ——
+    ;   本机实测请求 770 的外框最后落在 768，而终端恰是 770x1020：两个伙伴左右边缘
+    ;   错开两个像素，就是「终端和 DeepSeek 没对齐」。
+    ;   实测（probe：WinMove 到 770 后每 500ms 量一次）证明它**不是**持续校正 ——
+    ;   稳定窗口上 770 一直保持。它会重新套用，是在窗口被 show/restore **之后**；
+    ;   而那个时刻晚于第一次 350ms 复核，只核一次必然漏掉。故在 350 / 950 / 1550 /
+    ;   2150ms 四处各核一次，量到与目标不符就按目标重摆。单次开销只是一次 WinGetPos。
+    ;   ⚠ 不去猜那圈边框有几像素（随系统版本与缩放变），也不跟 Edge 抢时序 ——
+    ;     只事后核对，以实际外框为准。
+    static _WatchSize(hwnd, round) {
+        if (round > 3)
+            return
+        delay := (round = 0) ? 350 : 600
+        SetTimer(() => this._CheckSize(hwnd, round), -delay)
+    }
+
+    static _CheckSize(hwnd, round) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return
+            ; 最小化的窗口量不出尺寸（读数是停放位的垃圾值），别据此重摆
+            if DllCall("IsIconic", "ptr", hwnd, "int")
+                return
+            WinGetPos(, , &aw, &ah, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (aw != this._TargetW() || ah != this._TargetH())
+            this._PlaceTarget(hwnd)
+        this._WatchSize(hwnd, round + 1)
     }
 
     ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
@@ -2656,12 +2722,14 @@ class DeepSeekFeature {
             EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
     }
 
-    ; 目标窗口尺寸（物理像素）。默认对齐本机 Windows Terminal profile 的 744x1020 ——
-    ; 这样 Alt+C 与 Alt+X 两种堆叠布局观感完全一致。
+    ; 目标窗口尺寸（物理像素）。默认取**本机 Windows Terminal profile 实际量到的** 770x1020
+    ; —— 这样 Alt+C 与 Alt+X 两种堆叠布局观感完全一致：右缘、底边、左右宽度全对上。
+    ; ⚠ 早先这里写 744，那是「照 profile 配置推算」的值；实测终端外框是 770x1020，于是
+    ;   DeepSeek 比终端窄、堆叠处左右错开两个像素。以 WinGetPos 量到的实际值为准。
     ; 换机器 / 换终端尺寸：在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
     static _TargetW() {
         v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
-        return v > 0 ? v : 744
+        return v > 0 ? v : 770
     }
 
     static _TargetH() {
@@ -3581,7 +3649,11 @@ DirCreate(Config.GetVault())
 
 ; ─── 创建主窗口 ───
 g := Gui(, Config.AppName)
-g.Opt("+AlwaysOnTop +Resize +MinSize450x300")
+; +E0x02000000 = WS_EX_COMPOSITED：整个窗口走「离屏双缓冲」重绘。
+; 编辑区（RichEdit）自己不带双缓冲，滚动时它会先把客户区擦一遍再画文字，那一帧的空档
+; 就是「上下滑动时略微频闪」的来源。开了合成重绘，父子控件的绘制顺序由系统统一保证，
+; 滚动不再闪（代价是重绘走离屏缓冲，拖动窗口时 CPU 略高，肉眼无感）。
+g.Opt("+AlwaysOnTop +Resize +MinSize450x300 +E0x02000000")
 g.SetFont("s14", "楷体")
 g.BackColor := "FFF8E7"
 
