@@ -107,11 +107,12 @@ hotkeyControl.Value := "开场提示  ·  先看序言，再跟随应用操作"
 resultControl.Value := "七篇连续日期笔记  ·  六段功能体验  ·  临时数据自动清理"
 
 MonitorGetWorkArea(, &workLeft, &workTop, &workRight, &workBottom)
-JourneyAppGui.Show("x" . workLeft . " y" . workTop
-    . " w" . Config.WinW . " h" . Config.WinH)
+; ⚠ 只给位置、不给尺寸：Show 的 w/h 压不住窗口（实测 +MinSize450x300 与 Show("w450 h550")
+;   都被控件固有尺寸顶开，落到 697x881），尺寸交给 AHK 按 DPI 自己决定。原先这里拼的是
+;   Config.WinW / Config.WinH —— 那两个字段是死代码，已随清理删除，别再引回去。
+JourneyAppGui.Show("x" . workLeft . " y" . workTop)
 WinGetPos(&appX, &appY, &appWidth, &appHeight, "ahk_id " . JourneyAppGui.Hwnd)
-presenter.Show("x" . (workLeft + appWidth + 18) . " y" . workTop
-    . " w" . Config.WinW . " h" . Config.WinH)
+presenter.Show("x" . (workLeft + appWidth + 18) . " y" . workTop)
 WinGetPos(&guideX, &guideY, &guideWidth, &guideHeight, "ahk_id " . presenter.Hwnd)
 gap := 18
 groupWidth := appWidth + gap + guideWidth

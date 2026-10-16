@@ -2277,23 +2277,45 @@ class PowerShellFeature {
     ; 离工作区底 40px），而 DeepSeek 按公式落在 1801,580（底边贴 1600，任务栏已
     ; 改为自动隐藏），两个伙伴高度不齐、堆叠观感不一致。对齐后两者落在同一处。
     ;
-    ; ⚠ 只挪位置，**尺寸一个不动**：终端的尺寸归 Windows Terminal 的 profile 管
-    ;   （本机 744x1020），夺过来会和用户自己的终端设置打架。
+    ; ⚠ 宽度也一起对齐（理由见方法内注释）：只挪位置的话，终端 profile 的 744 与
+    ;   DeepSeek 的 770 都按右缘摆，左缘就差 26px、堆叠处露出一条底色。高度仍归 profile。
     ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
     static _PlaceLikeDeepSeek(hwnd) {
+        ; ⚠ 隐藏 / 最小化的窗口一律不碰：隐藏窗口在 AHK v2 里默认「不存在」，
+        ;   WinGetPos 会直接抛 "Target window not found"（本机实测弹模态框、卡死脚本）。
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(false)
+        try {
+            hwndOk := WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if !hwndOk
+            return
         WinGetPos(, , &w, &h, "ahk_id " . hwnd)
         if (w <= 0 || h <= 0)
             return
 
+        ; 宽度改用与 DeepSeek / 笔记窗口**同一个**目标宽，不再用终端自己的宽。
+        ; ⚠ 实测（本机）：终端 profile 是 744x1020，DeepSeek 目标是 772x1020；两边都按
+        ;   「右缘贴屏幕」摆，于是右缘齐（2545）、**左缘差 26px**（终端可见 1810..2536 /
+        ;   DeepSeek 可见 1784..2538），堆叠处左边露出一条底色 —— 看起来就是「终端比
+        ;   其他两个窄一点、缺口在左边」。宽度统一后左 / 右 / 底三条边全齐。
+        ;   只改宽，高度仍归 Windows Terminal 的 profile。
+        ; ⚠ 与 DeepSeekFeature._TargetW 是同一份取值逻辑 —— Feature 之间不许互相调用，
+        ;   所以各留一份，两处要同步改。
+        tw := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
+        tw := tw > 0 ? tw : 772
+
         MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
-        x := wkRight - w - Config.PlaceRight
+        x := wkRight - tw - Config.PlaceRight
         y := wkBottom - h
         ; 兜底：工作区比窗口还小时别落到屏幕外
         if (x < wkLeft + 10)
             x := wkLeft + 10
         if (y < wkTop + 10)
             y := wkTop + 10
-        WinMove(x, y, , , "ahk_id " . hwnd)
+        WinMove(x, y, tw, , "ahk_id " . hwnd)
     }
 
     ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
@@ -2384,16 +2406,19 @@ class PowerShellFeature {
 
 ; ─── Alt+X 呼出 DeepSeek 网页端 ───
 ; 「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的第二个使用者 ——
-; 与 PowerShellFeature 同一套玩法，只把「终端」换成浏览器的 app 窗口。
+; 与 PowerShellFeature 同一套玩法，只把「终端」换成浏览器窗口。
 ; 三条广播的语义、时序、失败兜底完全一致；接入步骤见 README「开发指南」。
 ;
-; 有两处与终端不同，值得记下：
+; 有三处与终端不同，值得记下：
 ;   ① **窗口怎么认**：终端能靠标题（"SevenNote PowerShell"）认，浏览器不能 ——
 ;      本机日常 Edge 里也开着 DeepSeek 网页，标题一样含 "DeepSeek"，靠标题一认就错。
 ;      这里改用「专用 profile → 独立进程树」的办法：窗口按 PID 认。
 ;   ② **尺寸与位置要自己给**：终端由 Windows Terminal 的 profile 决定落点（本机 744x1020），
 ;      浏览器却每次都落在 Chromium 的默认点。这里按目标尺寸摆到「和终端同一处」——
 ;      右侧贴工作区右缘、底边贴工作区底，于是两种伙伴产出的堆叠效果一模一样。
+;   ③ **换了窗口模式就得退掉老实例**：Chromium 单实例复用会让「最先那次启动」的窗口
+;      类型一直沿用到该进程结束 —— 老实例还活着时，改了命令行也照旧开出旧模式窗口。
+;      详见 _RetireLegacyInstance() 与 _FindBrowserHwnd() 开头的模式校验。
 class DeepSeekFeature {
     static _initialized := false
     static _url := "https://chat.deepseek.com/"
@@ -2405,6 +2430,11 @@ class DeepSeekFeature {
     static _profileDir := Config.AppDataDir . "\_deepseek-profile"
     ; PID 落盘，好在「笔记程序重启」后认回已有窗口 —— 内存缓存随进程丢，文件不丢。
     static _pidFile := Config.AppDataDir . "\_deepseek.pid"
+
+    ; 本文件启动过的实例属于哪种窗口 —— 也要落盘，理由见 _RetireLegacyInstance()：
+    ; Chromium 单实例复用会让老进程继续提供它那种窗口，换了命令行也白换。
+    static _windowMode := "window"
+    static _modeFile := Config.AppDataDir . "\_deepseek.mode"
 
     static _hwnd := 0   ; 进程内缓存，省掉每次读文件
 
@@ -2440,6 +2470,11 @@ class DeepSeekFeature {
 
     ; 认回自己的窗口，两级兜底：进程内缓存 → PID 文件 → 没有（那就重新拉起）
     static _FindBrowserHwnd() {
+        ; ⚠ 模式校验必须放在最前：老版本（--app 时代）留下的实例还活着时，认回它只会
+        ;   得到应用窗口（无标签栏）。宁可当成「没有窗口」，让 Toggle() 转去 _Launch()
+        ;   把老实例退掉、按新模式重开。
+        if (this._ReadMode() != this._windowMode)
+            return 0
         detectOld := A_DetectHiddenWindows
         DetectHiddenWindows(true)
         try {
@@ -2474,21 +2509,38 @@ class DeepSeekFeature {
     static _TopWindowOf(pid, relax := false) {
         detectOld := A_DetectHiddenWindows
         DetectHiddenWindows(true)
-        fallback := 0
+        fallback := 0        ; 第一扇「不可见」的候选（认回被藏起来的窗口用）
+        visibleAny := 0      ; 第一扇「可见」的候选（尺寸对不上时的退路）
+        tw := this._TargetW(), th := this._TargetH()
         try {
             for h in WinGetList("ahk_exe " . this._ExeName()) {
                 if (WinGetPID("ahk_id " . h) != pid)
                     continue
                 if (WinGetClass("ahk_id " . h) != "Chrome_WidgetWin_1")
                     continue
-                if DllCall("IsWindowVisible", "ptr", h, "int")
+                if !DllCall("IsWindowVisible", "ptr", h, "int") {
+                    if !fallback
+                        fallback := h
+                    continue
+                }
+                ; 同一个 profile 可能同时开着好几扇窗（用户在窗口里又开了窗、或 Edge 恢复了
+                ; 上次的窗口 —— 实测第二次带 --new-window 启动后同 PID 下有 3 扇），
+                ; 于是「第一个可见的」未必是我们摆过的那扇，认哪扇全看枚举顺序。
+                ; 我们的窗口由 _CheckSize 反复校正成目标尺寸，用户手开的通常对不上 ——
+                ; 用尺寸把它挑出来。
+                ; ⚠ 尺寸是异步校正的：刚启动那一刻还没摆到位，所以这里只是「优先」，
+                ;   没命中就退回第一个可见窗口，绝不会因为量不准而认不回窗口。
+                WinGetPos(, , &aw, &ah, "ahk_id " . h)
+                if (aw = tw && ah = th)
                     return h
-                if !fallback
-                    fallback := h
+                if !visibleAny
+                    visibleAny := h
             }
         } finally {
             DetectHiddenWindows(detectOld)
         }
+        if (visibleAny != 0)
+            return visibleAny
         return relax ? fallback : 0
     }
 
@@ -2512,6 +2564,103 @@ class DeepSeekFeature {
         }
     }
 
+    static _ReadMode() {
+        try
+            return Trim(FileRead(this._modeFile, "UTF-8"))
+        catch
+            return ""
+    }
+
+    static _WriteMode(mode) {
+        try {
+            FileDelete(this._modeFile)
+        } catch {
+        }
+        try {
+            FileAppend(mode, this._modeFile, "UTF-8")
+        } catch {
+        }
+    }
+
+    ; 退掉「窗口模式不对」的残留实例，让本次 --new-window 真正生效。
+    ;
+    ; 背景：Chromium 是**单实例**的 —— 只要那个 profile 进程还活着，后到的命令行就只被
+    ; 当成「在已有实例里开个地址」，窗口类型仍由**最先那次启动**决定。实测从 --app 时代
+    ; 升级上来后，那个进程一直活着（用户只是关了窗口、没退进程），于是改了命令行也照旧
+    ; 开出应用窗口 —— 认窗逻辑再对，窗口类型还是错的。
+    ;
+    ; 判据用落盘的 _modeFile：写的是 "window" 就说明实例是本版启动的，直接放行；文件
+    ; 缺失或内容不符 = 老版本留下的实例，退掉重开。所以这是**升级路径上的一次性清理**，
+    ; 正常运行时一次都不会动手。
+    static _RetireLegacyInstance() {
+        if (this._ReadMode() = this._windowMode)
+            return
+        pids := this._ProfilePids()
+        if (pids.Length) {
+            ; 先礼后兵：先对有窗口的那个发 WM_CLOSE，让 Chromium 正常收尾（会话与标签都保住）。
+            pid := this._ReadPid()
+            if (pid && ProcessExist(pid)) {
+                hwnd := this._TopWindowOf(pid, true)
+                if (hwnd)
+                    try WinClose("ahk_id " . hwnd)
+            }
+            deadline := A_TickCount + 1200
+            while (A_TickCount < deadline && this._AnyAlive(pids))
+                Sleep(60)
+            for p in pids {
+                if (ProcessExist(p))
+                    try ProcessClose(p)
+            }
+            ; 等它们把 profile 的锁放掉，否则紧接着那次启动会被判成「已有实例」又并进去。
+            Sleep(300)
+        }
+        this._WriteMode(this._windowMode)
+    }
+
+    ; 占用专用 profile 的全部活进程。
+    ;
+    ; ⚠ 不能只信 _deepseek.pid：它可能落后（上次没认回窗口就没写）或指向已退出的进程（PID
+    ;   还可能被复用给别人），那样都会漏掉真正占着 profile 的那个实例 —— 它一活着，本次
+    ;   启动就注定被并进去、窗口模式照旧。所以再按命令行里的 profile 路径全库筛一遍。
+    ;   WMI 拿不到（异常 / 被策略挡住）时退回「只认 pid 文件那一个」，功能不因此失效。
+    static _ProfilePids() {
+        out := []
+        seen := Map()
+        pid := this._ReadPid()
+        ; ⚠ 校验进程名：PID 会被复用，光看「存在」可能杀到不相干的程序。
+        if (pid && ProcessExist(pid) && ProcessGetName(pid) = this._ExeName()) {
+            seen[pid] := true
+            out.Push(pid)
+        }
+        try {
+            wmi := ComObjGet("winmgmts:")
+            q := "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='"
+                . this._ExeName() . "'"
+            for proc in wmi.ExecQuery(q) {
+                cmd := proc.CommandLine
+                if (IsObject(cmd) || cmd = "")       ; 跨权限的进程读不到命令行，跳过
+                    continue
+                if !InStr(cmd, this._profileDir)     ; 认 profile 路径，不认进程名
+                    continue
+                p := proc.ProcessId + 0
+                if seen.Has(p)
+                    continue
+                seen[p] := true
+                out.Push(p)
+            }
+        } catch {
+        }
+        return out
+    }
+
+    static _AnyAlive(pids) {
+        for p in pids {
+            if (ProcessExist(p))
+                return true
+        }
+        return false
+    }
+
     static _Launch() {
         exe := this._BrowserPath()
         if (exe = "") {
@@ -2524,26 +2673,36 @@ class DeepSeekFeature {
         ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
         EventBus.Emit("Peer.Preparing")
 
+        ; ⚠ 升级路径上的一次性清理：老实例（--app 时代的进程）还活着就先退掉它，
+        ;   否则本次 --new-window 会被 Chromium 的单实例复用吃掉，照旧开出应用窗口。
+        this._RetireLegacyInstance()
+
         ; 启动前先记下现有的同族 PID，之后「新出现的那个」就是我们的 ——
         ; 专用 profile 保证了它必定是条新进程树，不会并进用户自己的浏览器里。
         before := this._PidSnapshot()
 
         try {
             ; ⚠ --window-size 收的是**逻辑像素**（DIP），而 WinMove / WinGetPos 认物理像素。
-            ;   本机 150% 缩放（A_ScreenDPI = 144）下传 496x680，实际得到 744x1020 —— 正合目标。
+            ;   本机 150% 缩放（A_ScreenDPI = 144）下传 513x680，实际得到 772x1020 —— 正合目标。
             ;   换个缩放比例就得跟着变，所以按 A_ScreenDPI 反算，别写死。
-            w := this._TargetW() * 96 // A_ScreenDPI
+            ; ⚠ 宽度再减 2：Edge 把内容区尺寸套到窗口外框时会替自己补两像素调整边框 ——
+            ;   本机实测请求 770（物理）时外框落在 772，而终端是 770，两者左右边缘就差这
+            ;   2px。请求值先扣掉它，外框才与终端严格等宽（高度实测不差，不用减）。
+            ;   真机上若换版本后仍差，以 WinGetPos 量到的**外框**为准调这个常量 ——
+            ;   别去猜那圈边框算几像素（随系统版本与缩放而变）。
+            w := (this._TargetW() - 2) * 96 // A_ScreenDPI
             h := this._TargetH() * 96 // A_ScreenDPI
-            ; --app：独立的应用窗口（无标签栏），观感接近桌面应用，而不是「浏览器里多开了个标签」。
-            ;       ⚠ 它有地址栏 —— 原以为「无地址栏」，实测 Edge 155 起 app 窗口就自带
-            ;       （UIA 查到 view_1017「地址和搜索栏」，换全新 profile 启动也一样，是 Edge 的产品
-            ;       行为，不是本项目的代码效果）。副作用挺好：这扇窗能直接输网址浏览其他网页，
-            ;       当轻量浏览器用。若哪天 Edge 改回无地址栏而仍要导航，换 --new-window 即可。
-            ;       app 窗口的标题归页面管（本机实测为 "DeepSeek"），所以别拿标题找它。
+            ; --new-window：开一扇**普通浏览器窗口**（有标签栏与完整工具栏），窗口内可直接浏览网页。
+            ;       早先走 --app=<url> 开「应用窗口」求桌面应用观感，实测不划算 —— Edge 155 起
+            ;       app 窗口照样自带地址栏（UIA 查到 view_1017「地址和搜索栏」），却没有标签栏：
+            ;       既不像应用，也算不上好用的浏览器。改普通窗口后能自己开新标签 / 前进后退。
+            ;       ⚠ 认窗逻辑不受影响：仍是「专用 profile → 独立进程树 → 按 PID 认窗」，
+            ;       普通窗口的 class 同样是 Chrome_WidgetWin_1，`_TopWindowOf` 照样认得出。
+            ;       标题归页面管（形如 "DeepSeek - Microsoft Edge"），别拿标题找它。
             ; --user-data-dir：独立 profile（理由见类头）。
             ; --no-first-run / --no-default-browser-check：跳过首次运行的欢迎页与
             ;       「是否设为默认浏览器」的询问 —— 新 profile 每次都问，很烦。
-            cmd := '"' . exe . '" --app=' . this._url
+            cmd := '"' . exe . '" --new-window ' . this._url
                 . ' --user-data-dir="' . this._profileDir . '"'
                 . ' --window-size=' . w . ',' . h
                 . ' --no-first-run --no-default-browser-check'
@@ -2558,12 +2717,26 @@ class DeepSeekFeature {
         ; 抢在窗口出现前 WinShow 会报「窗口不存在」。
         deadline := A_TickCount + 15000
         relaxAt := A_TickCount + 3000      ; 3 秒后仍没找到，就连「还没显示」的窗口也算（放宽）
+        ; 上一轮认过的 profile 进程。Chromium 是**单实例**的：若它还活着（用户只关了窗口、
+        ; 没退进程 —— 普通窗口模式下这是常态），这次启动根本不会产生新进程，
+        ; `_NewPidsSince` 永远为空，只认新 PID 就会一路超时弹「找不到窗口」。
+        knownPid := this._ReadPid()
         while (A_TickCount < deadline) {
             relax := A_TickCount >= relaxAt
             for pid in this._NewPidsSince(before) {
                 hwnd := this._TopWindowOf(pid, relax)
                 if (hwnd != 0) {
                     this._WritePid(pid)
+                    this._hwnd := hwnd
+                    this._ShowAndFocus(hwnd)
+                    return
+                }
+            }
+            ; 老进程仍在 → 它多半只是新开了扇窗（--new-window 保证了这一点），按老 PID 认。
+            ; ⚠ 只在「认回」这一支放宽：平时要求窗口可见，免得把别处残留的隐藏窗当成目标。
+            if (knownPid && ProcessExist(knownPid)) {
+                hwnd := this._TopWindowOf(knownPid, relax)
+                if (hwnd != 0) {
                     this._hwnd := hwnd
                     this._ShowAndFocus(hwnd)
                     return
@@ -2643,6 +2816,21 @@ class DeepSeekFeature {
     ; 与 _PlaceLikeDeepSeek 是同一份公式：那边只挪位置（尺寸归 Windows Terminal 的
     ; profile），这边位置尺寸一起定。
     static _PlaceTarget(hwnd) {
+        ; ⚠ 隐藏 / 最小化的窗口一律不摆 —— 本函数有两个调用来源，其中 _CheckSize 是
+        ;   **异步定时器**（350 / 950 / 1550 / 2150ms），等它跑起来时用户很可能已经
+        ;   连按一次 Alt+X 把窗口藏了。隐藏窗口在 AHK v2 里默认「不存在」，WinMove
+        ;   直接抛 "Target window not found"（实测弹模态框、整个脚本卡死，
+        ;   表现为之后 Alt+X / Alt+C 全无反应）。
+        ;   最小化态也别动：位置停在 -32000 的停放位，量到的尺寸是垃圾值。
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(false)
+        try {
+            hwndOk := WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if !hwndOk
+            return
         w := this._TargetW(), h := this._TargetH()
         MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
         x := wkRight - w - Config.PlaceRight
@@ -2678,6 +2866,11 @@ class DeepSeekFeature {
         try {
             if !WinExist("ahk_id " . hwnd)
                 return
+            ; 窗口已被用户藏起来（连按两次 Alt+X）= 用户不想看见它，别再管它的尺寸：
+            ; 直接返回，也不再排下一轮复核 —— 否则会反复去重摆一个看不见的窗口，
+            ; 而 WinMove 对隐藏窗口会抛 "Target window not found"（实测卡死脚本）。
+            if !DllCall("IsWindowVisible", "ptr", hwnd, "int")
+                return
             ; 最小化的窗口量不出尺寸（读数是停放位的垃圾值），别据此重摆
             if DllCall("IsIconic", "ptr", hwnd, "int")
                 return
@@ -2708,14 +2901,18 @@ class DeepSeekFeature {
             EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: x, y: y, w: w, h: h})
     }
 
-    ; 目标窗口尺寸（物理像素）。默认取**本机 Windows Terminal profile 实际量到的** 770x1020
-    ; —— 这样 Alt+C 与 Alt+X 两种堆叠布局观感完全一致：右缘、底边、左右宽度全对上。
-    ; ⚠ 早先这里写 744，那是「照 profile 配置推算」的值；实测终端外框是 770x1020，于是
-    ;   DeepSeek 比终端窄、堆叠处左右错开两个像素。以 WinGetPos 量到的实际值为准。
+    ; 目标窗口尺寸（物理像素）。默认 772x1020 —— 这是**实测 Edge 自己会稳定保持的外框宽**
+    ; （请求 513 逻辑像素时落在 772，见 _Launch 里 --window-size 的说明），终端也按同一
+    ; 宽度摆，于是 Alt+C 与 Alt+X 两种堆叠布局的左 / 右 / 底三条边全齐。
+    ; ⚠ 为什么不写 770：Edge 把内容区尺寸套到外框上时会再补一圈调整边框，WinMove 摆到
+    ;   770 后它自己又套回 772 —— 跟它抢只会来回弹，_CheckSize 每轮复核都判「不符」。
+    ;   以「它自己稳定停在的宽度」为目标，复核才会收敛。⚠ 实测过：直接砍 --window-size
+    ;   的宽度请求值没用，Edge 会把宽度吸附到自己的值（请求 506 / 512 逻辑都落在 773）。
+    ; 换机器 / 换缩放若要重定：先 WinGetPos 量一次外框，再改这里的默认值。
     ; 换机器 / 换终端尺寸：在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
     static _TargetW() {
         v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
-        return v > 0 ? v : 770
+        return v > 0 ? v : 772
     }
 
     static _TargetH() {
@@ -2724,7 +2921,7 @@ class DeepSeekFeature {
     }
 
     ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，
-    ; 命中率最高）。只要是 Chromium 系（支持 --app / --user-data-dir）都能用。
+    ; 命中率最高）。只要是 Chromium 系（支持 --new-window / --user-data-dir）都能用。
     static _BrowserPath() {
         p := ConfigService.Read("Paths", "BrowserPath")
         if (p != "" && FileExist(p))
