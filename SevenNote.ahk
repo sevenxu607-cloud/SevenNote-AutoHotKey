@@ -4117,62 +4117,10 @@ DeepSeekFeature.Init()
 DateJumpFeature.Init()
 BackdropFeature.Init(g)
 
-; ═══ 全局热键（按用户旅程排序）═══
-; ① 唤起与关闭
-!z::WindowFeature.Toggle()
-!+z::{
-    SaveFeature.Save()
-    ExitApp()
-}
-!h::ShowHelp()
-
-; ② 输入与编辑
-!+c::CapsLockFeature.Toggle()
-
-; ⑤ 组织与管理
-!Up::DateSwitchFeature.Switch(-1)
-!Down::DateSwitchFeature.Switch(1)
-!Home::GoTodayFeature.Go()
-
-; 横切·美观
-!t::ThemeFeature.Next()
-!+t::FontFeature.NextFont()
-!=::FontFeature.BiggerSize()
-!-::FontFeature.SmallerSize()
-
-; ═══ 编辑器内热键（按用户旅程排序）═══
-#HotIf WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible()
-; ② 输入与编辑
-$^y::LineEditFeature.DeleteLine()
-$^d::LineEditFeature.DuplicateLine()
-$^+v::PasteFeature.PastePlain()
-$^z::UndoFeature.Undo()
-$^+z::UndoFeature.Redo()
-$^+Up::LineEditFeature.MoveUp()
-$^+Down::LineEditFeature.MoveDown()
-Tab::LineEditFeature.Indent()
-+Tab::LineEditFeature.Outdent()
-
-; ③ 保存与持久化
-$^s::SaveFeature.Save()
-$^t::TimestampFeature.Append()
-$^h::TimestampFeature.Separator()
-$^+h::TimestampFeature.Heading()
-
-; ④ 查看与浏览
-$^f::SearchFeature.Show()
-
-; ⑤ 组织与管理
-$^g::DateJumpFeature.ShowDialog()
-$^+t::TitleFeature.ShowDialog()
-#HotIf
-
-; ④ 查看与浏览（搜索栏显示时）
-#HotIf WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible()
-Enter::SearchFeature.Next()
-+Enter::SearchFeature.Prev()
-Esc::SearchFeature.Hide()
-#HotIf
+; ═══ 热键（数据驱动：注册与帮助共用同一张表）═══
+; 每条热键只在 HotkeyTable() 里定义一次 —— 同一份数据既喂给「注册」，
+; 也喂给「Alt+H 帮助窗口」，改热键不必再去 ShowHelp 里手工同步文本。
+RegisterHotkeys()
 
 ; ═══ 启动 ═══
 LoadFeature.Load()
@@ -4233,6 +4181,153 @@ DestroyTipWindow(tip) {
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
+;  热键表（注册 + 帮助的唯一数据源）
+; ═══════════════════════════════════════════════════════════════════════════
+; 每条热键只在这里定义一次：RegisterHotkeys() 用它注册，BuildHotkeyHelpText()
+; 用它渲染 Alt+H 帮助 —— 改一条热键不必再去 ShowHelp 里手工同步那行文本。
+;   ctx   : 注册上下文 —— "global" 全局 / "editor" 编辑器内 / "search" 搜索栏显示时
+;   key   : AHK 热键字符串（$ 前缀 = 走钩子，照原样保留）；
+;           留空表示该热键由 Feature 自己注册，本表只负责帮助文本
+;   fn    : 触发时调用的回调（key 为空时不必写）
+;   group : 帮助窗口里的分组（纯语义分类，与 ctx 无关）
+;   line  : 帮助窗口里的那一行（含前导空格，逐字符照抄旧文本）
+;   note  : 该行之后追加的说明行（可省略）
+HotkeyTable() {
+    return [
+        ; ── 【窗口】──
+        {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z            呼出 / 隐藏"
+            , fn: (*) => WindowFeature.Toggle()},
+        {ctx: "global", key: "!+z", group: "窗口", line: "   Alt+Shift+Z      保存并退出"
+            , fn: (*) => (SaveFeature.Save(), ExitApp())},
+        {ctx: "global", key: "!h", group: "窗口", line: "   Alt+H            显示本帮助"
+            , fn: (*) => ShowHelp()},
+
+        ; ── 【外观】──
+        {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）"
+            , fn: (*) => ThemeFeature.Next()},
+        {ctx: "global", key: "!+t", group: "外观", line: "   Shift+Alt+T      切换字体"
+            , fn: (*) => FontFeature.NextFont()},
+        {ctx: "global", key: "!=", group: "外观", line: "   Alt+=            调大字号"
+            , fn: (*) => FontFeature.BiggerSize()},
+        {ctx: "global", key: "!-", group: "外观", line: "   Alt+-            调小字号"
+            , note: "                      （外观设置自动保存）"
+            , fn: (*) => FontFeature.SmallerSize()},
+
+        ; ── 【输入增强】──
+        {ctx: "global", key: "!+c", group: "输入增强", line: "   Alt+Shift+C      切换 CapsLock 键盘映射"
+            , note: "                      （开启后 CapsLock+H/J/K/L = 方向键）"
+            , fn: (*) => CapsLockFeature.Toggle()},
+        ; 下面两条由 Feature 自己注册（外部窗口存在时才挂），本表只提供帮助文本：
+        ;   Alt+C → PowerShellFeature（Init 里 Hotkey("!c")）
+        ;   Alt+X → DeepSeekFeature   （Init 里 Hotkey("!x")）
+        {ctx: "", key: "", group: "输入增强", line: "   Alt+C            唤出 / 隐藏 PowerShell（笔记自动让位）"},
+        {ctx: "", key: "", group: "输入增强", line: "   Alt+X            呼出 / 隐藏 DeepSeek 网页（笔记自动让位）"},
+
+        ; ── 【搜索】──
+        {ctx: "editor", key: "$^f", group: "搜索", line: "   Ctrl+F           打开搜索栏"
+            , fn: (*) => SearchFeature.Show()},
+        {ctx: "search", key: "Enter", group: "搜索", line: "   Enter            下一个匹配"
+            , fn: (*) => SearchFeature.Next()},
+        {ctx: "search", key: "+Enter", group: "搜索", line: "   Shift+Enter      上一个匹配"
+            , fn: (*) => SearchFeature.Prev()},
+        {ctx: "search", key: "Esc", group: "搜索", line: "   Esc              关闭搜索栏"
+            , fn: (*) => SearchFeature.Hide()},
+
+        ; ── 【保存】──
+        {ctx: "editor", key: "$^s", group: "保存", line: "   Ctrl+S           手动保存"
+            , fn: (*) => SaveFeature.Save()},
+
+        ; ── 【日期与标签】──
+        {ctx: "global", key: "!Up", group: "日期与标签", line: "   Alt+↑            前一天"
+            , fn: (*) => DateSwitchFeature.Switch(-1)},
+        {ctx: "global", key: "!Down", group: "日期与标签", line: "   Alt+↓            后一天"
+            , fn: (*) => DateSwitchFeature.Switch(1)},
+        {ctx: "global", key: "!Home", group: "日期与标签", line: "   Alt+Home         回到今天"
+            , fn: (*) => GoTodayFeature.Go()},
+        {ctx: "editor", key: "$^g", group: "日期与标签", line: "   Ctrl+G           搜索跳转（日期 / 标签）"
+            , fn: (*) => DateJumpFeature.ShowDialog()},
+        {ctx: "editor", key: "$^+t", group: "日期与标签", line: "   Ctrl+Shift+T     为当前日期设置标签"
+            , fn: (*) => TitleFeature.ShowDialog()},
+        ; ── 【编辑】──
+        {ctx: "editor", key: "$^z", group: "编辑", line: "   Ctrl+Z           撤销"
+            , fn: (*) => UndoFeature.Undo()},
+        {ctx: "editor", key: "$^+z", group: "编辑", line: "   Ctrl+Shift+Z     重做"
+            , fn: (*) => UndoFeature.Redo()},
+        {ctx: "editor", key: "$^y", group: "编辑", line: "   Ctrl+Y           删除当前行"
+            , fn: (*) => LineEditFeature.DeleteLine()},
+        {ctx: "editor", key: "$^d", group: "编辑", line: "   Ctrl+D           复制当前行到下方"
+            , fn: (*) => LineEditFeature.DuplicateLine()},
+        {ctx: "editor", key: "$^+Up", group: "编辑", line: "   Ctrl+Shift+↑     上移当前行"
+            , fn: (*) => LineEditFeature.MoveUp()},
+        {ctx: "editor", key: "$^+Down", group: "编辑", line: "   Ctrl+Shift+↓     下移当前行"
+            , fn: (*) => LineEditFeature.MoveDown()},
+        {ctx: "editor", key: "Tab", group: "编辑", line: "   Tab              增加缩进（4 空格）"
+            , fn: (*) => LineEditFeature.Indent()},
+        {ctx: "editor", key: "+Tab", group: "编辑", line: "   Shift+Tab        减少缩进"
+            , fn: (*) => LineEditFeature.Outdent()},
+        {ctx: "editor", key: "$^+v", group: "编辑", line: "   Ctrl+Shift+V     粘贴为纯文本"
+            , fn: (*) => PasteFeature.PastePlain()},
+
+        ; ── 【分段】──
+        {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
+            , fn: (*) => TimestampFeature.Append()},
+        {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入分隔线"
+            , fn: (*) => TimestampFeature.Separator()},
+        {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
+            , fn: (*) => TimestampFeature.Heading()}
+    ]
+}
+
+; 注册顺序 = 全局 → 编辑器内 → 搜索栏（与改造前三个 #HotIf 块的先后一致）。
+; 全局变体（无上下文）的优先级天然最低，所以「先建全局」不会抢上下文变体的命中。
+RegisterHotkeys() {
+    table := HotkeyTable()
+    for ctxName in ["global", "editor", "search"] {
+        switch ctxName {
+            case "global":
+                HotIf()
+            case "editor":
+                HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible())
+            case "search":
+                HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible())
+        }
+        for hk in table {
+            if (hk.key = "" || hk.ctx != ctxName)
+                continue
+            try
+                Hotkey(hk.key, hk.fn, "On")
+            catch as e
+                LogError("热键注册失败：" . hk.key . " —— " . e.Message)
+        }
+    }
+    HotIf()   ; 复位：别把上下文漏给后面动态注册的热键
+}
+
+; 帮助窗口正文 —— 按【组】走，组内按表序；组间空行，结尾附版本与笔记目录。
+BuildHotkeyHelpText() {
+    table := HotkeyTable()
+    text := ""
+    for g in ["窗口", "外观", "输入增强", "搜索", "保存", "日期与标签", "编辑", "分段"] {
+        text .= "【" . g . "】`n"
+        for hk in table {
+            if (hk.group != g)
+                continue
+            text .= hk.line . "`n"
+            if hk.HasProp("note")
+                text .= hk.note . "`n"
+        }
+        text .= "`n"
+    }
+    return text
+        . "—————————————————————————`n"
+        . "   " . Config.AppName . " v" . Config.Version . "`n"
+        . "   当前笔记目录：`n"
+        . "   " . Config.GetVault() . "`n"
+        . "   按 ESC 或点关闭按钮关闭"
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
 ;  帮助窗口（Alt+H）
 ; ═══════════════════════════════════════════════════════════════════════════
 
@@ -4247,62 +4342,7 @@ ShowHelp() {
     help.SetFont("s11", "楷体")
     help.BackColor := "FFF8E7"
 
-    text := ""
-        . "【窗口】`n"
-        . "   Alt+Z            呼出 / 隐藏`n"
-        . "   Alt+Shift+Z      保存并退出`n"
-        . "   Alt+H            显示本帮助`n"
-        . "`n"
-        . "【外观】`n"
-        . "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）`n"
-        . "   Shift+Alt+T      切换字体`n"
-        . "   Alt+=            调大字号`n"
-        . "   Alt+-            调小字号`n"
-        . "                      （外观设置自动保存）`n"
-        . "`n"
-        . "【输入增强】`n"
-        . "   Alt+Shift+C      切换 CapsLock 键盘映射`n"
-        . "                      （开启后 CapsLock+H/J/K/L = 方向键）`n"
-        . "   Alt+C            唤出 / 隐藏 PowerShell（笔记自动让位）`n"
-        . "   Alt+X            呼出 / 隐藏 DeepSeek 网页（笔记自动让位）`n"
-        . "`n"
-        . "【搜索】`n"
-        . "   Ctrl+F           打开搜索栏`n"
-        . "   Enter            下一个匹配`n"
-        . "   Shift+Enter      上一个匹配`n"
-        . "   Esc              关闭搜索栏`n"
-        . "`n"
-        . "【保存】`n"
-        . "   Ctrl+S           手动保存`n"
-        . "`n"
-        . "【日期与标签】`n"
-        . "   Alt+↑            前一天`n"
-        . "   Alt+↓            后一天`n"
-        . "   Alt+Home         回到今天`n"
-        . "   Ctrl+G           搜索跳转（日期 / 标签）`n"
-        . "   Ctrl+Shift+T     为当前日期设置标签`n"
-        . "`n"
-        . "【编辑】`n"
-        . "   Ctrl+Z           撤销`n"
-        . "   Ctrl+Shift+Z     重做`n"
-        . "   Ctrl+Y           删除当前行`n"
-        . "   Ctrl+D           复制当前行到下方`n"
-        . "   Ctrl+Shift+↑     上移当前行`n"
-        . "   Ctrl+Shift+↓     下移当前行`n"
-        . "   Tab              增加缩进（4 空格）`n"
-        . "   Shift+Tab        减少缩进`n"
-        . "   Ctrl+Shift+V     粘贴为纯文本`n"
-        . "`n"
-        . "【分段】`n"
-        . "   Ctrl+T           追加时间戳`n"
-        . "   Ctrl+H           插入分隔线`n"
-        . "   Ctrl+Shift+H     插入 ## 分段标题`n"
-        . "`n"
-        . "—————————————————————————`n"
-        . "   " . Config.AppName . " v" . Config.Version . "`n"
-        . "   当前笔记目录：`n"
-        . "   " . Config.GetVault() . "`n"
-        . "   按 ESC 或点关闭按钮关闭"
+    text := BuildHotkeyHelpText()
 
     help.AddText("x20 y15 w400", text)
     help.Show("w440 h920")

@@ -432,7 +432,7 @@ Pandoc 不可用，走了降级路径。
 
 **步骤**：
 1. 在 FEATURE 层加一个类
-2. 组合根注册热键
+2. 在 `HotkeyTable()` 里加一行（注册与 `Alt+H` 帮助共用这份数据 —— 写一次，两处同时生效）
 3. 通过 `EventBus.Emit` 通知结果
 
 **示例**：加"导出 HTML"
@@ -450,13 +450,18 @@ class ExportFeature {
 }
 ```
 
-组合根加一行：
+在 `HotkeyTable()` 里加一行：
 
 ```ahk
-!e::ExportFeature.ExportHtml()
+{ctx: "global", key: "!e", group: "保存", line: "   Alt+E            导出 HTML"
+    , fn: (*) => ExportFeature.ExportHtml()},
 ```
 
-**完成**，不需要改任何其他 Feature。
+`group` 取 `BuildHotkeyHelpText()` 里那 8 个组名之一（窗口 / 外观 / 输入增强 / 搜索 /
+保存 / 日期与标签 / 编辑 / 分段）；真要开新组，得在那个函数的组名数组里也加一项
+—— 数组顺序就是帮助窗口里的显示顺序。
+
+**完成**，不需要改任何其他 Feature —— 也不用再去 `ShowHelp()` 里补一行文本。
 
 ### 添加新主题
 

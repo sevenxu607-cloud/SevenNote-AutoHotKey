@@ -93,10 +93,13 @@ try {
     }
     $source = [regex]::Replace($source, $pandocGuard, 'if false {', 1)
 
+    # Hotkey wiring moved into RegisterHotkeys() (data-driven table); the
+    # call site below is the stable anchor that proves the composition root
+    # is still assembling hotkeys.
     $source = Replace-ExactlyOnce $source `
-        '(?m)^!z::WindowFeature\.Toggle\(\)\r?$' `
-        '!z::WindowFeature.Toggle()' `
-        "window-toggle hotkey"
+        '(?m)^RegisterHotkeys\(\)\r?$' `
+        'RegisterHotkeys()' `
+        "hotkey registration"
     $source = Replace-ExactlyOnce $source `
         '(?m)^ShowStartupTip\(\)\r?$' `
         '; Startup tip disabled in the presentation-only copy.' `

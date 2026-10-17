@@ -4,6 +4,27 @@
 
 **不要只靠"读代码觉得没问题"就宣称改好了。** 改完 `.ahk` 必须用真实解释器跑一次语法检查。
 
+### 先验编码与换行（编辑器可能整文件改写）
+
+`.gitattributes` 规定 `*.ahk` 用 **CRLF**、`*.md` 用 **LF**，源码 **UTF-8 无 BOM**。
+但有些编辑器 / 工具在整文件写回时会**把 CRLF 统一成 LF** —— 实测一次改动就把
+`SevenNote.ahk` 全转成裸 LF（4352 行），`git diff` 整文件变色、`CRLF=0`。
+
+```powershell
+$src='d:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
+$b=[System.IO.File]::ReadAllBytes($src)
+'BOM=' + (($b[0] -eq 0xEF) -and ($b[1] -eq 0xBB))
+$t=[System.IO.File]::ReadAllText($src,[System.Text.Encoding]::UTF8)
+'CRLF=' + ([regex]::Matches($t,"`r`n").Count) + '  bareLF=' + ([regex]::Matches($t,"(?<!`r)`n").Count)
+```
+
+期望 `BOM=False`、`bareLF=0`。若 `CRLF=0`（全裸 LF），这样转回来（保持无 BOM）：
+
+```powershell
+$t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
+[System.IO.File]::WriteAllText($src, $t, [System.Text.UTF8Encoding]::new($false))
+```
+
 ### 语法检查
 
 ⚠️ **`/validate` 不可用** —— 本机 AHK v2.0.27 不识别该参数。别用。
@@ -110,7 +131,7 @@ Loop {
 | `^\s*static AppDataDir := .+$` | 沙箱 AppData 的绝对路径 | 隔离配置 |
 | `^\s*static ConfigPath := .+$` | 沙箱 `_config.ini` 的绝对路径 | 隔离配置 |
 | `(?m)^if !FileExist\(A_AppData \. "\\SevenNote\\pandoc\.exe"\) \|\| FileGetSize\(...\) < 1048576 \{\r?$` | `if false {` | 跳过 pandoc 释放，不动真实 AppData |
-| `(?m)^!z::WindowFeature\.Toggle\(\)\r?$` | 原样（只作校验） | 确认组合根仍在 |
+| `(?m)^RegisterHotkeys\(\)\r?$` | 原样（只作校验） | 确认组合根仍在（热键已改为数据驱动的 `HotkeyTable()`） |
 | `(?m)^ShowStartupTip\(\)\r?$` | 注释掉 | 演示时不弹启动提示 |
 
 ⚠️ `Replace-ExactlyOnce` 要求**恰好命中 1 次**，多一次少一次都 `throw`。所以：
@@ -118,7 +139,8 @@ Loop {
 - `Config` 里那三行 `static` 声明**必须各只出现一次** —— 别在注释里抄写它们的字面写法；
 - `ShowStartupTip()` 的**调用行**必须顶格独占一行（它的**定义行** `ShowStartupTip() {`
   因为行尾带 ` {`，天然不匹配，是安全的）；
-- `!z::WindowFeature.Toggle()` 也是顶格独占一行。
+- `RegisterHotkeys()` 同理：调用行顶格独占一行（**定义行** `RegisterHotkeys() {` 行尾带
+  ` {`，不匹配）—— 所以它在文件里出现 2 次时，锚点仍恰好命中 1 次。
 
 驱动侧 3 个：`^global JourneyPaceMs := \d+\r?$`、`^global JourneyTypeDelayMs := \d+\r?$`、
 `^global JourneySpeedMode := "balanced"\r?$`（由 `-PaceMs` / `-TypeDelayMs` / `-SpeedMode` 覆盖）。
@@ -145,6 +167,39 @@ Set-Content -LiteralPath "$dir\_probe.ahk" -Value ($L + $d) -Encoding UTF8
 
 ⚠ **跑之前先 `Stop-Process` 掉已在运行的实例** —— 否则两个实例抢同一批热键，
 后起的那个注册失败、可能弹出模态框把结论搅浑。
+
+### 探针第一行别用裸 `FileDelete`
+
+`FileDelete(不存在的路径)` 会抛 `OSError`。它写在探针第一行时，`OnError`（`return 1`）
+之后**后续语句不再执行** —— 表现是「日志文件根本没生成、进程 `exit=0`、stderr 为空」，
+极易误判成「脚本没启动」或「驱动没拼进去」。实测为此白查了三轮。
+
+- 先 `if FileExist(logp)` 守卫，或干脆**只 `FileAppend`**（会自己创建）；
+- 探针里每步都 `FileAppend(步骤名, logp)`，卡在哪一步一眼就看得到。
+
+### ⚠ 上下文热键无法用 `Send` 验证（只能手按）
+
+`HotIf(...)` / `#HotIf` 的上下文热键由**键盘钩子**实现，而 AHK 的钩子会**忽略同一脚本
+`Send` 产生的事件** —— 实测 `SendLevel(1)` 也无效，`Hotkey("$F9")`（强制钩子）与
+`Hotkey("F8")`（有 `HotIf` 上下文）**都抓不到**，脚本正常跑完、`_error.log` 干净。
+
+| 热键类型 | 实现方式 | `Send` 能否触发 |
+| --- | --- | --- |
+| 无上下文的 `Hotkey()`（如 `Alt+Z` / `Alt+H`） | 系统 `RegisterHotKey` | **能** ✓ 用它验全局热键 |
+| 有 `HotIf` 上下文 / `$` 前缀 | 键盘钩子 | **不能** ✗ |
+
+**别据此判定「热键坏了」。** 上下文热键只有两条验证途径：
+
+1. `Hotkey()` 全部未抛错 → `_error.log` 为空（本项目 30 条全过即证明注册成功）；
+2. **人工按键**（只能由用户按）。
+
+⚠️ 连带的一个假象：`Send("^f")` 若命中了某个上下文热键，`Send` 会**等热键线程跑完**，
+探针看起来「卡住」、后续步骤全不执行 —— 判断「是不是真卡」要直调那个 action
+（实测 `SearchFeature.Show()` **16ms** 返回、`IsVisible()` 立刻为 1，与卡死无关）。
+
+**断「改造前后是否等价」的硬办法**：把新注册的上下文表达式与旧 `#HotIf` 行**逐字比对** ——
+本项目 `HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible())`
+与 HEAD 的 `#HotIf` 行一字不差。
 
 ## 看主题效果时的窗口截图坑
 
