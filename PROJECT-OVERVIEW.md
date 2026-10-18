@@ -127,6 +127,8 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | --- | --- |
 | `SevenNote.ahk` | 全部源码，单文件 |
 | `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 / 版本历史 |
+| `PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
+| `PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
 | `DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
 | `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
