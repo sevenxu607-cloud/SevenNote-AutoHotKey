@@ -4,6 +4,8 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
+>
+> 📄 **只想快速了解？** 看 [`PROJECT-OVERVIEW.md`](./PROJECT-OVERVIEW.md) —— 一页纸全景（定位 / 规模 / 欠账 / 限制）
 
 ![version](https://img.shields.io/badge/version-2.4.3-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
