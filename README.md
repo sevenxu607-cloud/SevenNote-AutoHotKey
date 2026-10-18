@@ -196,6 +196,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault）。`run_user_journey_demo.ps1` 把主脚本**源码读进内存做定点替换**再与驱动**拼成一份临时脚本**运行（不是 `#Include`），所以驱动能直调 `State.*` / `EditorService.*`；也正因如此，主脚本里被替换的那几行**写法不能变**，见 `.clinerules\04-workflow.md` |
 | `screenshots\` | README 配图 |
+| `DEVLOG.md` | **开发日志**：按会话记录「我说了什么 / 为什么这么选 / 放弃了什么 / 下一步做什么」。由 AI 按 `.clinerules\06-devlog.md` 维护；代码实现细节仍看本文的版本历史 |
 | `.clinerules\` | 架构约定与踩坑记录（`05-theme-image.md` 是「看图生成主题」的配方 + 偏好） |
 
 ---
@@ -273,8 +274,13 @@ C:\Users\<用户名>\AppData\Roaming\SevenNote\
 
 C:\Users\<用户名>\AppData\Roaming\SevenNote-Dev\
 ├── _config.ini                   配置（几百字节）
-└── _error.log                    出错日志（只在真出错时才出现，超 512KB 自动轮转）
+└── _error.log                    出错日志（仅编译版；只在真出错时才出现，超 512KB 自动轮转）
 ```
+
+⚠️ **开发版（未编译）的报错日志不在这里**，而是落在**项目根的 `.logs\_error.log`**
+（`Config.LogPath` 按 `A_IsCompiled` 分流）—— 开发时一眼就能翻，`.gitignore` 已忽略
+`.logs/`；编译后 exe 可能在桌面 / U 盘 / `Program Files`，那里要么脏用户目录、要么
+没有写权限，所以仍回 AppData。项目目录不可写时会退回 AppData 再记一次。
 
 ⚠️ **`SevenNote-Dev` 是开发版的配置目录**（`Config.ConfigPath`）。`_config.ini` 存的是
 使用者状态（主题 / 字体 / Vault 路径），按版本隔离更安全：两版并存时各改各的、不互相覆盖。

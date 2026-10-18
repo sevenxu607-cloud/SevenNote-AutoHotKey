@@ -27,7 +27,8 @@ Persistent()
 ;            —— 图的路径与浓淡只写在主题自己的 bg / bgAlpha 上；③ StatFeature.Tick
 ;            补窗口可见性守卫；④ 加 .gitignore，演示测试产物出库。
 ;    v2.4.2  补齐运行时兜底与三处实测到的浪费：① 注册 OnError —— 未捕获异常写
-;            %AppData%\SevenNote-Dev\_error.log 并**继续跑**，不再弹模态框停摆；
+;            _error.log（开发版落项目根 .logs\，编译版落 AppData）并**继续跑**，
+;            不再弹模态框停摆；
 ;            同时把 VarUnset 警告动作改成 OutputDebug（同上，不再拦路）。
 ;            ② pandoc 可用性探测缓存（原先每次保存都 RunWait 起一个 200MB 进程）、
 ;            ConfigService 加进程内读缓存（GetVault 在保存链路上就要读 6 次盘）。
@@ -115,6 +116,18 @@ class Config {
     static AppDataDir := A_AppData . "\SevenNote-Dev"
     static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
     static PandocPath := A_AppData . "\SevenNote\pandoc.exe"
+
+    ; 报错日志落点：**开发版写项目根的 .logs\**，翻起来不用到处找；
+    ; 编译版仍回 AppData —— exe 可能在桌面 / U 盘 / Program Files，那里
+    ; 要么往用户目录里扔文件，要么根本没写权限。
+    ; ⚠ 用 `=>` 简写属性而不是 `:=`：A_IsCompiled / A_ScriptDir 在取值时才求值，
+    ;   不在类加载期赌内置变量是否已就绪。
+    ; ⚠ 别把这两个身份塞进上面几行声明里 —— tests\run_user_journey_demo.ps1 用
+    ;   Replace-ExactlyOnce 精确匹配那几行做沙箱注入，写法一改就直接 throw。
+    static LogDir => A_IsCompiled
+        ? A_AppData . "\SevenNote-Dev"
+        : A_ScriptDir . "\.logs"
+    static LogPath => this.LogDir . "\_error.log"
 
     static GetVault() {
         v := ConfigService.Read("Paths", "Vault")
@@ -372,6 +385,49 @@ class EditorService {
 
     static SetSel(hwnd, min, max) {
         SendMessage(0x00B1, min, max, hwnd)
+    }
+
+    ; ─── 内容变短后，把 RichEdit 的内部滚动位置对齐回 SCROLLINFO ───（v2.4.4）
+    ; 现象（用户报的「删掉末尾几行空行，画面不跟着变，拖一下滚动条才一次性闪回」）：
+    ;   · 删除后 SCROLLINFO 已经重算对了 —— nMax / nPos 都是新值，滚动条滑块当场变长；
+    ;   · 但 EM_GETFIRSTVISIBLELINE 和画面都停在删除前 —— 内容已短、视口没动；
+    ;   · 唯 WM_VSCROLL 能修，WM_SIZE / 重绘 / EM_SCROLLCARET 都不能。
+    ; 实测（40 行正文 + 末尾 5 个空行，150% 缩放）：
+    ;   删除后   fv=19  nPos=502  nMax=1476   scrollPt.y=684   画面像素只变 0.04%
+    ;   写回后   fv=13  nPos=501  nMax=1476   scrollPt.y=501   画面重绘 9.9%
+    ; 做法：EM_SETSCROLLPOS 只把 SCROLLINFO 里**已经算好**的 nPos 交给 RichEdit，
+    ;      它会据此重算行布局并重绘；滚动位置本身不动（前后都在底部）。
+    ; 注意：EM_GETSCROLLPOS 读到的像素位置仍是旧值（684 = 多算了 5 行 × 36px），
+    ;      所以不能用它往回写——必须用 nPos。但反过来，**它正好可以当「是否脱节」的探针**：
+    ;      scrollPt.y 与 nPos 对不上，就说明行布局还停在旧内容上。
+    ; ⚠ 只在真的脱节时动手：若两者一致（正常滚动 / 正常编辑），直接返回。
+    ;   无条件写回虽然实测不重绘，但**用户正拖滚动条时会把它弹回去**，
+    ;   表现就是「滑条经常拖不动」——必须靠这道守卫挡掉。
+    static SyncScrollAfterShrink(hwnd) {
+        si := Buffer(28, 0)
+        NumPut("uint", 28, si, 0)        ; cbSize
+        NumPut("uint", 0x17, si, 4)      ; SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS
+        if !DllCall("GetScrollInfo", "ptr", hwnd, "int", 1, "ptr", si, "int")   ; SB_VERT
+            return
+        npos := NumGet(si, 20, "int")
+        nmax := NumGet(si, 12, "int")
+        npage := NumGet(si, 16, "int")
+
+        ; ① 脱节检测：内部渲染用的像素位置 vs SCROLLINFO 的逻辑位置
+        cur := Buffer(8, 0)
+        DllCall("SendMessageW", "ptr", hwnd, "uint", 0x04DD, "uptr", 0, "ptr", cur, "ptr")   ; EM_GETSCROLLPOS
+        py := NumGet(cur, 4, "int")
+        if (Abs(py - npos) <= 2)
+            return      ; 已同步 —— 别打扰用户正常的滚动/编辑
+
+        ; ② 删除后 nPos 可能比 max-page 多 1（实测 502 对 501）。钳到上界之后，
+        ;    结果与「拖一下滚动条」逐像素一致（DIFF 0.0374 -> 0.0000）。
+        if (nmax > npage && npos > nmax - npage)
+            npos := nmax - npage
+        pt := Buffer(8, 0)
+        NumPut("int", 0, pt, 0)         ; x
+        NumPut("int", npos, pt, 4)      ; y = nPos
+        DllCall("SendMessageW", "ptr", hwnd, "uint", 0x04DE, "uptr", 0, "ptr", pt, "ptr")   ; EM_SETSCROLLPOS
     }
 
     static GetTextRange(hwnd, cpMin, cpMax) {
@@ -1313,14 +1369,25 @@ class FontService {
 ; ─── BackdropService：背景图能力（位图合成 + 层级铺设）───
 ; 纯能力：不读配置、不管开关、不发事件，只负责「把一张图铺到编辑区背后的控件上」。
 ;
-; 技术路线（全部由独立 spike 脚本实测确认，非推测）：
+; 技术路线（除 ※ 那条外，均经独立 spike 脚本实测确认，非推测）：
 ;   · RichEdit 无法真正透明 —— 给编辑区加 WS_EX_TRANSPARENT，让它绘制时跳过自身背景，
 ;     由 z-order 更低的同级兄弟控件（承载图片的 Static）先画出的图透上来；
-;   · 父窗口绝不能加 WS_EX_COMPOSITED —— 双缓冲合成会吞掉 WS_EX_TRANSPARENT 子窗口
-;     的文字（实测：只剩图、文字全丢）；
 ;   · 子类化 WM_ERASEBKGND 自绘也无效 —— 图会被 RichEdit 在 WM_PAINT 内重填背景盖掉；
 ;   · WS_EX_TRANSPARENT 实测不影响鼠标命中与键盘输入，真实滚轮滚动无残影，
 ;     被其他窗口遮挡再露出也能正常恢复。
+;
+; ※ 父窗口 WS_EX_COMPOSITED 与编辑区透明的相容性：**有条件，别当绝对禁令**
+;   · ebd95ac（背景图首版，Alt+B 时代、样式由 WinSetExStyle 设）的 spike 实测是
+;     「父窗口加 WS_EX_COMPOSITED → 只剩图、文字全丢」，当时据此写下「绝不能加」；
+;   · 但 v2.3.2（e81c03c）为消除滚动频闪，在组合根的 g.Opt 里加了 +E0x02000000 ——
+;     这条禁令两天后就被违反，且没留下任何复测记录（该提交只提频闪）。
+;   · 当前两者**同时存在**，日常使用未见文字丢失；但**没有一条正向判据证明过**：
+;     那一轮的验收是「resize 前后截图逐像素一致」—— 文字若本来就丢，前后也一致，
+;     照样「通过」。一致性不等于正确性。
+;   ⚠ 动到任一侧（父窗口 COMPOSITED / 编辑区透明）都要复测两条，且用**存在性判据**：
+;     ① 切带背景图的主题、编辑区打满字 → 截图里近白像素应达数万级（证明文字还在）；
+;        不要拿「前后截图一致」当判据 —— 它只证明没变化，证明不了文字在。
+;     ② 拖动窗口 40 次 → 不应出现上下滑动频闪（E0x02000000 正是为它加的）。
 ;
 ; ⚠ 两个 API 细节：
 ;   · 扩展样式必须在 Show() 之前设置；
@@ -3523,6 +3590,15 @@ class StatFeature {
             return
         len := EditorService.GetLength(hwnd)
         if (len != this._lastLen) {
+            ; 内容变短时 RichEdit 只重算 SCROLLINFO、不重算行布局也不重绘 ——
+            ; 表现为画面停在删除前，得拖一下滚动条才闪回。
+            ; ⚠ 这里是 500ms 一次的兜底：删完最多等半秒画面才跟手，肉眼「慢半拍」。
+            ;   想更快得换触发方式，但 EN_CHANGE 在本项目的 RichEdit50W 上实测掩码
+            ;   设不上（EM_SETEVENTMASK 读回恒为 0x0，WM_COMMAND 一次都不来），
+            ;   50ms 轮询那一版在真机上出过问题，暂留在 %TEMP% 备份里不启用。
+            ; 首次调用（_lastLen = -1）不触发。
+            if (this._lastLen >= 0 && len < this._lastLen)
+                EditorService.SyncScrollAfterShrink(hwnd)
             this._lastLen := len
             stat.Value := len . " 字"
         }
@@ -3954,8 +4030,9 @@ class BackdropFeature {
 ; AHK v2 对未捕获异常默认是**弹模态框**：框一弹脚本就停摆（热键全无反应、框还挂在
 ; 屏幕上），只能手动杀进程 —— 项目在 v2 迁移期踩过三次（见 .clinerules/03）。
 ; 这里改成「写日志 + 继续跑」：单个 Feature 出错不该拖垮整个程序。
-; 注册点放在这里（而不是文件更早处）是因为 LogError 要写
-; %AppData%\SevenNote-Dev\，而那目录就在下面两行才建。
+; 注册点放在这里（而不是文件更早处）是因为 LogError 要先建日志目录
+; （开发版项目根 .logs\、编译版 %AppData%\SevenNote-Dev\），
+; 而其中的 AppData 目录就在下面几行才建。
 OnError(OnScriptError)
 
 ; AHK 的异常回调。返回 **1** = 已处理，不弹默认错误框（返回 0 就会弹）。
@@ -3970,16 +4047,24 @@ OnScriptError(err, mode) {
     return 1
 }
 
-; 追加一条到 %AppData%\SevenNote-Dev\_error.log。
+; 追加一条到日志（落点见 Config.LogPath：开发版 .logs\_error.log，
+; 编译版 %AppData%\SevenNote-Dev\_error.log）。
 ; 超 512 KB 就轮转（删掉重来）—— 日志只用来事后定位，不归档。
 LogError(msg) {
+    entry := "── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n" . msg . "`r`n`r`n"
     try {
-        DirCreate(Config.AppDataDir)      ; 启动极早期出错时，这个目录可能还没建
-        logPath := Config.AppDataDir . "\_error.log"
+        logPath := Config.LogPath
+        DirCreate(Config.LogDir)      ; 启动极早期出错时，这个目录可能还没建
         if (FileExist(logPath) && FileGetSize(logPath) > 524288)
             FileDelete(logPath)
-        FileAppend("── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n"
-            . msg . "`r`n`r`n", logPath, "UTF-8")
+        FileAppend(entry, logPath, "UTF-8")
+    } catch {
+        ; 项目目录只读 / 被占用时退回 AppData —— 日志丢一次就白查了
+        try {
+            fallbackDir := A_AppData . "\SevenNote-Dev"
+            DirCreate(fallbackDir)
+            FileAppend(entry, fallbackDir . "\_error.log", "UTF-8")
+        }
     }
 }
 

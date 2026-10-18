@@ -40,8 +40,9 @@
 
 ## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
 
-- `OnError(OnScriptError)` —— 未捕获异常 → `%AppData%\SevenNote-Dev\_error.log`
-  （含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
+- `OnError(OnScriptError)` —— 未捕获异常 → `Config.LogPath`
+  （**开发版 `<项目根>\.logs\_error.log`**；编译版 `%AppData%\SevenNote-Dev\_error.log`。
+  含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
 - `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
 
 ⚠ **别把兜底当挡箭牌**：
@@ -50,4 +51,5 @@
 - 新增异步回调（`SetTimer` / `OnMessage`）时，碰窗口或控件前仍要自己守卫
   （照 `AutoSaveFeature.Tick` 的写法）；「这个分支很少发生」不是不写的理由，
   它们最终都会以一个留在屏幕上的模态框收场；
-- 用户报「按了没反应」时，**先看 `_error.log`**，再去枚举 `#32770` 读正文。
+- 用户报「按了没反应」时，**先看 `_error.log`**（开发版在项目根 `.logs\`，
+  编译版在 `%AppData%\SevenNote-Dev\`），再去枚举 `#32770` 读正文。

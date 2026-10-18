@@ -3,6 +3,9 @@ tests/user-journey-report.html
 tests/results.tsv
 tests/trace.log
 
+# 开发版报错日志（Config.LogPath 落在项目根的 .logs\ 下）
+.logs/
+
 # 系统 / 编辑器杂物
 Thumbs.db
 desktop.ini

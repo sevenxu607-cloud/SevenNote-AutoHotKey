@@ -151,19 +151,30 @@ Loop {
 
 ### 单测一个 Service / Feature 的方法（探针脚本）
 
-不必起真窗口：把主脚本读进内存、末尾追加驱动（与 demo 脚本同一手法），驱动里直接调
+不必起真窗口：把主脚本读进内存、在 **auto-execute 段内**插一段驱动，驱动里直接调
 `SomeService.Method()`、把结果写文件，最后 `ExitApp()`。实测用它一次跑完 `PeerLayoutService`
 的四项对拍 —— `CornerRect` 与工作区算术比对、`IsPlaceable` 对「可见 / 隐藏 / 不存在」三态、
-`RectOf` 读隐藏窗口的外框：
+`RectOf` 读隐藏窗口的外框。
+
+⚠ **驱动别直接追加到文件末尾** —— 主脚本末尾是 `ShowHelp() {` 这类**函数定义**，而
+AHK v2 的 auto-execute 段在**第一个函数定义**处就结束，追加在它之后的顶层语句属于死代码：
+**一行都不会执行**，而进程照样正常退出（`exit=0`）、stderr 为空 —— 看上去像「驱动没拼进去」。
+实测为此白跑一次：`LogError` 没写任何文件，项目根和 AppData 两边都是空的。
+（类定义不结束 auto-execute，所以主脚本里那堆 `class` 之后的顶层语句是照跑的。）
+
+正确做法：用正则**插在 `ShowStartupTip()` 调用行之后**（那行顶格独占一行，且在 auto-execute 段内）：
 
 ```powershell
-$L = Get-Content -LiteralPath $src -Encoding UTF8
-$d = @('f := FileOpen(A_Temp . "\SevenNoteDev\_probe.txt", "w", "UTF-8")'
-     , 'gh := Gui("-Caption")', 'gh.Show("Hide")   ; 造一个"隐藏窗口"样本'
-     , 'f.Write("IsPlaceable(hidden)=" . PeerLayoutService.IsPlaceable(gh.Hwnd) . "`r`n")'
-     , 'f.Close()', 'ExitApp()')
-Set-Content -LiteralPath "$dir\_probe.ahk" -Value ($L + $d) -Encoding UTF8
+$t   = [System.IO.File]::ReadAllText($src, [System.Text.Encoding]::UTF8)
+$drv = 'ShowStartupTip()' + "`r`n" + 'LogError("PROBE ...")' + "`r`n" + 'ExitApp()'
+$t2  = [regex]::Replace($t, '(?m)^ShowStartupTip\(\)\r?$', $drv, 1)   # 恰好 1 处
+if ($t2 -eq $t) { throw 'anchor not found' }
+[System.IO.File]::WriteAllText("$dir\_probe.ahk", $t2, [System.Text.UTF8Encoding]::new($false))
 ```
+
+⚠ 探针文件此时**放在项目根**（不是 `%TEMP%`）：验证 `Config.LogDir` 这类按 `A_ScriptDir`
+落盘的路径时必须让 `A_ScriptDir` 指向项目根。**验证完立刻删掉**，别留在仓库里
+（会进 `git status`，也会被 AHK++ 扫到）。
 
 ⚠ **跑之前先 `Stop-Process` 掉已在运行的实例** —— 否则两个实例抢同一批热键，
 后起的那个注册失败、可能弹出模态框把结论搅浑。
