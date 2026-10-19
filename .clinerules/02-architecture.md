@@ -60,7 +60,7 @@
    返回结构化结果；不是 → 继续下面。
 1. 在 FEATURE 层新增一个 class
 2. 在所属模块的 `GetHotkeys()` 里加热键（平台级热键归 `WorkBench.GetHotkeys()`；
-   `HotkeyRouter` 注册与 `Alt+H` 帮助共用这份数据）
+   `HotkeyRouter` 注册与 `Alt+S` 帮助共用这份数据）
 3. 通过 `EventBus.Emit` 通知结果
 
 参考实现（README「开发指南」原文）：

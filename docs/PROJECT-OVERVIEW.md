@@ -45,7 +45,7 @@
 - `Ctrl+V` 粘图（自动存 PNG + 生成 MD 链接）、`Ctrl+Shift+V` 粘贴纯文本
 - `Ctrl+Y` 删行 / `Ctrl+D` 复制行 / `Ctrl+Shift+↑↓` 移行
 - `Tab` / `Shift+Tab` 缩进**不丢字符格式**
-- `Ctrl+H` 分隔线 / `Ctrl+Shift+H` 分段标题 / `Ctrl+T` 手动时间戳
+- `Ctrl+H` 按编辑区宽度动态插入分隔线 / `Ctrl+Shift+H` 分段标题 / `Ctrl+T` 手动时间戳
 
 **日期与标签**
 - `Alt+↑↓` 前后一天 / `Alt+Home` 回今天 / 切日期自动定位到开头
@@ -93,7 +93,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 依赖方向：Feature → Service → Kernel → OS（严禁反向）
 ```
 
-**加新功能三步**：加一个 Feature 类 → 在所属模块的 `GetHotkeys()` 加一行（注册与 `Alt+H`
+**加新功能三步**：加一个 Feature 类 → 在所属模块的 `GetHotkeys()` 加一行（注册与 `Alt+S`
 帮助共用同一份数据；平台热键归 `WorkBench.GetHotkeys()`）→ `EventBus.Emit` 通知结果。
 
 **三个关键决策**

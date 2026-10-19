@@ -6,7 +6,9 @@
 
 class EditorService {
     static CLOCK := Chr(0x1F550)
-    static SEPARATOR := "--------------------"
+    static SEPARATOR := "----------------------------------------"
+    static SEPARATOR_MIN := 20
+    static SEPARATOR_MAX := 320
     static INDENT_STR := "    "
 
     static NormalizeNL(s) {
@@ -297,17 +299,120 @@ class EditorService {
         this.InsertText(hwnd, "`n`n" . this.CLOCK . " " . now . "`n")
     }
 
+    ; ─── 分隔线长度：按编辑区宽度动态计算 ───
+    ; 只影响这一次插入；已经写进正文的旧分隔线不会随窗口缩放重排。
+    ; 宽度取 EM_GETRECT（排版区，不是窗口宽度），字宽用当前插入点字体在 GDI 里实测；
+    ; 任一步失败都回退到 SEPARATOR（40 个），保证 Ctrl+H 永远能插入。
+    static SeparatorText(hwnd) {
+        if !hwnd
+            return this.SEPARATOR
+        rect := Buffer(16, 0)
+        try
+            SendMessage(0x00B2, 0, rect.Ptr, hwnd)   ; EM_GETRECT
+        catch
+            return this.SEPARATOR
+        width := NumGet(rect, 8, "int") - NumGet(rect, 0, "int")
+        if (width <= 0) {
+            ; 极少数情况下排版区还没算好，退回客户区宽度
+            client := Buffer(16, 0)
+            if DllCall("GetClientRect", "ptr", hwnd, "ptr", client.Ptr, "int")
+                width := NumGet(client, 8, "int") - NumGet(client, 0, "int")
+        }
+        if (width <= 0)
+            return this.SEPARATOR
+
+        charW := 0
+        try
+            charW := this._HyphenWidth(hwnd)
+        catch
+            charW := 0
+        if (charW <= 0)
+            return this.SEPARATOR
+
+        ; 留 4px 边距 + 一个字宽，避免字体测量误差让最后一个字符折行
+        count := Floor((width - 4 - charW) / charW)
+        count := Max(this.SEPARATOR_MIN, Min(count, this.SEPARATOR_MAX))
+        return this._Repeat("-", count)
+    }
+
+    ; 用当前插入点的字体测 10 个连字符的总宽，再取平均值。
+    ; 不读窗口宽度 / FontService 的配置值 —— RTF 里的实际字体、字号、DPI 都以 RichEdit 为准。
+    static _HyphenWidth(hwnd) {
+        cf := Buffer(92, 0)
+        NumPut("uint", 92, cf, 0)
+        SendMessage(0x043A, 1, cf.Ptr, hwnd)   ; EM_GETCHARFORMAT, SCF_SELECTION
+
+        heightTwips := NumGet(cf, 12, "int")
+        face := StrGet(cf.Ptr + 26, "UTF-16")
+        if (heightTwips <= 0 || face = "") {
+            ; 选区格式不完整（混合字体等）时退回程序当前设置
+            heightTwips := FontService.GetSize() * 20
+            face := FontService.GetName()
+        }
+        charset := NumGet(cf, 24, "uchar")
+        if (charset = 0)
+            charset := 134
+        ; 插入点若加粗 / 斜体，字宽也会变；分隔线会继承这些格式，测量时一并带上
+        effects := NumGet(cf, 8, "uint")
+        weight := (effects & 0x1) ? 700 : 400
+        italic := (effects & 0x2) ? 1 : 0
+
+        hdc := DllCall("GetDC", "ptr", hwnd, "ptr")
+        if !hdc
+            return 0
+
+        dpi := DllCall("GetDeviceCaps", "ptr", hdc, "int", 90, "int")   ; LOGPIXELSY
+        if (dpi <= 0)
+            dpi := A_ScreenDPI
+
+        hfont := DllCall("CreateFontW"
+            , "int", -Max(1, Round(heightTwips * dpi / 1440))
+            , "int", 0, "int", 0, "int", 0
+            , "int", weight, "uint", italic, "uint", 0, "uint", 0
+            , "uint", charset, "uint", 0, "uint", 0, "uint", 0, "uint", 0
+            , "Str", face, "ptr")
+        if !hfont {
+            DllCall("ReleaseDC", "ptr", hwnd, "ptr", hdc)
+            return 0
+        }
+
+        old := DllCall("SelectObject", "ptr", hdc, "ptr", hfont, "ptr")
+        if !old {
+            DllCall("DeleteObject", "ptr", hfont)
+            DllCall("ReleaseDC", "ptr", hwnd, "ptr", hdc)
+            return 0
+        }
+
+        size := Buffer(8, 0)
+        ok := DllCall("GetTextExtentPoint32W", "ptr", hdc
+            , "Str", "----------", "int", 10, "ptr", size.Ptr, "int")
+        DllCall("SelectObject", "ptr", hdc, "ptr", old)
+        DllCall("DeleteObject", "ptr", hfont)
+        DllCall("ReleaseDC", "ptr", hwnd, "ptr", hdc)
+        if !ok
+            return 0
+        return NumGet(size, 0, "int") / 10
+    }
+
+    static _Repeat(s, count) {
+        out := ""
+        Loop count
+            out .= s
+        return out
+    }
+
     static InsertSeparator(hwnd) {
+        sep := this.SeparatorText(hwnd)
         sel := this.GetSel(hwnd)
         if (sel.min = 0) {
-            this.InsertText(hwnd, this.SEPARATOR . "`n`n")
+            this.InsertText(hwnd, sep . "`n`n")
             return
         }
         prevChar := this.GetTextRange(hwnd, sel.min - 1, sel.min)
         if (prevChar = "`n")
-            this.InsertText(hwnd, this.SEPARATOR . "`n`n")
+            this.InsertText(hwnd, sep . "`n`n")
         else
-            this.InsertText(hwnd, "`n" . this.SEPARATOR . "`n`n")
+            this.InsertText(hwnd, "`n" . sep . "`n`n")
     }
 
     static InsertHeading(hwnd) {

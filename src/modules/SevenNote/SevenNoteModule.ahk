@@ -121,7 +121,7 @@ class SevenNoteModule {
     }
 
     ; ─── 笔记模块的热键（Phase 5：从组合根搬入）───
-    ; 平台热键（Alt+H / Alt+Shift+Z）不在这里，见 WorkBench.GetHotkeys()。
+    ; 平台热键（Alt+S / Alt+Shift+Z）不在这里，见 WorkBench.GetHotkeys()。
     static GetHotkeys() {
         return [
             ; ── 【窗口】──
@@ -192,7 +192,7 @@ class SevenNoteModule {
             ; ── 【分段】──
             {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
                 , fn: (*) => TimestampFeature.Append()},
-            {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入分隔线"
+            {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入动态分隔线"
                 , fn: (*) => TimestampFeature.Separator()},
             {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
                 , fn: (*) => TimestampFeature.Heading()}

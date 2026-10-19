@@ -17,7 +17,7 @@ Persistent()
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  SevenWork —— v2.4.3
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
-;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+H 帮助窗口底部），改这里要一并改它。
+;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+S 帮助窗口底部），改这里要一并改它。
 ;
 ;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
 ;    v2.4.3  一轮「去重与仓库卫生」：① 新增 Service `PeerLayoutService` —— 终端 / DeepSeek

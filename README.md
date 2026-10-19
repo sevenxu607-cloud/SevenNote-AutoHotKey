@@ -220,7 +220,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Alt+Shift+Z` | 保存并退出 |
 | `Alt+C` | 呼出 / 隐藏 PowerShell，笔记窗口自动与它上下对齐成规整一列 |
 | `Alt+X` | 呼出 / 隐藏 DeepSeek 网页（**独立 profile 的普通 Edge 窗口**，标签栏与工具栏齐全，窗口内可直接浏览网页），同样自动与笔记对齐 |
-| `Alt+H` | 显示快捷键帮助 |
+| `Alt+S` | 显示快捷键帮助 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
 | `Alt+T` | 切换主题（含两套背景图主题「星空 / 金克斯」） |
@@ -240,7 +240,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Tab / Shift+Tab` | 增加 / 减少缩进（不丢格式） |
 | `Ctrl+Shift+V` | 粘贴为纯文本 |
 | `Ctrl+T` | 手动追加时间戳（v2.4 起不再自动加） |
-| `Ctrl+H` | 插入分隔线 |
+| `Ctrl+H` | 插入按编辑区宽度动态生成的分隔线 |
 | `Ctrl+Shift+H` | 插入 `## 分段` 标题 |
 | `Ctrl+F` | 打开搜索栏 |
 | `Ctrl+G` | 搜索跳转（日期 / 标签） |
@@ -417,7 +417,7 @@ Pandoc 不可用，走了降级路径。
 
 ### Q5：找不到 Vault 路径
 
-- `Alt+H` → 帮助窗口底部显示"当前笔记目录"
+- `Alt+S` → 帮助窗口底部显示"当前笔记目录"
 - 或看 `%AppData%\SevenWork-Dev\_config.ini` 里的 `Vault=`（发布版路径为 `%AppData%\SevenWork\`）
 
 **换 Vault**：编辑 `_config.ini` 改 `Vault=`，或删这行重启让程序弹框重选。
@@ -448,7 +448,7 @@ Pandoc 不可用，走了降级路径。
 **步骤**：
 1. 在 FEATURE 层加一个类
 2. 把热键加到所属模块的 `GetHotkeys()`（平台热键归 `WorkBench.GetHotkeys()`；
-   注册与 `Alt+H` 帮助共用这份数据 —— 写一次，两处同时生效）
+   注册与 `Alt+S` 帮助共用这份数据 —— 写一次，两处同时生效）
 3. 通过 `EventBus.Emit` 通知结果
 
 **示例**：加"导出 HTML"

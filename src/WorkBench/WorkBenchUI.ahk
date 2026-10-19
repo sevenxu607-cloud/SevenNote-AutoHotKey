@@ -3,7 +3,7 @@
 ;  WorkBenchUI —— 平台级界面（Phase 5：统一帮助）
 ; ═══════════════════════════════════════════════════════════════════════════
 ; 平台只拥有「怎么显示帮助」；帮助里有哪些热键由各模块 GetMetadata() 提供。
-; Alt+H 的注册在 WorkBench.GetHotkeys()，帮助窗口的 Esc 由本类自注册 / 注销。
+; Alt+S 的注册在 WorkBench.GetHotkeys()，帮助窗口的 Esc 由本类自注册 / 注销。
 
 class WorkBenchUI {
     ; 帮助窗口标题固定，Esc 的 HotIfWinActive 上下文也用它
@@ -21,7 +21,7 @@ class WorkBenchUI {
         ; 帮助窗口按需创建；这里不建 GUI，避免启动时多一个窗口
     }
 
-    ; ─── Alt+H：同标题窗口已存在就激活，否则新建 ───
+    ; ─── Alt+S：同标题窗口已存在就激活，否则新建 ───
     static ShowHelp() {
         title := this._HelpTitle()
         if WinExist(title . " ahk_class AutoHotkeyGUI") {

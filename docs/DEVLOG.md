@@ -11,9 +11,9 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
-- **最近一次改动**：平台能力层拆分（`WorkBench/Capabilities/`）+ 背景图失败回退
-- **正在处理**：Capabilities 重构的真机验收（需关闭现有实例）
-- **下一步**：跑 `RectMath` 对拍 / 真机启动，再人工验收 `Alt+Z` / `Alt+C` / `Alt+X` 与带背景图主题
+- **最近一次改动**：`Ctrl+H` 动态分隔线 + 帮助热键 `Alt+H` → `Alt+S`
+- **正在处理**：两项改动的真机验收（需关闭现有实例）
+- **下一步**：人工验收 `Alt+S` / `Ctrl+H`，再跑保存 / 主题 / `Alt+Z` 回归
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -25,7 +25,7 @@
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
 - [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
 - [x] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
-- [ ] Phase 1 / 2 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题 / 全部上下文热键
+- [ ] Phase 1 / 2 人工验收：`Alt+Z` / `Alt+S` / 保存 / 主题 / 全部上下文热键
 - [x] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
 - [x] Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由模块 `GetHotkeys()`
 - [x] Phase 3b：`PeerCoordinator` 接管伙伴窗口堆叠几何，`Launcher.Opened` / `SevenNote.WindowReady` 已接入
@@ -37,7 +37,8 @@
 - [x] 运行代码统一收进 `src/`，根 `SevenWork.ahk` 只做启动器
 - [x] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 实现；E2E 待模块接口稳定后重建
 - [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
-- [ ] Phase 5 人工验收：`Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
+- [ ] Phase 5 人工验收：`Alt+S` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
+- [ ] 人工验收 `Ctrl+H` 动态分隔线（窄窗口 20 / 常规宽度 / 超宽 320）与测量失败兜底 40
 - [ ] Phase 5b 人工验收：`Alt+C` / `Alt+X` 呼出 / 隐藏 / 切换、笔记让位、重启认回窗口
 - [ ] Phase 6 人工验收：全部热键、`Alt+C` / `Alt+X`、保存、重启后配置与 DeepSeek 登录仍在
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
@@ -60,6 +61,36 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 01:01　Ctrl+H 动态分隔线，帮助热键 Alt+H → Alt+S
+
+**我说**（原话）
+> 可以改为按窗口宽度动态生成?
+
+**意图**
+把固定 20 个连字符的分隔线改成按当前编辑区宽度生成；同时把平台帮助热键从
+`Alt+H` 换到 `Alt+S`，并保持文档、帮助文本与实现一致。
+
+**决定 / 过程**
+- `EditorService.SeparatorText()` 只用 `EM_GETRECT` 读排版区宽度，再用
+  `EM_GETCHARFORMAT` + GDI `GetTextExtentPoint32W` 测当前字体的 `-` 宽度；
+  插入时算一次，长度限制 20–320，失败回退 40。
+- 只影响之后按 `Ctrl+H` 插入的线；已有分隔线不随窗口缩放重排（实时重排需要
+  改 `OnSize` 并重写正文，风险不值当）。
+- 平台热键改为 `!s`，帮助行同步为 `Alt+S`；源码注释、README、
+  `PROJECT-OVERVIEW` 与 `.clinerules` 一并更新。
+- 探针实测：编辑区物理宽 640 / 1350 / 2041 时分别 45 / 95 / 144 个；
+  窄到 200 逻辑宽时落到 20，超宽到 3000 时落到 320。
+
+**代价 / 风险**
+- `Alt+S` 会从所有程序手里抢走这个组合键，比 `Alt+H` 更容易和菜单快捷键冲突；
+  若系统或其它程序已占用，注册失败只会进 `_error.log`，不会弹窗。
+- 缩进行的插入点若不在左边距，动态长度仍可能多出一小截、折行；本轮先留 1 个
+  字宽安全边距，未引入 `EM_POSFROMCHAR`。
+
+**待办**
+- [ ] 真机人工验收：`Alt+S` 打开帮助、`Ctrl+H` 在 450 / 900 / 1361 宽窗口的长度
+- [ ] 若缩进行折行明显，再补插入点 x 坐标的扣除
 
 ### 2026-10-20 00:28　平台能力层：RectMath / WindowProbe / PlacementExecutor / BackdropService
 

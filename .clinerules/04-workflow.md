@@ -175,7 +175,7 @@ if ($t2 -eq $t) { throw 'anchor not found' }
 
 | 热键类型 | 实现方式 | `Send` 能否触发 |
 | --- | --- | --- |
-| 无上下文的 `Hotkey()`（如 `Alt+Z` / `Alt+H`） | 系统 `RegisterHotKey` | **能** ✓ 用它验全局热键 |
+| 无上下文的 `Hotkey()`（如 `Alt+Z` / `Alt+S`） | 系统 `RegisterHotKey` | **能** ✓ 用它验全局热键 |
 | 有 `HotIf` 上下文 / `$` 前缀 | 键盘钩子 | **不能** ✗ |
 
 **别据此判定「热键坏了」。** 上下文热键只有两条验证途径：
