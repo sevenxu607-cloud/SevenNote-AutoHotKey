@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；工作区有删除 `tests/` 与文档同步改动
-- **最近一次改动**：删除端到端测试脚本 `tests/`，为工作台化重构让路（重构后按模块接口重建）
-- **正在处理**：工作台化重构的**设计对齐**（只讨论与文档整理，未动 `SevenNote.ahk`）
-- **下一步**：补三张表（模块归属 / 启动顺序 / 热键归属）→ Phase 0（修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` 与 `mod.Init()`）
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `c864226`，工作区有 Phase 0 文档改动
+- **最近一次改动**：落 `docs/WORKBENCH-PLAN.md`（三张归属表 + Phase 0–6），修正 `.clinerules/04` 的 auto-execute 表述
+- **正在处理**：Phase 0 收尾（探针已过，准备 Phase 1 平台骨架）
+- **下一步**：提交 Phase 0 → Phase 1：新建 `WorkBench/Kernel/` 并搬 4 个 Kernel 类，保持注册结果与 HEAD 一致
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -21,8 +21,10 @@
 ## 待办与方向
 
 - [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
-- [ ] 补三张表：模块归属 / 启动顺序 / 热键归属（评审已列，待落纸）
-- [ ] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` 与 `mod.Init()`（tests 已删除，重构后按模块接口重建）
+- [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
+- [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
+- [ ] Phase 1：新建 `WorkBench/Kernel/`，搬 4 个 Kernel 类，`HotkeyRouter` 先包住现有热键表
+- [ ] Phase 2–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -43,6 +45,30 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 21:10　Phase 0 探针与三张表落纸
+
+**我说**（原话）
+> 继续
+
+**意图**
+按上一轮 Next 完成 Phase 0：把三张归属表写进文档、修正 `.clinerules/04` 的错误表述、
+用探针确认 `#Include` 顺序 / 静态方法 `this` / `Module.Init()` 生命周期。
+
+**决定 / 过程**
+- 新建 `docs/WORKBENCH-PLAN.md`：模块归属 / 启动顺序 / 热键归属三张表 + 模块接口 + Phase 0–6；
+- 修正 `.clinerules/04`：实测函数定义、类定义、运行时 `Hotkey()` **都不结束** auto-execute，
+  真正结束它的是热键 / 热字符串 / `#HotIf` 指令；探针驱动仍插在 `ShowStartupTip()` 之后；
+- 探针结论：裸 `Class.Method` 丢 `this`（`Missing a required parameter`），lambda / `.Bind()` 正常；
+  `#Include` 反序仍能解析类静态引用，但顶层语句严格按 include 顺序。
+
+**代价 / 风险**
+- 探针只证明接口可用，不替代真机按键；上下文热键仍需人工验证；
+- 未改 `SevenNote.ahk`；Phase 1 的 `#Include` 清单与文件命名仍未定稿。
+
+**待办**
+- [ ] Phase 1：新建 `WorkBench/Kernel/`，搬 4 个 Kernel 类，`HotkeyRouter` 先包住现有热键表
+- [ ] E2E 待模块接口稳定后重建
 
 ### 2026-10-19 20:10　删除端到端测试脚本，重构后重建
 

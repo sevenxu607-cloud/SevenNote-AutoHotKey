@@ -1,7 +1,8 @@
 # SevenNote 项目全景（一页纸）
 
 > **用途**：一屏看完「这是什么 · 做到哪了 · 还欠什么」。
-> 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`。
+> 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`；
+> 工作台化路线见 `WORKBENCH-PLAN.md`（三张归属表 + Phase 0–6）。
 > 统计口径：`2026-10-18`，版本 `v2.4.3`，分支 `feature/groups`。
 
 ---
@@ -130,6 +131,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `docs/PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
 | `docs/PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
 | `docs/DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
+| `docs/WORKBENCH-PLAN.md` | 工作台化路线：三张归属表 + 模块接口 + Phase 0–6 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
 | `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
 | `screenshots/` | README 配图 |

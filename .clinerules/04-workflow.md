@@ -116,13 +116,28 @@ Loop {
 的四项对拍 —— `CornerRect` 与工作区算术比对、`IsPlaceable` 对「可见 / 隐藏 / 不存在」三态、
 `RectOf` 读隐藏窗口的外框。
 
-⚠ **驱动别直接追加到文件末尾** —— 主脚本末尾是 `ShowHelp() {` 这类**函数定义**，而
-AHK v2 的 auto-execute 段在**第一个函数定义**处就结束，追加在它之后的顶层语句属于死代码：
-**一行都不会执行**，而进程照样正常退出（`exit=0`）、stderr 为空 —— 看上去像「驱动没拼进去」。
-实测为此白跑一次：`LogError` 没写任何文件，项目根和 AppData 两边都是空的。
-（类定义不结束 auto-execute，所以主脚本里那堆 `class` 之后的顶层语句是照跑的。）
+⚠ **驱动别直接追加到文件末尾，插在 `ShowStartupTip()` 调用行之后。**
 
-正确做法：用正则**插在 `ShowStartupTip()` 调用行之后**（那行顶格独占一行，且在 auto-execute 段内）：
+实测（AHK v2.0.27）：**函数定义、类定义、运行时 `Hotkey()` 调用都不结束 auto-execute** ——
+下面这种脚本 A–E 五步全执行：
+
+```ahk
+FileAppend("A`n", logPath)
+F() { x := 1 }
+FileAppend("B`n", logPath)
+class C { static X := 1 }
+FileAppend("C`n", logPath)
+Hotkey("!q", (*) => 0, "On")
+FileAppend("D`n", logPath)
+ExitApp()
+```
+
+真正结束 auto-execute 的是**热键 / 热字符串 / `#HotIf` 指令**。
+但主脚本末尾是 `ShowHelp() {` 这类函数定义，历史上追加在它之后的驱动曾整段不执行
+（`exit=0`、stderr 为空、日志两边都没有）；原因未完全定位，**别拿它赌**。
+用正则插在 `ShowStartupTip()` 调用行之后，是实测可靠的做法。
+
+具体写法（那行顶格独占一行，且在 auto-execute 段内）：
 
 ```powershell
 $t   = [System.IO.File]::ReadAllText($src, [System.Text.Encoding]::UTF8)
