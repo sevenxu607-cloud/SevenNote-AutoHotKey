@@ -197,7 +197,6 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | --- | --- |
 | `SevenNote.ahk` | 全部源码，单文件 |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
-| `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault）。`run_user_journey_demo.ps1` 把主脚本**源码读进内存做定点替换**再与驱动**拼成一份临时脚本**运行（不是 `#Include`），所以驱动能直调 `State.*` / `EditorService.*`；也正因如此，主脚本里被替换的那几行**写法不能变**，见 `.clinerules\04-workflow.md` |
 | `screenshots\` | README 配图 |
 | `docs\` | 项目文档：`DEVLOG.md`（开发日志）、`PROJECT-OVERVIEW.md`（一页纸全景）、`PROJECT-IMPLEMENTATION.md`（技术清单） |
 | `.clinerules\` | 架构约定与踩坑记录（`05-theme-image.md` 是「看图生成主题」的配方 + 偏好） |

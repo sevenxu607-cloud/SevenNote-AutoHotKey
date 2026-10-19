@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；工作区有目录收纳改动（文档移动 + 引用同步）
-- **最近一次改动**：根目录收纳 —— `DEVLOG.md` / `PROJECT-OVERVIEW.md` / `PROJECT-IMPLEMENTATION.md` 移入 `docs/`，源码与必要文件留根
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；工作区有删除 `tests/` 与文档同步改动
+- **最近一次改动**：删除端到端测试脚本 `tests/`，为工作台化重构让路（重构后按模块接口重建）
 - **正在处理**：工作台化重构的**设计对齐**（只讨论与文档整理，未动 `SevenNote.ahk`）
-- **下一步**：补三张表（模块归属 / 启动顺序 / 热键归属）→ Phase 0（修正 `.clinerules/04` 的 auto-execute 表述、改 demo 锚点、探针验证 `#Include` 与 `mod.Init()`）
+- **下一步**：补三张表（模块归属 / 启动顺序 / 热键归属）→ Phase 0（修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` 与 `mod.Init()`）
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -22,7 +22,7 @@
 
 - [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
 - [ ] 补三张表：模块归属 / 启动顺序 / 热键归属（评审已列，待落纸）
-- [ ] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、改 demo 锚点、探针验证 `#Include` 与 `mod.Init()`
+- [ ] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` 与 `mod.Init()`（tests 已删除，重构后按模块接口重建）
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -43,6 +43,28 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 20:10　删除端到端测试脚本，重构后重建
+
+**我说**（原话）
+> 删除测试脚本,后边新重构项目新建
+
+**意图**
+工作台化重构会拆掉单文件，`tests\` 的 6 个 `Replace-ExactlyOnce` 锚点必然失配；
+先删掉，等 `modules/` 结构稳定后按模块接口重建。
+
+**决定 / 过程**
+- `git rm -r tests`（`run_user_journey_demo.ps1`、`user_journey_driver.ahk`）；
+- 移除 README / `PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION` / `.clinerules/04` 中
+  「测试仍存在」的描述；历史版本记录保留不改；
+- 验证手段暂时退化为「探针脚本 + 人工按键」。
+
+**代价 / 风险**
+- 失去唯一能跑完整用户旅程的自动化回归；拆模块期间只能靠探针 + 手按；
+- 帮助窗口 / 上下文热键的验证仍无法用 `Send` 覆盖（见 `.clinerules/04`）。
+
+**待办**
+- [ ] 重构后按 `modules/` 的模块接口重建端到端测试（不要再依赖单文件锚点）
 
 ### 2026-10-19 19:06　根目录收纳，为模块化重组做准备
 

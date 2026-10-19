@@ -132,7 +132,6 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `docs/DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
 | `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
-| `tests/` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault） |
 | `screenshots/` | README 配图 |
 
 ---
@@ -142,4 +141,4 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 1. **不打断工作流** —— 秒级呼出、无感保存、空笔记不落盘
 2. **宁可慢一点，也不能坏** —— 500 ms 兜底 vs 50 ms 轮询的取舍即例证
 3. **诚实记录代价** —— 每项优化都写明"代价是……"，每个踩坑都留实测数据
-4. **单人项目也讲工程边界** —— 四层架构、事件总线、端到端测试、异常兜底、决策日志
+4. **单人项目也讲工程边界** —— 四层架构、事件总线、探针验证、异常兜底、决策日志

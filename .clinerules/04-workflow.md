@@ -107,47 +107,7 @@ Loop {
 > 更快的路子：**改完直接按方案 B 跑一遍**。它同时覆盖 auto-execute 段和全部 class 定义，
 > 是唯一能证明「程序真能起来」的检查。方案 A 只当写代码中途的快速预检。
 
-## 端到端演示测试
-
-`tests\run_user_journey_demo.ps1` —— 沙箱隔离，**不碰真实 AppData / Vault**：
-
-- 沙箱位置：`%TEMP%\SevenNoteJourneyTests\<runId>\`（内含 AppData / Vault / `_config.ini`）
-- 参数：`-AutoHotkeyPath`、`-PaceMs`、`-TypeDelayMs`、`-SpeedMode`
-- 产物：`results.tsv`、`trace.log`、`user-journey-report.html`
-- 内置防冲突：若已有隔离演示在运行，会直接报错拒绝（避免向歧义窗口发送输入）
-
-### ⚠ 主脚本里有几行是沙箱的**锚点**，写法不能动
-
-`.ps1` **不是** `#Include` 驱动，而是把主脚本源码读进内存、用 `Replace-ExactlyOnce`
-（正则精确匹配，**匹配不到就 `throw` 拒绝启动**）改掉几处，再把驱动拼在主脚本之后
-（`$source + CRLF + $driver`），以 **UTF-8 无 BOM** 写成一份临时脚本运行。
-正因为是「拼接 + 同进程」，驱动才能直调主脚本的 `State.*` / `EditorService.*`。
-
-主脚本侧 6 个锚点：
-
-| 锚点（正则） | 被改成 | 为什么 |
-| --- | --- | --- |
-| `^\s*static AppName := "SevenNote"\s*$` | `SevenNote-JourneyDemo` | 进程/窗口名字与真实实例区分开，免得互相抢窗口 |
-| `^\s*static AppDataDir := .+$` | 沙箱 AppData 的绝对路径 | 隔离配置 |
-| `^\s*static ConfigPath := .+$` | 沙箱 `_config.ini` 的绝对路径 | 隔离配置 |
-| `(?m)^if !FileExist\(A_AppData \. "\\SevenNote\\pandoc\.exe"\) \|\| FileGetSize\(...\) < 1048576 \{\r?$` | `if false {` | 跳过 pandoc 释放，不动真实 AppData |
-| `(?m)^RegisterHotkeys\(\)\r?$` | 原样（只作校验） | 确认组合根仍在（热键已改为数据驱动的 `HotkeyTable()`） |
-| `(?m)^ShowStartupTip\(\)\r?$` | 注释掉 | 演示时不弹启动提示 |
-
-⚠️ `Replace-ExactlyOnce` 要求**恰好命中 1 次**，多一次少一次都 `throw`。所以：
-
-- `Config` 里那三行 `static` 声明**必须各只出现一次** —— 别在注释里抄写它们的字面写法；
-- `ShowStartupTip()` 的**调用行**必须顶格独占一行（它的**定义行** `ShowStartupTip() {`
-  因为行尾带 ` {`，天然不匹配，是安全的）；
-- `RegisterHotkeys()` 同理：调用行顶格独占一行（**定义行** `RegisterHotkeys() {` 行尾带
-  ` {`，不匹配）—— 所以它在文件里出现 2 次时，锚点仍恰好命中 1 次。
-
-驱动侧 3 个：`^global JourneyPaceMs := \d+\r?$`、`^global JourneyTypeDelayMs := \d+\r?$`、
-`^global JourneySpeedMode := "balanced"\r?$`（由 `-PaceMs` / `-TypeDelayMs` / `-SpeedMode` 覆盖）。
-
-**实务建议**：动到组合根（尤其 `!z::` 那行与启动段）之后，先跑一次演示脚本 ——
-锚点失配会在启动前就 `throw`，比事后再发现演示跑不起来省事。
-**给这四行加缩进、折行、行尾注释都会让它失配。**
+> 端到端演示测试已移除（2026-10-19，为工作台化重构让路）；重构后按新模块结构重建。
 
 ### 单测一个 Service / Feature 的方法（探针脚本）
 

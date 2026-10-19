@@ -266,21 +266,11 @@ HotkeyTable() {
 
 ---
 
-## 14. 用「源码内存替换 + 拼接驱动」，实现了端到端自动化测试
+## 14. 端到端自动化测试（已移除，待重建）
 
-`tests\run_user_journey_demo.ps1` **不是** `#Include` 驱动：
-
-```
-读主脚本源码
-  → 正则定点替换 6 处（AppName / AppDataDir / ConfigPath / pandoc 检查 / RegisterHotkeys / ShowStartupTip）
-  → 与驱动脚本拼接
-  → 写成临时 UTF-8 无 BOM 脚本运行
-```
-
-- 沙箱隔离在 `%TEMP%\SevenNoteJourneyTests\<runId>\`，不碰真实 Vault / AppData；
-- 因为同进程同源码，驱动能直接调 `State.*` / `EditorService.*`；
-- **代价**：主脚本里那 6 处锚点的写法不能动 —— 加缩进 / 折行 / 行尾注释都会让
-  `Replace-ExactlyOnce` 失配并 `throw`。
+原 `tests\run_user_journey_demo.ps1` 用「源码内存替换 + 拼接驱动」跑沙箱用户旅程。
+2026-10-19 为工作台化重构删除：单文件锚点在拆模块后必然失配，且临时脚本放在 `%TEMP%`
+时无法解析相对 `#Include`。重构完成后按 `modules/` 的模块接口重建端到端测试。
 
 ---
 
@@ -300,7 +290,7 @@ HotkeyTable() {
 
 > **用 AHK v2 作宿主，把 RichEdit 当作可编程富文本引擎，用 Win32 消息 + Dwm/Uxtheme + GDI
 > 补齐 RichEdit 不提供的滚动、主题、背景图能力；用 Pandoc 做格式出口；用 EventBus + 四层架构
-> 把 21 个功能拆成互不依赖的插件；最后用「源码替换 + 拼接驱动」的脚本化演示验证整条用户旅程。**
+> 把 21 个功能拆成互不依赖的插件；最后按模块接口重建端到端验证。**
 
 ---
 
