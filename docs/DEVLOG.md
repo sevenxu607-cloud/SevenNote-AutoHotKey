@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `23a7266`，工作区有 Phase 1a 代码改动
-- **最近一次改动**：Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include` 装配
-- **正在处理**：Phase 1 平台骨架（Router / Registry / UI / Coordinator 占位）
-- **下一步**：`HotkeyRouter` 包住现有 `HotkeyTable()`，注册结果与 HEAD 对齐
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `41a168b`，工作区有 Phase 1b 代码改动
+- **最近一次改动**：Phase 1b：`HotkeyRouter` 接管热键注册，新增 `ModuleRegistry` / `WorkBenchUI` / `PeerCoordinator` 占位
+- **正在处理**：Phase 1 验收（热键与界面需人工按键）
+- **下一步**：Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -24,7 +24,9 @@
 - [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
 - [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
-- [ ] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
+- [x] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
+- [ ] Phase 1 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题
+- [ ] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
 - [ ] Phase 2–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
@@ -46,6 +48,31 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 23:10　Phase 1b：热键路由接管
+
+**我说**（原话）
+> 继续
+
+**意图**
+把组合根的热键注册从主脚本函数抽到 `WorkBench/HotkeyRouter.ahk`，并补齐平台层占位文件。
+
+**决定 / 过程**
+- `HotkeyRouter.RegisterAll(table)` 逐行复制原 `RegisterHotkeys()`：global → editor → search，
+  同一份 `HotkeyTable()` 驱动注册与帮助；
+- 组合根改调 `HotkeyRouter.RegisterAll(HotkeyTable())`，删除原函数；
+- 新增 `ModuleRegistry`（登记 / 查找）、`WorkBenchUI` / `PeerCoordinator` 空壳，暂不接入启动流程；
+- 验证：WorkBench 全部文件 include `exit=0`、stderr 空；沙箱完整启动（`#SingleInstance Off`，
+  `ShowStartupTip()` → `ExitApp()`）stderr 空、`_error.log` 无新增。
+
+**代价 / 风险**
+- Router 仍直接引用 `State` / `SearchFeature`，Phase 2 要改为模块 `GetContexts()`；
+- 占位类尚未进入组合根，`WorkBench.Init()` 还没建；
+- 热键与界面仍需人工按键验收（当前实例在运行，不能直接起第二个）。
+
+**待办**
+- [ ] 人工验收 `Alt+Z` / `Alt+H` / 保存 / 主题
+- [ ] Phase 2：搬 SevenNote 模块
 
 ### 2026-10-19 22:10　Phase 1a：Kernel 搬出主文件
 

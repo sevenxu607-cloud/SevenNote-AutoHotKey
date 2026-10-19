@@ -110,6 +110,10 @@ Persistent()
 #Include WorkBench\Kernel\ConfigService.ahk
 #Include WorkBench\Kernel\EventBus.ahk
 #Include WorkBench\Kernel\State.ahk
+#Include WorkBench\ModuleRegistry.ahk
+#Include WorkBench\HotkeyRouter.ahk
+#Include WorkBench\WorkBenchUI.ahk
+#Include WorkBench\Coordinator\PeerCoordinator.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  SERVICE 服务层
@@ -3995,7 +3999,7 @@ BackdropFeature.Init(g)
 ; ═══ 热键（数据驱动：注册与帮助共用同一张表）═══
 ; 每条热键只在 HotkeyTable() 里定义一次 —— 同一份数据既喂给「注册」，
 ; 也喂给「Alt+H 帮助窗口」，改热键不必再去 ShowHelp 里手工同步文本。
-RegisterHotkeys()
+HotkeyRouter.RegisterAll(HotkeyTable())
 
 ; ═══ 启动 ═══
 LoadFeature.Load()
@@ -4058,7 +4062,7 @@ DestroyTipWindow(tip) {
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  热键表（注册 + 帮助的唯一数据源）
 ; ═══════════════════════════════════════════════════════════════════════════
-; 每条热键只在这里定义一次：RegisterHotkeys() 用它注册，BuildHotkeyHelpText()
+; 每条热键只在这里定义一次：HotkeyRouter 用它注册，BuildHotkeyHelpText()
 ; 用它渲染 Alt+H 帮助 —— 改一条热键不必再去 ShowHelp 里手工同步那行文本。
 ;   ctx   : 注册上下文 —— "global" 全局 / "editor" 编辑器内 / "search" 搜索栏显示时
 ;   key   : AHK 热键字符串（$ 前缀 = 走钩子，照原样保留）；
@@ -4153,30 +4157,7 @@ HotkeyTable() {
     ]
 }
 
-; 注册顺序 = 全局 → 编辑器内 → 搜索栏（与改造前三个 #HotIf 块的先后一致）。
-; 全局变体（无上下文）的优先级天然最低，所以「先建全局」不会抢上下文变体的命中。
-RegisterHotkeys() {
-    table := HotkeyTable()
-    for ctxName in ["global", "editor", "search"] {
-        switch ctxName {
-            case "global":
-                HotIf()
-            case "editor":
-                HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible())
-            case "search":
-                HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible())
-        }
-        for hk in table {
-            if (hk.key = "" || hk.ctx != ctxName)
-                continue
-            try
-                Hotkey(hk.key, hk.fn, "On")
-            catch as e
-                LogError("热键注册失败：" . hk.key . " —— " . e.Message)
-        }
-    }
-    HotIf()   ; 复位：别把上下文漏给后面动态注册的热键
-}
+; 注册由 WorkBench/HotkeyRouter.ahk 负责（Phase 1 起；本文件只保留热键表）。
 
 ; 帮助窗口正文 —— 按【组】走，组内按表序；组间空行，结尾附版本与笔记目录。
 BuildHotkeyHelpText() {

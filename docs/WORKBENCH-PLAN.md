@@ -154,16 +154,17 @@ class SevenNoteModule {
 
 已完成：
 
-- 4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本原位置改为 `#Include`（当前 4228 行）；
-- 语法检查（Kernel 单独 + 主脚本 `#Include` 路径）与沙箱启动（`#SingleInstance Off`，
+- 4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本原位置改为 `#Include`（当前 4209 行）；
+- 新增 `ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` 占位 / `Coordinator` 占位；
+- `HotkeyRouter.RegisterAll(HotkeyTable())` 接管组合根热键注册，逻辑与原 `RegisterHotkeys()` 逐行一致；
+- 语法检查（WorkBench 全部文件）与沙箱启动（`#SingleInstance Off`，
   `ShowStartupTip()` → `ExitApp()`）均通过：stderr 为空、`_error.log` 无新增。
 
 待做：
 
-- 新增 `ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` 占位 / `Coordinator` 占位；
-- 主脚本只保留 `#Include` + 装配；`HotkeyRouter` 先包住现有 `HotkeyTable()`，
-  **注册结果与 HEAD 完全一致**；
-- 验收：启动、`Alt+Z`、`Alt+H`、全部热键、保存 / 主题与改造前一致；`_error.log` 为空。
+- 人工验收：启动、`Alt+Z`、`Alt+H`、全部热键、保存 / 主题与改造前一致；
+- Phase 2 起把 `ctx` 表达式改由 `SevenNoteModule.GetContexts()` 提供，
+  Router 不再直接引用 `SearchFeature`。
 
 ### Phase 2 · SevenNote 模块化
 
