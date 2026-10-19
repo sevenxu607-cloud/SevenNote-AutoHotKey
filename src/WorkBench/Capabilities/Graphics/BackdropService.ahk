@@ -1,7 +1,11 @@
 #Requires AutoHotkey v2.0
 ; ======================================================================
 ;  BackdropService
-;  Moved verbatim from SevenNote.ahk (Phase 2); behavior unchanged.
+;  平台能力层 · 背景图（位图合成 + 层级铺设）
+;
+;  从 modules/SevenNote/Services/ 上收：不再依赖 State.GetEd()，
+;  目标控件由调用方 Attach(g, targetHwnd) 传入。
+;  不读 Config、不管开关、不发事件；失败返回 {ok, reason} 由 Feature 决定回退。
 ; ======================================================================
 
 ; ─── BackdropService：背景图能力（位图合成 + 层级铺设）───
@@ -65,25 +69,27 @@ class BackdropService {
         this._fit := (mode = "contain") ? "contain" : "cover"
     }
 
-    ; ─── 图层控件：创建后压到编辑区之下 ───
-    ; 用 AddText + SS_BITMAP(0x0E) 而非 AddPicture：后者必须给文件路径，
-    ; 而我们要往控件里灌内存位图（图 + 遮罩是合成出来的，不落盘）。
-    static Attach(g) {
+    ; ─── 图层控件：创建后压到目标控件之下 ───
+    ; targetHwnd 由调用方传入（通常是编辑区）—— 能力层不认识 SevenNote 的 State。
+    ; 返回 {ok:true} / {ok:false, reason, error?}。
+    static Attach(g, targetHwnd) {
         if this._attached
-            return true
+            return {ok: true}
+        if !IsObject(g) || !targetHwnd
+            return {ok: false, reason: "bad-target"}
         try {
             ; ⚠ 不能带 -Wrap：-Wrap 会清掉 0x0C 位，把 SS_BITMAP(0x0E) 打成 0x02(SS_RIGHT)
             pic := g.AddText("x8 y32 w434 h440 +0xE", "")
             pic.Visible := false
-            ; 把 pic 插到编辑区之后 —— z-order 里「之后」即在更下层
-            DllCall("SetWindowPos", "ptr", pic.Hwnd, "ptr", State.GetEd()
+            ; 把 pic 插到目标控件之后 —— z-order 里「之后」即在更下层
+            DllCall("SetWindowPos", "ptr", pic.Hwnd, "ptr", targetHwnd
                 , "int", 0, "int", 0, "int", 0, "int", 0
                 , "uint", 0x0002 | 0x0001 | 0x0010)   ; NOMOVE | NOSIZE | NOACTIVATE
             this._picCtrl := pic
             this._attached := true
-            return true
-        } catch {
-            return false
+            return {ok: true}
+        } catch as e {
+            return {ok: false, reason: "attach-failed", error: e.Message}
         }
     }
 
@@ -95,39 +101,53 @@ class BackdropService {
 
     ; ─── 按目标矩形重新合成并铺上图 ───
     ; 尺寸交给调用方（Feature）用与编辑区 Move 完全相同的参数算，避免 DPI 单位混用。
+    ; 返回 {ok:true} / {ok:false, reason, error?}；调用方据此决定是否保留透明编辑区。
     static Render(x, y, w, h) {
         if !this._attached || !this._picCtrl
-            return false
+            return {ok: false, reason: "not-attached"}
+        if !(IsNumber(x) && IsNumber(y) && IsNumber(w) && IsNumber(h))
+            return {ok: false, reason: "bad-size"}
         if (w <= 0 || h <= 0)
-            return false
+            return {ok: false, reason: "bad-size"}
+        if !this.HasImage()
+            return {ok: false, reason: "no-image"}
         if !this.LoadSource()
-            return false
+            return {ok: false, reason: "load-failed"}
 
-        this._picCtrl.Move(x, y, w, h)
+        hbm := 0
+        handedOff := false
+        try {
+            this._picCtrl.Move(x, y, w, h)
 
-        ; ⚠ 位图尺寸必须与控件的「物理像素尺寸」严格相等，SS_BITMAP 才会 1:1 贴图。
-        ;   只要差 1px，它就改用 COLORONCOLOR（最近邻）把整张图重采样一遍 —— 画面
-        ;   当场发糊，损失比换任何插值算法都大。而 w × A_ScreenDPI/96 只是估算：
-        ;     · 非整数倍 DPI（125% / 175%）下 AHK 内部的换算与这里的舍入可能差 1px；
-        ;     · A_ScreenDPI 只反映主屏 —— 窗口拖到另一块不同缩放的显示器上会整倍地错，
-        ;       这正是「换个屏就糊」的根。
-        ;   所以不猜：Move 完直接从 Win32 读回真实像素尺寸，所见即所得。
-        pw := 0, ph := 0
-        if !this._CtrlPixelSize(&pw, &ph)
-            return false
-        hbm := this._Compose(pw, ph)
-        if !hbm
-            return false
+            ; ⚠ 位图尺寸必须与控件的「物理像素尺寸」严格相等，SS_BITMAP 才会 1:1 贴图。
+            ;   只要差 1px，它就改用 COLORONCOLOR（最近邻）把整张图重采样一遍 —— 画面
+            ;   当场发糊，损失比换任何插值算法都大。而 w × A_ScreenDPI/96 只是估算：
+            ;     · 非整数倍 DPI（125% / 175%）下 AHK 内部的换算与这里的舍入可能差 1px；
+            ;     · A_ScreenDPI 只反映主屏 —— 窗口拖到另一块不同缩放的显示器上会整倍地错，
+            ;       这正是「换个屏就糊」的根。
+            ;   所以不猜：Move 完直接从 Win32 读回真实像素尺寸，所见即所得。
+            pw := 0, ph := 0
+            if !this._CtrlPixelSize(&pw, &ph)
+                return {ok: false, reason: "ctrl-size-failed"}
+            hbm := this._Compose(pw, ph)
+            if !hbm
+                return {ok: false, reason: "compose-failed"}
 
-        ; STM_SETIMAGE(0x0172) / wParam = IMAGE_BITMAP(0)
-        ; SS_BITMAP 控件会自行销毁上一张位图，这里不必手动 DeleteObject
-        SendMessage(0x0172, 0, hbm, this._picCtrl.Hwnd)
-        ; ⚠ SS_BITMAP 控件收到 STM_SETIMAGE 后会把自身尺寸改成「位图的像素尺寸」——
-        ;   那是物理值、不走 DPI 缩放，会把上面那次 Move 的逻辑尺寸冲掉。实测 150%
-        ;   缩放下图只盖住编辑区 1/1.5 的面积（控件 443x483，编辑区 665x725）。
-        ;   位图灌完后按原逻辑尺寸再压一次，控件物理矩形即回到 pw×ph，与位图严丝合缝。
-        this._picCtrl.Move(x, y, w, h)
-        return true
+            ; STM_SETIMAGE(0x0172) / wParam = IMAGE_BITMAP(0)
+            ; SS_BITMAP 控件会自行销毁上一张位图，这里不必手动 DeleteObject
+            SendMessage(0x0172, 0, hbm, this._picCtrl.Hwnd)
+            handedOff := true
+            ; ⚠ SS_BITMAP 控件收到 STM_SETIMAGE 后会把自身尺寸改成「位图的像素尺寸」——
+            ;   那是物理值、不走 DPI 缩放，会把上面那次 Move 的逻辑尺寸冲掉。实测 150%
+            ;   缩放下图只盖住编辑区 1/1.5 的面积（控件 443x483，编辑区 665x725）。
+            ;   位图灌完后按原逻辑尺寸再压一次，控件物理矩形即回到 pw×ph，与位图严丝合缝。
+            this._picCtrl.Move(x, y, w, h)
+        } catch as e {
+            if (hbm && !handedOff)
+                try DllCall("DeleteObject", "ptr", hbm)
+            return {ok: false, reason: "render-failed", error: e.Message}
+        }
+        return {ok: true}
     }
 
     ; ─── 读承载控件的真实物理像素尺寸 ───

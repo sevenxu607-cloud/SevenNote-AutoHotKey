@@ -1,4 +1,4 @@
-# 02 · 架构约定（四层 + 组合根）
+# 02 · 架构约定（分层 + 组合根）
 
 ## 铁律
 
@@ -8,19 +8,27 @@
 │  · Feature 之间零调用，通过 EventBus 通信            │
 │  · 可插拔：删除任一 Feature 不影响其他               │
 ├─────────────────────────────────────────────────────┤
-│ SERVICE  服务层（8 项，纯能力）                     │
-│  · 无业务、无时间、无理由                            │
-│  · 被多个 Feature 共用                              │
+│ SERVICE  服务层（业务策略，可读 Config / State）      │
+│  · 被多个 Feature 共用                               │
 ├─────────────────────────────────────────────────────┤
-│ KERNEL   骨架层（4 项）                             │
-│  · 生命周期 / 状态 / 事件 / 配置                     │
+│ CAPABILITY 平台能力（WorkBench/Capabilities/）        │
+│  · 纯能力：不读 Config / State，不发 EventBus         │
+│  · 只收 hwnd / 数字 / Rect，失败返回 {ok, reason}     │
+│  · 不认识 modules/*，不调用 LogError                  │
+├─────────────────────────────────────────────────────┤
+│ KERNEL   骨架层（生命周期 / 状态 / 事件 / 配置）      │
 │  · 冻结，只加不改                                    │
-├─────────────────────────────────────────────────────┤
-│ 表示层：StatusBar  ·  组合根：装配 + 启动            │
 └─────────────────────────────────────────────────────┘
 
-依赖方向：Feature → Service → Kernel → OS（严禁反向）
+依赖方向：
+  Feature / Module → Service → Kernel → OS
+  Feature / Module → Capability → OS
+  Coordinator → Capability + Config + EventBus
+严禁反向：Capability 不得引用 modules/*、EventBus、业务 Config / State。
 ```
+
+`Coordinator/` 是跨模块协调（读业务上下文、发事件、算几何），**不属于** Capability；
+`PeerCoordinator` 保留在 `Coordinator/`，只把纯算式委托给 `RectMath` / `WindowProbe`。
 
 ## 源码目录
 
@@ -29,6 +37,8 @@
 - 根 `SevenWork.ahk` 只是启动器，`#Include src\SevenWork.ahk`；
 - 组合根在 `src/SevenWork.ahk`，平台层在 `src/WorkBench/`，
   模块在 `src/modules/<模块名>/`；
+- 平台能力在 `src/WorkBench/Capabilities/<领域>/`（当前 `Placement/` 与 `Graphics/`）；
+  跨模块协调在 `src/WorkBench/Coordinator/`；
 - `src/SevenWork.ahk` 内部的 `#Include WorkBench\...` / `modules\...` 是相对路径，
   以**该文件所在目录**为基准，别改成从项目根起算。
 - 正常双击根启动器时 `A_ScriptDir` 仍是项目根，开发版 `.logs\` 不变；直接运行
@@ -36,13 +46,18 @@
 
 ## 改动原则
 
-1. **不动 Kernel / Service，只加 Feature。**
+1. **不动 Kernel；业务规则只加 Feature，纯平台能力只加 Capability。**
 2. Feature 之间**零调用**，一律通过 `EventBus.Emit` 通信。
 3. 可插拔：删除任一 Feature 不得影响其他 Feature。
-4. 依赖方向**严禁反向**（Kernel 不许调 Service，Service 不许调 Feature）。
+4. 依赖方向**严禁反向**（Kernel 不许调 Service，Service 不许调 Feature，
+   Capability 不许调 modules / EventBus / 业务 Config / State）。
+5. **能力层只收数据**：hwnd、数字、`Rect`；失败返回 `{ok:false, reason}`，
+   由 Feature / Module 决定回退与日志。详细契约见 `docs/CAPABILITIES.md`。
 
 ## 加新功能的标准步骤
 
+0. 先判断是不是**跨模块复用的纯平台能力**：是 → 放 `WorkBench/Capabilities/<领域>/`，
+   返回结构化结果；不是 → 继续下面。
 1. 在 FEATURE 层新增一个 class
 2. 在所属模块的 `GetHotkeys()` 里加热键（平台级热键归 `WorkBench.GetHotkeys()`；
    `HotkeyRouter` 注册与 `Alt+H` 帮助共用这份数据）

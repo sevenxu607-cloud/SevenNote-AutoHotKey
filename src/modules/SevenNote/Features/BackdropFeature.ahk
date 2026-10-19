@@ -1,7 +1,10 @@
 #Requires AutoHotkey v2.0
 ; ======================================================================
 ;  BackdropFeature.ahk
-;  Moved verbatim from SevenNote.ahk (Phase 2); behavior unchanged.
+;  SevenNote 功能层 · 带背景图的主题
+;
+;  平台能力 BackdropService 只负责「挂图层 + 铺图」，本 Feature 决定：
+;  该不该铺、铺哪张、失败时怎么回退（透明编辑区绝不能留在没有图的窗口上）。
 ; ======================================================================
 
 ; ─── BackdropFeature：带背景图的主题（星空）───
@@ -12,6 +15,7 @@ class BackdropFeature {
     static _lastW := 0
     static _lastH := 0
     static _applied := false  ; 当前是否已铺图（启动期窗口尺寸是 0，此时为 false）
+    static _failed := false   ; 本主题铺图失败，等下次主题切换再重试
     static _bgPath := ""      ; 当前主题生效的背景图路径（空 = 该主题没有背景图）
     static _bgAlpha := 60     ; 当前生效的遮罩不透明度（0-100）
 
@@ -29,7 +33,10 @@ class BackdropFeature {
     }
 
     static Init(g) {
-        BackdropService.Attach(g)
+        ; 目标控件由 Feature 交给能力层 —— BackdropService 不再认识 State。
+        res := BackdropService.Attach(g, State.GetEd())
+        if !res.ok
+            LogError("背景图层挂载失败：" . res.reason)
         ; 换主题 = 换背景图：带 bg 的主题铺图，其余撤图。没有开关 —— 想关就切主题，
         ; 这也正是「往 Themes 里加一行就是一套新主题」的原设计。
         EventBus.On("Theme.Changed", (*) => this.Refresh())
@@ -59,6 +66,7 @@ class BackdropFeature {
     }
 
     static Refresh() {
+        this._failed := false
         this._Sync()
         this._Apply()
     }
@@ -69,8 +77,10 @@ class BackdropFeature {
         this._lastH := winH
         ; 启动时窗口尚未 Show，尺寸仍是 0，此时不铺；首次拿到有效尺寸后补一次，
         ; 否则图会一直不出来。
+        ; 铺图失败后不再随每次 WM_SIZE 重试 —— 那会把日志刷满、还拖慢拖动；
+        ; 下一次主题切换会清掉 _failed 并重新尝试。
         if !this._applied {
-            if (this._bgPath != "" && BackdropService.HasImage())
+            if (!this._failed && this._bgPath != "" && BackdropService.HasImage())
                 this._Apply()
             return
         }
@@ -86,26 +96,52 @@ class BackdropFeature {
         if this._pending
             return
         this._pending := true
-        SetTimer(() => this._RenderNow(), -80)
+        SetTimer(() => this._RenderScheduled(), -80)
+    }
+
+    ; 防抖回调：成功什么都不做；失败必须走统一的回退，别把透明编辑区留在空图上。
+    static _RenderScheduled() {
+        res := this._RenderNow()
+        if !res.ok
+            this._Fallback(res.reason)
+    }
+
+    ; 铺图失败后的唯一回退路径：恢复不透明、隐藏图层、清掉尺寸记忆。
+    static _Fallback(reason) {
+        hwndEd := State.GetEd()
+        this._applied := false
+        this._failed := true
+        if hwndEd
+            this._SetEdTransparent(hwndEd, false)
+        BackdropService.SetVisible(false)
+        this._doneW := 0, this._doneH := 0
+        if hwndEd {
+            try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
+                , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
+        }
+        LogError("背景图渲染失败：" . reason)
     }
 
     ; 真正铺图。矩形与上次相同就不重做合成（同尺寸的 WM_SIZE 是空转）。
     ; force = true 用于换主题 —— 那时尺寸可能没变，但图换了，必须重铺。
+    ; 返回 {ok:true} / {ok:false, reason}，由 _Apply 决定是否保留透明编辑区。
     static _RenderNow(force := false) {
         this._pending := false
         rect := this._Rect(this._lastW, this._lastH)
         if (!force && (rect.x = this._doneX) && (rect.y = this._doneY)
             && (rect.w = this._doneW) && (rect.h = this._doneH))
-            return
-        if BackdropService.Render(rect.x, rect.y, rect.w, rect.h) {
-            this._doneX := rect.x, this._doneY := rect.y
-            this._doneW := rect.w, this._doneH := rect.h
-            ; 位图刚换过，而编辑区是 WS_EX_TRANSPARENT（自己不画背景），面上留着的
-            ; 还是上一帧的文字 —— 让它重画一次，免得拉伸后出现「文字缺一块」。
-            ; 不带 UPDATENOW：走正常消息队列，别在拖动时同步阻塞。
-            try DllCall("RedrawWindow", "ptr", State.GetEd(), "ptr", 0, "ptr", 0
-                , "uint", 0x0001 | 0x0004)      ; INVALIDATE | ERASE
-        }
+            return {ok: true}
+        res := BackdropService.Render(rect.x, rect.y, rect.w, rect.h)
+        if !res.ok
+            return res
+        this._doneX := rect.x, this._doneY := rect.y
+        this._doneW := rect.w, this._doneH := rect.h
+        ; 位图刚换过，而编辑区是 WS_EX_TRANSPARENT（自己不画背景），面上留着的
+        ; 还是上一帧的文字 —— 让它重画一次，免得拉伸后出现「文字缺一块」。
+        ; 不带 UPDATENOW：走正常消息队列，别在拖动时同步阻塞。
+        try DllCall("RedrawWindow", "ptr", State.GetEd(), "ptr", 0, "ptr", 0
+            , "uint", 0x0001 | 0x0004)      ; INVALIDATE | ERASE
+        return {ok: true}
     }
 
     ; 按 _bgPath 决定铺图还是撤图：主题没带 bg、图片不存在、窗口还没尺寸 —— 三种都走撤图。
@@ -113,16 +149,28 @@ class BackdropFeature {
         hwndEd := State.GetEd()
         if !hwndEd
             return
-        useIt := this._applied := (this._bgPath != "" && BackdropService.HasImage()
+        useIt := (this._bgPath != "" && BackdropService.HasImage()
             && this._lastW > 1 && this._lastH > 1)
 
         if useIt {
             BackdropService.SetVisible(true)
-            this._RenderNow(true)          ; 换主题 / 首次铺图：立即铺，不走 80ms 防抖
-            ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
-            this._SetEdTransparent(hwndEd, true)   ; WS_EX_TRANSPARENT
+            res := this._RenderNow(true)   ; 换主题 / 首次铺图：立即铺，不走 80ms 防抖
+            if res.ok {
+                this._applied := true
+                this._failed := false
+                ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
+                this._SetEdTransparent(hwndEd, true)   ; WS_EX_TRANSPARENT
+            } else {
+                ; 渲染失败：绝不能留下「编辑区透明 + 没有图」的组合 —— 那样正文
+                ; 会直接透到桌面 / 下层窗口上，看起来像内容丢了。恢复不透明、
+                ; 隐藏图层，退回主题纯色。
+                this._Fallback(res.reason)
+                return
+            }
         } else {
             ; 先恢复不透明再撤图，顺序反过来会闪一下白底
+            this._applied := false
+            this._failed := false
             this._SetEdTransparent(hwndEd, false)
             BackdropService.SetVisible(false)
             ; 撤图后清掉尺寸记忆，同尺寸再切回图主题时才会真的重铺

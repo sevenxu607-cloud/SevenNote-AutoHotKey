@@ -11,9 +11,9 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
-- **最近一次改动**：Phase 6：改名为 `SevenWork`，配置 / DeepSeek profile / pandoc 迁到新 AppData
-- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 人工验收（需关闭现有实例）
-- **下一步**：推送 Phase 6 提交、人工验收，然后在 GitHub 改仓库名 / Release 资产名
+- **最近一次改动**：平台能力层拆分（`WorkBench/Capabilities/`）+ 背景图失败回退
+- **正在处理**：Capabilities 重构的真机验收（需关闭现有实例）
+- **下一步**：跑 `RectMath` 对拍 / 真机启动，再人工验收 `Alt+Z` / `Alt+C` / `Alt+X` 与带背景图主题
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -60,6 +60,37 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 00:28　平台能力层：RectMath / WindowProbe / PlacementExecutor / BackdropService
+
+**我说**（原话）
+> The user approved switching to act mode. Continue with the approved plan now.
+
+**意图**
+把背景图渲染、窗口摆位几何从业务模块上收到 `WorkBench/Capabilities/`，并修掉
+`BackdropFeature` 先开透明后铺图、铺图失败时留下空透明编辑区的失败路径；行为保持不变。
+
+**决定 / 过程**
+- 采纳 1-A + 2-A：`Coordinator/` 不改名；`WorkBench.ahk` 仍硬编码 3 个模块。
+- 新增 `Capabilities/Placement/RectMath.ahk`（纯几何）、`WindowProbe.ahk`（窗口 / 工作区查询）、
+  `PlacementExecutor.ahk`（唯一 `WinMove` 出口）。
+- `PeerCoordinator.PlanStack` 只保留读 `Config` / 事件 / 广播，算式委托 `RectMath`。
+- `BackdropService` 搬到 `Capabilities/Graphics/`，`Attach(g, targetHwnd)` 不再读 `State`；
+  `Render` 返回 `{ok, reason}`。
+- `BackdropFeature` 仅在 `Render().ok` 后设 `WS_EX_TRANSPARENT`；失败时恢复不透明、
+  隐藏图层、清尺寸记忆并退回纯色；防抖回调失败走同一回退。
+- `PeerLayoutService` 只保留 Launcher 策略（`TargetW/H`、`Config.PlaceRight`），
+  通用查询委托 `WindowProbe`。
+- 文档：新增 `docs/CAPABILITIES.md`，同步 `.clinerules/02-architecture.md`。
+
+**代价 / 风险**
+- 能力层与模块层多了一层间接调用；`PeerLayoutService` 仍是「策略 + 适配」混合体。
+- 上下文热键仍需人工验收；`RectMath` 的新旧对拍需在真机 DPI / 多屏上复跑。
+- `WorkBench.ahk` 与 `HotkeyRouter` 的应用耦合本轮未动。
+
+**待办**
+- [x] 跑 `RectMath` 对拍与真机启动 `/ErrorStdOut`（探针全 PASS；真机无 stderr / `_error.log` 新增）
+- [ ] 人工验收 `Alt+Z` / `Alt+C` / `Alt+X` 与带背景图主题
 
 ### 2026-10-19 23:25　Phase 6：改名 SevenWork 并迁移 AppData
 

@@ -115,6 +115,21 @@ Persistent()
 #Include WorkBench\ModuleRegistry.ahk
 #Include WorkBench\HotkeyRouter.ahk
 #Include WorkBench\WorkBenchUI.ahk
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  CAPABILITY 平台能力层 —— 纯平台能力，不认识业务模块
+;  只收数字 / hwnd / Gui，返回结构体；不读 Config / State，不发事件。
+; ═══════════════════════════════════════════════════════════════════════════
+
+#Include WorkBench\Capabilities\Placement\RectMath.ahk
+#Include WorkBench\Capabilities\Placement\WindowProbe.ahk
+#Include WorkBench\Capabilities\Placement\PlacementExecutor.ahk
+#Include WorkBench\Capabilities\Graphics\BackdropService.ahk
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  COORDINATION 跨模块协调 —— 读业务状态、发事件、算几何后交给能力层
+; ═══════════════════════════════════════════════════════════════════════════
+
 #Include WorkBench\Coordinator\PeerCoordinator.ahk
 #Include WorkBench\WorkBench.ahk
 
@@ -140,8 +155,7 @@ Persistent()
 #Include modules\SevenNote\Services\FontService.ahk
 
 
-#Include modules\SevenNote\Services\BackdropService.ahk
-
+; BackdropService 已上收到 WorkBench\Capabilities\Graphics\（见上方 CAPABILITY 层）
 #Include modules\Launcher\Services\PeerLayoutService.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════

@@ -140,9 +140,8 @@ class WindowFeature {
     }
 
     ; SevenNote.Move：平台协调器算好的笔记窗口**物理外框**。
-    ; ⚠ 调用发生在 _PlaceWindow 的 g.Show("Hide") 之后，窗口此刻是隐藏的 ——
-    ;   必须临时开 DetectHiddenWindows，否则 WinMove 会抛 "Target window not found"。
-    ;   用完恢复原值，别改变其它代码的可见性语义。
+    ; 实际搬运交给平台能力 PlacementExecutor —— 它自己处理隐藏窗口与最小化守卫，
+    ; 失败时返回 {ok:false, reason}，这里只负责记录，不再让异常穿透到事件总线。
     static _OnNoteMove(data) {
         if !IsObject(data)
             return
@@ -158,38 +157,28 @@ class WindowFeature {
         if (data.hwnd != State.GetGuiHwnd())
             return
 
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(true)
-        try {
-            WinMove(data.x, data.y, data.w, data.h, "ahk_id " . data.hwnd)
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
+        res := PlacementExecutor.Move(data.hwnd
+            , {x: data.x, y: data.y, w: data.w, h: data.h}, true)
+        if !res.ok
+            LogError("笔记窗口移动失败：" . res.reason)
     }
 
     ; 两个矩形是否相交 —— 即「有没有一块地方同时被两个窗口占着」。
     ; 两个入参都只用到 {x, y, w, h} 这四个字段，不关心别的。
     static _RectsOverlap(a, b) {
-        return (a.x < b.x + b.w && a.x + a.w > b.x
-            && a.y < b.y + b.h && a.y + a.h > b.y)
+        return RectMath.Overlaps(a, b)
     }
 
     ; 窗口当前的矩形；窗口没了、或位置不可用（最小化停放位）时返回 ""。
-    ; ⚠ 要开 DetectHiddenWindows：笔记可能正处在 Hide() 之后的状态，而 WinGetPos
-    ;   默认忽略隐藏窗口、直接抛错。用完恢复原值，免得改变其它代码的可见性语义。
+    ; ⚠ 要允许隐藏窗口：笔记可能正处在 Hide() 之后的状态，而 WinGetPos
+    ;   默认忽略隐藏窗口、直接抛错。细节收在 WindowProbe.RectOf。
     static _CurrentRect(hwnd) {
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(true)
-        try {
-            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
-        } catch {
-            ; 显式赋空：AHK v2 里未赋值的变量参与比较会触发 VarUnset 警告
-            x := "", y := "", w := "", h := ""
-        }
-        DetectHiddenWindows(detectOld)
-        if !this.IsUsableRect(x, y, w, h)
+        rect := WindowProbe.RectOf(hwnd, true)
+        if !IsObject(rect)
             return ""
-        return {x: x, y: y, w: w, h: h}
+        if !this.IsUsableRect(rect.x, rect.y, rect.w, rect.h)
+            return ""
+        return rect
     }
 
     ; 把这次适配的结果「转正」成用户格局，此后不再联动。三件事都要做，少一件都露馅：
@@ -299,18 +288,7 @@ class WindowFeature {
     ; 最小化窗口的坐标是 -32000 一类的停放位（会按 DPI 缩放成 -21333 等），
     ; 而它的 WS_VISIBLE 仍为真，只靠可见性判断拦不住。
     static IsUsableRect(x, y, w, h) {
-        ; 数值守卫：State 里未初始化的记忆值是空字符串，
-        ; 而 AHK v2 的 <= 遇到空字符串会抛「Expected a Number」
-        if !(IsNumber(x) && IsNumber(y) && IsNumber(w) && IsNumber(h))
-            return false
-        if (w <= 0 || h <= 0)
-            return false
-        loop MonitorGetCount() {
-            MonitorGetWorkArea(A_Index, &wkLeft, &wkTop, &wkRight, &wkBottom)
-            if (x < wkRight && y < wkBottom && x + w > wkLeft && y + h > wkTop)
-                return true
-        }
-        return false
+        return WindowProbe.IsUsableRect(x, y, w, h)
     }
 
     ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
@@ -425,8 +403,7 @@ class WindowFeature {
         return true
     }
 
-    ; 几何实现已上收到 PeerCoordinator；保留这个名字给历史调用与探针。
-    static _InvisibleFrame(hwnd) => PeerCoordinator._InvisibleFrame(hwnd)
+    ; 几何实现已上收到平台能力 WindowProbe / RectMath；本类只保留业务状态与底稿。
 
     ; 移到默认落点
     static _MoveToDefault(g, ghwnd) {

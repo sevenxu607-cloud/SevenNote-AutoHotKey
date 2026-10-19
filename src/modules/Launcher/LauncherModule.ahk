@@ -26,8 +26,8 @@ class LauncherModule {
 
     ; Launcher.Move：PeerCoordinator 算好「伙伴窗口下移」后广播的**物理外框**。
     ; 终端与 DeepSeek 的 hwnd 都从这里经过，所以放在模块级，不绑定某个 Feature。
-    ; ⚠ 事件在 _PlaceWindow 的同步调用链里发出，此时伙伴通常已经 WinShow；
-    ;   仍然自己开 DetectHiddenWindows，避免调用方中途把窗口藏起来时 WinMove 抛错。
+    ; 实际搬运交给平台能力 PlacementExecutor —— 它统一处理隐藏 / 最小化守卫；
+    ; 「窗口已被用户收起」是正常路径，不算失败；其余失败写日志。
     static _OnMove(data) {
         if !IsObject(data)
             return
@@ -42,18 +42,10 @@ class LauncherModule {
         if !data.hwnd
             return
 
-        detectOld := A_DetectHiddenWindows
-        DetectHiddenWindows(true)
-        try {
-            if !WinExist("ahk_id " . data.hwnd)
-                return
-            ; 最小化窗口的位置是停放位，别搬
-            if DllCall("IsIconic", "ptr", data.hwnd, "int")
-                return
-            WinMove(data.x, data.y, data.w, data.h, "ahk_id " . data.hwnd)
-        } finally {
-            DetectHiddenWindows(detectOld)
-        }
+        res := PlacementExecutor.Move(data.hwnd
+            , {x: data.x, y: data.y, w: data.w, h: data.h}, false)
+        if (!res.ok && res.reason != "not-placeable" && res.reason != "minimized")
+            LogError("伙伴窗口移动失败：" . res.reason)
     }
 
     ; 由 HotkeyRouter / WorkBenchUI 聚合 —— 注册与 Alt+H 帮助共用这一份数据。
