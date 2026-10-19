@@ -115,7 +115,7 @@ class SevenNoteModule {
 
         ThemeFeature.LoadFromConfig()
         FontFeature.LoadFromConfig()
-        CapsLockFeature.LoadFromConfig()
+        ; CapsLock 配置由 KeysInputModule.Start() 恢复（Phase 4：模块各管各的状态）。
         ; 背景图不必在这里初始化：ThemeService.Apply 会 Emit "Theme.Changed"，
         ; 而 BackdropFeature 在 Init 时就挂上了这个事件 —— 启动与换主题都自动重铺。
     }

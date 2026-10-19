@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b 已提交，工作区干净
-- **最近一次改动**：Phase 3b：堆叠几何上收到 `PeerCoordinator`，接入 `Launcher.Opened` / `SevenNote.WindowReady`
-- **正在处理**：Phase 2 / 3a / 3b 人工验收（需关闭现有实例）
-- **下一步**：Phase 4 KeysInput；Phase 5 再让 `SevenNote.Move` / `Launcher.Move` 接管窗口
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 已提交，工作区干净
+- **最近一次改动**：Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，动态热键统一走 `HotkeyRouter`
+- **正在处理**：Phase 2 / 3a / 3b / 4 人工验收（需关闭现有实例）
+- **下一步**：Phase 5：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -29,8 +29,10 @@
 - [x] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
 - [x] Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由模块 `GetHotkeys()`
 - [x] Phase 3b：`PeerCoordinator` 接管伙伴窗口堆叠几何，`Launcher.Opened` / `SevenNote.WindowReady` 已接入
+- [x] Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，`Alt+Shift+C` 与动态 HJKL 归模块
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
 - [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
+- [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -51,6 +53,36 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 21:09　Phase 4：KeysInput 模块化
+
+**我说**（原话）
+> 继续
+
+**意图**
+推进 Phase 4：把 CapsLock 层从主脚本搬入 `modules/KeysInput/`，动态热键统一走 `HotkeyRouter`。
+
+**决定 / 过程**
+- `CapsLockFeature` → `modules/KeysInput/Features/`；新增 `KeysInputModule`
+  （`Init` / `Start` / `GetHotkeys`），`Alt+Shift+C` 从组合根表移入模块；
+- `HotkeyRouter` 增加 `Add` / `Remove` / `Reset` 与 `_contexts`；CapsLock 与 HJKL
+  开关时动态加 / 卸，Feature 内不再裸调 `Hotkey()`；
+- `CapsLockMap` 恢复从 `SevenNoteModule.Start()` 移到 `KeysInputModule.Start()`；
+  启动顺序加入 `KeysInputModule.Init()` / `Start()`；
+- 帮助表顺序保持 CapsLock → Alt+C / Alt+X；
+- 验证：真机 stderr 为空、`_error.log` 332 字节不变；
+  探针 `modules=3 hotkeys=32 helpCaps=254`、`dyn-add=1 / dyn-remove=0`、
+  `caps-base=0 / caps-on=5 / caps-off=0 / reset=0`。
+
+**代价 / 风险**
+- 动态 API 只验证到「注册 / 注销不抛错」，`Alt+Shift+C`、CapsLock + HJKL 的真实按键
+  仍须人工验收（上下文 / 钩子热键无法用 `Send` 触发）；
+- 计划验收项里的「Esc 退出」在旧 `CapsLockFeature` 中也没有对应热键，本次按原行为
+  未新增；搜索栏 / 帮助窗口的 `Esc` 不受影响。
+
+**待办**
+- [ ] 人工验收 CapsLock 层
+- [ ] Phase 5：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
 
 ### 2026-10-19 20:55　Phase 3b：堆叠几何上收 PeerCoordinator
 

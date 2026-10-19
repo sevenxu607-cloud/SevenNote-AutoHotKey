@@ -183,62 +183,7 @@ Persistent()
 #Include modules\SevenNote\Features\UndoFeature.ahk
 
 
-class CapsLockFeature {
-    static _enabled := false
-    static _loading := false
-
-    static Enable() {
-        if this._enabled
-            return
-        Hotkey("CapsLock", (*) => 0, "On")
-        Hotkey("CapsLock & h", (*) => Send("{Left}"), "On")
-        Hotkey("CapsLock & j", (*) => Send("{Down}"), "On")
-        Hotkey("CapsLock & k", (*) => Send("{Up}"), "On")
-        Hotkey("CapsLock & l", (*) => Send("{Right}"), "On")
-        this._enabled := true
-        if !this._loading
-            this.SaveToConfig()
-    }
-
-    static Disable() {
-        if !this._enabled
-            return
-        Hotkey("CapsLock", "Off")
-        Hotkey("CapsLock & h", "Off")
-        Hotkey("CapsLock & j", "Off")
-        Hotkey("CapsLock & k", "Off")
-        Hotkey("CapsLock & l", "Off")
-        this._enabled := false
-        if !this._loading
-            this.SaveToConfig()
-    }
-
-    static Toggle() {
-        if this._enabled {
-            this.Disable()
-            EventBus.Emit("CapsLock.Toggled"
-                , {msg: "✗ 键盘映射已关闭", state: false})
-        } else {
-            this.Enable()
-            EventBus.Emit("CapsLock.Toggled"
-                , {msg: "✓ 键盘映射已开启", state: true})
-        }
-    }
-
-    static SaveToConfig() {
-        ConfigService.Write("Input", "CapsLockMap", this._enabled ? 1 : 0)
-    }
-
-    static LoadFromConfig() {
-        this._loading := true
-        v := ConfigService.ReadInt("Input", "CapsLockMap", 0)
-        if (v = 1)
-            this.Enable()
-        else
-            this.Disable()
-        this._loading := false
-    }
-}
+; CapsLockFeature 归 modules\KeysInput\（Phase 4），见下方 MODULE 模块层。
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -318,6 +263,14 @@ class CapsLockFeature {
 #Include modules\Launcher\Features\PowerShellFeature.ahk
 #Include modules\Launcher\Features\DeepSeekFeature.ahk
 #Include modules\Launcher\LauncherModule.ahk
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  MODULE 模块层 · KeysInput（Phase 4：键位增强）
+; ═══════════════════════════════════════════════════════════════════════════
+
+#Include modules\KeysInput\Features\CapsLockFeature.ahk
+#Include modules\KeysInput\KeysInputModule.ahk
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -412,11 +365,15 @@ SevenNoteModule.Init()
 ; ═══ 外部程序模块（Phase 3：热键由 LauncherModule.GetHotkeys 提供）═══
 LauncherModule.Init()
 
+; ═══ 键位模块（Phase 4：CapsLock 层状态，热键由 KeysInputModule.GetHotkeys 提供）═══
+KeysInputModule.Init()
+
 ; ═══ 热键（数据驱动：注册与帮助共用同一张表）═══
 HotkeyRouter.RegisterAll(HotkeyTable(), SevenNoteModule.GetContexts())
 
 ; ═══ 启动 ═══
 SevenNoteModule.Start()
+KeysInputModule.Start()
 
 ShowStartupTip()
 
@@ -500,9 +457,7 @@ HotkeyTable() {
             , fn: (*) => FontFeature.SmallerSize()},
 
         ; ── 【输入增强】──
-        {ctx: "global", key: "!+c", group: "输入增强", line: "   Alt+Shift+C      切换 CapsLock 键盘映射"
-            , note: "                      （开启后 CapsLock+H/J/K/L = 方向键）"
-            , fn: (*) => CapsLockFeature.Toggle()},
+        ; Alt+Shift+C 由 KeysInputModule.GetHotkeys() 并入本表（Phase 4）；
         ; Alt+C / Alt+X 由 LauncherModule.GetHotkeys() 并入本表（Phase 3）。
 
         ; ── 【搜索】──
@@ -559,8 +514,11 @@ HotkeyTable() {
             , fn: (*) => TimestampFeature.Heading()}
     ]
 
-    ; Launcher 的热键由模块自己声明（Phase 3）：并入同一张表，
-    ; HotkeyRouter 负责注册，BuildHotkeyHelpText 负责展示 —— 仍是一份数据。
+    ; 模块自带的热键并入同一张表，HotkeyRouter 负责注册，
+    ; BuildHotkeyHelpText 负责展示 —— 仍是一份数据。
+    ; 顺序按帮助窗口的原顺序：CapsLock（输入增强）→ Alt+C / Alt+X。
+    for hk in KeysInputModule.GetHotkeys()
+        table.Push(hk)
     for hk in LauncherModule.GetHotkeys()
         table.Push(hk)
 

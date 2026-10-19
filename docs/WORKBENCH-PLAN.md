@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 2 / 3a / 3b 已完成（待人工验收）
+> 状态：设计定稿，Phase 2 / 3a / 3b / 4 已完成（待人工验收）
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -220,13 +220,27 @@ class SevenNoteModule {
 - Phase 5：让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`，
   再移除 `Peer.*` 桥接。
 
-### Phase 4 · KeysInput 模块化
+### Phase 4 · KeysInput 模块化（已完成，待人工验收）
 
-- `CapsLockFeature` 搬入 `modules/KeysInput/`；
-- `Alt+Shift+C` 进 `GetHotkeys()`；CapsLock 与 `H/J/K/L` 由模块在开关时
-  `HotkeyRouter.Add/Remove`（动态）；
-- 验收：层开关、`HJKL` 方向、`Esc` 退出、关层后无残留热键；**只能人工按键验证**
-  （上下文热键无法用 `Send` 触发）。
+已完成：
+
+- `CapsLockFeature` 搬入 `modules/KeysInput/Features/`，主脚本原位改为 `#Include`；
+- 新增 `modules/KeysInput/KeysInputModule.ahk`：`Init()` / `Start()` / `GetHotkeys()`，
+  `Alt+Shift+C` 从组合根热键表移入模块；
+- `HotkeyRouter` 增加动态 API `Add` / `Remove` / `Reset`，并保存 `contexts`；
+  `CapsLock` 与 `H/J/K/L` 开关时经 Router 加 / 卸，不再在 Feature 里裸调 `Hotkey()`；
+- `CapsLockMap` 的启动恢复从 `SevenNoteModule.Start()` 移到 `KeysInputModule.Start()`；
+- 热键表仍是一份数据：`BuildHotkeyHelpText()` 通过模块 `GetHotkeys()` 看到
+  `Alt+Shift+C`，帮助顺序保持 CapsLock → Alt+C / Alt+X；
+- 验证：真机启动 stderr 为空、`_error.log` 无新增；
+  启动探针 `modules=3 hotkeys=32 helpCaps=254`；
+  动态热键探针 `dyn-add=1 / dyn-remove=0`、`caps-base=0 / caps-on=5 / caps-off=0 / reset=0`。
+
+待做：
+
+- 人工验收：`Alt+Shift+C` 开关、`CapsLock+H/J/K/L` 方向键、关层后无残留热键；
+  ⚠ 计划原先写的「`Esc` 退出」在旧 `CapsLockFeature` 中没有对应热键，本次按原行为
+  未新增，需用户确认是否要补；**上下文热键无法用 `Send` 触发**，只能人工按键。
 
 ### Phase 5 · WorkBenchUI 统一帮助
 

@@ -176,7 +176,9 @@ msedge.exe --new-window https://chat.deepseek.com/
 
 **`Alt+Shift+C` → CapsLock 映射**
 
-- `Hotkey("CapsLock", (*) => 0)` 吞掉原功能 + `CapsLock & h/j/k/l` 映射方向键。
+- `HotkeyRouter.Add("CapsLock", (*) => 0)` 吞掉原功能 + `CapsLock & h/j/k/l` 映射方向键；
+  Phase 4 起由 `modules/KeysInput/Features/CapsLockFeature.ahk` 在开关时动态加 / 卸，
+  Feature 内不再直接调 `Hotkey()`。
 
 ---
 

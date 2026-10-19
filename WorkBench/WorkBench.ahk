@@ -13,8 +13,10 @@ class WorkBench {
         this._initialized := true
 
         ; 模块登记只放「模块类」——它们统一带 Id / Name / Init() / GetHotkeys()。
+        ; Phase 4 起 KeysInput 也在这里登记。
         ModuleRegistry.Register(SevenNoteModule)
         ModuleRegistry.Register(LauncherModule)
+        ModuleRegistry.Register(KeysInputModule)
 
         ; Phase 3b：先挂上 Launcher.Opened / SevenNote.WindowReady 的监听。
         PeerCoordinator.Init()
