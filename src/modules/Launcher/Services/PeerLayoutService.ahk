@@ -58,7 +58,7 @@ class PeerLayoutService {
         return {x: x, y: y}
     }
 
-    ; 读伴生窗口此刻的**真实**外框矩形，供 Peer.Placed 广播（笔记窗口据此避让）。
+    ; 读伴生窗口此刻的**真实**外框矩形，供 Launcher.Opened 广播（笔记窗口据此避让）。
     ; ⚠ 读之前要开 DetectHiddenWindows —— 伙伴刚 WinShow 出来，隐藏态下 WinGetPos 会抛错。
     ; 窗口已不在 / 尺寸为 0 时返回 ""（调用方用 IsObject 判断）。
     static RectOf(hwnd) {

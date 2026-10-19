@@ -1,13 +1,14 @@
 #Requires AutoHotkey v2.0
 ; ═══════════════════════════════════════════════════════════════════════════
-;  PeerCoordinator —— 伙伴窗口布局协调（Phase 3b）
+;  PeerCoordinator —— 伙伴窗口布局协调（Phase 5b）
 ; ═══════════════════════════════════════════════════════════════════════════
 ; 平台层只算几何，不搬窗口：
 ;   · 订阅 Launcher.Opened / SevenNote.WindowReady，记录双方最近一次落位；
 ;   · 提供 PlanStack() 给 WindowFeature 计算「笔记在上、伙伴在下」的堆叠落点；
-;   · 真实布局发生时广播 SevenNote.Move / Launcher.Move（Phase 5 再接订阅者）。
-; 旧的 Peer.Preparing / Peer.Placed / Peer.Failed 契约与 WindowFeature 的
-; 让位 / 冻结状态机暂时原样保留 —— 本阶段不拿已验证的窗口行为冒险。
+;   · 真实布局发生时广播 SevenNote.Move / Launcher.Move ——
+;     WindowFeature 搬笔记窗口，LauncherModule 搬伙伴窗口，平台不跨模块 WinMove。
+; 旧的 Peer.* 桥接已在 Phase 5b 移除：伙伴生命周期统一走 Launcher.Preparing /
+; Launcher.Opened / Launcher.Failed，执行路径统一走上面两个 Move 事件。
 
 class PeerCoordinator {
     static _initialized := false
@@ -129,15 +130,19 @@ class PeerCoordinator {
             , h: Max(note.h + note.frame.b - note.frame.t, 1)}
     }
 
-    ; 真实布局发生时广播（Phase 5 之前暂无订阅者；先固定事件载荷的形状）。
+    ; 真实布局发生时广播 —— Phase 5b 起这就是执行路径，而不是状态预演。
+    ; 载荷一律是**物理外框**（WinMove / WinGetPos 的单位）：
+    ;   · SevenNote.Move → WindowFeature._OnNoteMove() 搬笔记窗口；
+    ;   · Launcher.Move  → LauncherModule._OnMove()   搬终端 / 浏览器窗口。
+    ; 先发伙伴再发笔记，保持旧实现「先把伙伴挪下去、再摆笔记」的实际顺序。
     static _PublishMoves(noteHwnd, plan) {
-        EventBus.Emit("SevenNote.Move", {hwnd: noteHwnd
-            , x: plan.noteRect.x, y: plan.noteRect.y
-            , w: plan.noteRect.w, h: plan.noteRect.h})
         if IsObject(plan.peer)
             EventBus.Emit("Launcher.Move", {hwnd: plan.peer.hwnd
                 , x: plan.peer.x, y: plan.peer.y
                 , w: plan.peerRect.w, h: plan.peerRect.h})
+        EventBus.Emit("SevenNote.Move", {hwnd: noteHwnd
+            , x: plan.noteRect.x, y: plan.noteRect.y
+            , w: plan.noteRect.w, h: plan.noteRect.h})
     }
 
     ; 窗口矩形比「可见边界」多出来的那圈不可见调整边框（含 DWM 阴影）。

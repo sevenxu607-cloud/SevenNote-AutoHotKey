@@ -8,12 +8,52 @@
 class LauncherModule {
     static Id := "Launcher"
     static Name := "外部程序"
+    static _initialized := false
 
     static Init() {
+        if this._initialized
+            return
+        this._initialized := true
+
         ; Feature 只保留查找 / 摆位 / 显示能力；热键不再由 Feature 自己注册。
-        ; 伙伴窗口的事件订阅仍在 SevenNote 的 WindowFeature 里（Peer.* 契约）。
+        ; 笔记窗口的让位由 SevenNote 的 WindowFeature 订阅 Launcher.Preparing /
+        ; Launcher.Opened / Launcher.Failed 处理；本模块只订阅 Launcher.Move，
+        ; 负责把平台算好的伙伴窗口落点应用到自己的终端 / 浏览器窗口上。
         PowerShellFeature.Init()
         DeepSeekFeature.Init()
+        EventBus.On("Launcher.Move", (data) => this._OnMove(data))
+    }
+
+    ; Launcher.Move：PeerCoordinator 算好「伙伴窗口下移」后广播的**物理外框**。
+    ; 终端与 DeepSeek 的 hwnd 都从这里经过，所以放在模块级，不绑定某个 Feature。
+    ; ⚠ 事件在 _PlaceWindow 的同步调用链里发出，此时伙伴通常已经 WinShow；
+    ;   仍然自己开 DetectHiddenWindows，避免调用方中途把窗口藏起来时 WinMove 抛错。
+    static _OnMove(data) {
+        if !IsObject(data)
+            return
+        if !(data.HasProp("hwnd") && data.HasProp("x") && data.HasProp("y")
+            && data.HasProp("w") && data.HasProp("h"))
+            return
+        if !(IsNumber(data.x) && IsNumber(data.y)
+            && IsNumber(data.w) && IsNumber(data.h))
+            return
+        if (data.w <= 0 || data.h <= 0)
+            return
+        if !data.hwnd
+            return
+
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . data.hwnd)
+                return
+            ; 最小化窗口的位置是停放位，别搬
+            if DllCall("IsIconic", "ptr", data.hwnd, "int")
+                return
+            WinMove(data.x, data.y, data.w, data.h, "ahk_id " . data.hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
     }
 
     ; 由 HotkeyRouter / WorkBenchUI 聚合 —— 注册与 Alt+H 帮助共用这一份数据。

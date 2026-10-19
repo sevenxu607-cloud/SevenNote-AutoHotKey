@@ -214,14 +214,12 @@ class SevenNoteModule {
 - `PowerShellFeature` / `DeepSeekFeature` 落位后广播 `Launcher.Opened`；
   `WindowFeature.Show()` 末尾广播 `SevenNote.WindowReady`，协调器记录双方最近落位；
 - 真实布局时由协调器广播 `SevenNote.Move` / `Launcher.Move`（载荷为物理外框）；
-- 旧 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 与让位 / 冻结状态机保持原样；
-  Move 事件暂不接管窗口，避免在模块拆分同批改动已验证行为。
+- 旧 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 与让位 / 冻结状态机在 3b 保持原样；
+  Phase 5b 已替换为 `Launcher.*` 生命周期 + Move 事件（见下）。
 
 待做：
 
-- 人工验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口；
-- Phase 5b：让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`，
-  再移除 `Peer.*` 桥接。
+- 人工验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口。
 
 ### Phase 4 · KeysInput 模块化（已完成，待人工验收）
 
@@ -269,11 +267,27 @@ class SevenNoteModule {
 - `Alt+Shift+Z` 现在经 `Save.Requested` 间接触发保存，需人工确认「保存并退出」；
 - 本轮没有新增「CapsLock 层 `Esc` 退出」热键，旧行为未变。
 
-### Phase 5b · Move 事件接管窗口（待做）
+### Phase 5b · Move 事件接管窗口（已完成，待人工验收）
 
-- 让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`；
-- 接管窗口执行路径后，再移除 `Peer.*` 桥接；
-- 这一步会改动已验证的窗口行为，单独一轮做，不和帮助重构混批。
+已完成：
+
+- `PeerCoordinator._PublishMoves()` 改为真正的执行路径：先广播
+  `Launcher.Move`（伙伴下移），再广播 `SevenNote.Move`（笔记堆叠）；
+- `WindowFeature` 订阅 `SevenNote.Move` → `_OnNoteMove()`，用物理外框直接
+  `WinMove`；`_StackWithPeer()` 不再直接搬笔记或伙伴窗口，只更新
+  `_stacked` / `_peerRect` 状态；
+- `LauncherModule` 订阅 `Launcher.Move` → `_OnMove()`，统一搬终端 / 浏览器；
+- 生命周期事件改为 `Launcher.Preparing` / `Launcher.Opened` / `Launcher.Failed`，
+  删除 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 三条旧桥接；
+- `Launcher.Opened` 仍由两个 Launcher Feature 落位后广播，`WindowFeature` 与
+  `PeerCoordinator` 同时订阅（前者适配、后者记录）。
+
+代价 / 风险：
+
+- 窗口执行路径从「`WindowFeature` 直接调用」改为「事件订阅」，行为等价但必须
+  真机验收 `Alt+C` / `Alt+X` 的呼出 / 隐藏 / 切换与笔记让位；
+- `Launcher.Move` 由模块级处理，`LauncherModule.Init()` 增加了只注册一次的守卫；
+- 移动事件是同步的，保持旧顺序（先伙伴、后笔记）；异步时序不变。
 
 ### Phase 6 · 改名（最后做）
 

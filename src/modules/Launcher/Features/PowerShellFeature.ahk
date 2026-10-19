@@ -5,12 +5,12 @@
 ; ═══════════════════════════════════════════════════════════════════════════
 
 ; ─── 参考实现：Alt+C 呼出终端 ───
-; 本 Feature 是「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的示范用法。
+; 本 Feature 是「伴生窗口适配」契约（Launcher.Preparing / Launcher.Opened / Launcher.Failed）的示范用法。
 ; 要接入别的外部窗口（资源管理器 / Obsidian / 浏览器…），照这四步抄即可：
-;   ① 确定能起来之后，先广播 Peer.Preparing —— 让笔记窗口退场
+;   ① 确定能起来之后，先广播 Launcher.Preparing —— 让笔记窗口退场
 ;   ② 启动外部程序（⚠ 别传 Run 的 "Hide"，理由见 _LaunchPowerShell）
-;   ③ 轮询到它的窗口后 WinShow / WinActivate，再用 _BroadcastRect 广播 Peer.Placed
-;   ④ 任何一步失败（Run 抛错、等满超时）都要广播 Peer.Failed，把笔记窗口还回来
+;   ③ 轮询到它的窗口后 WinShow / WinActivate，再用 _BroadcastRect 广播 Launcher.Opened
+;   ④ 任何一步失败（Run 抛错、等满超时）都要广播 Launcher.Failed，把笔记窗口还回来
 ; 逐条说明与必须守住的点见 README「开发指南 → 添加呼出外部窗口的功能」。
 class PowerShellFeature {
     static _initialized := false
@@ -60,10 +60,10 @@ class PowerShellFeature {
 
     static _ShowAndFocus(hwnd) {
         ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。理由详见
-        ; WindowFeature._CollapseForPeer。重复发是无害的：窗口已经收起时那次调用会跳过。
+        ; WindowFeature._CollapseForLauncher。重复发是无害的：窗口已经收起时那次调用会跳过。
         ; ⚠ 这条广播管的是笔记窗口，不是终端：终端的露面时机由它自己的宿主掌握
         ;   （为什么不能靠 Run 的 "Hide" 去藏它，见 _LaunchPowerShell）。
-        EventBus.Emit("Peer.Preparing")
+        EventBus.Emit("Launcher.Preparing")
 
         WinShow("ahk_id " . hwnd)
         ; ⚠ WinShow 之后必须再 WinRestore：窗口被 WinHide 藏起来后，宿主可能把自己
@@ -116,17 +116,16 @@ class PowerShellFeature {
         WinMove(rect.x, rect.y, tw, , "ahk_id " . hwnd)
     }
 
-    ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Launcher.Opened 契约）。
     ; 读矩形的细节（隐藏态要开 DetectHiddenWindows）见 PeerLayoutService.RectOf。
     static _BroadcastRect(hwnd) {
         rect := PeerLayoutService.RectOf(hwnd)
         if !IsObject(rect)
             return
         data := {kind: "powershell", hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h}
-        ; Phase 3b：模块级「已打开」交给平台协调器记录 / 计算；
-        ; 旧的 Peer.Placed 仍保留给 WindowFeature 的已验证状态机。
+        ; Phase 5b：Launcher.Opened 同时是伙伴落位事件，WindowFeature 据此适配；
+        ; 旧的桥接事件已移除。
         EventBus.Emit("Launcher.Opened", data)
-        EventBus.Emit("Peer.Placed", data)
     }
 
     ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
@@ -150,7 +149,7 @@ class PowerShellFeature {
         }
 
         ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
-        EventBus.Emit("Peer.Preparing")
+        EventBus.Emit("Launcher.Preparing")
 
         try {
             command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
@@ -174,7 +173,7 @@ class PowerShellFeature {
             Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
         } catch as err {
             MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
-            EventBus.Emit("Peer.Failed")
+            EventBus.Emit("Launcher.Failed")
             return
         }
 
@@ -194,7 +193,7 @@ class PowerShellFeature {
             this._ShowAndFocus(hwnd)
         } else {
             MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
-            EventBus.Emit("Peer.Failed")
+            EventBus.Emit("Launcher.Failed")
         }
     }
 }

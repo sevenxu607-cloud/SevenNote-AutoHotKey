@@ -9,10 +9,14 @@ class WindowFeature {
     ; 「呼出一个外部窗口 → 笔记窗口自动让位 / 堆叠」这套机制对所有 Feature 通用，
     ; 不限于终端 —— 以后要换成资源管理器、Obsidian、浏览器，照同一份契约做即可。
     ; 契约就三个事件，详见 README「开发指南 → 添加呼出外部窗口的功能」：
-    ;   Peer.Preparing  外部窗口**即将露面**   → 笔记窗口先退场（别当着用户的面搬它）
-    ;   Peer.Placed     已落位，带 {hwnd, x, y, w, h}（**真实**窗口矩形）→ 笔记窗口按它摆
-    ;   Peer.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
+    ;   Launcher.Preparing  外部窗口**即将露面**   → 笔记窗口先退场（别当着用户的面搬它）
+    ;   Launcher.Opened     已落位，带 {hwnd, x, y, w, h}（**真实**窗口矩形）→ 笔记窗口按它摆
+    ;   Launcher.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
     ; 发布方只管广播这三条；订阅、摆放算法全在本类里，接入新窗口不用改它。
+    ;
+    ; Phase 5b：真正搬窗口改由 Move 事件执行 —— 平台协调器算好堆叠几何后广播
+    ;   SevenNote.Move（本类订阅，搬笔记窗口）与 Launcher.Move（LauncherModule 订阅，
+    ;   搬伙伴窗口）。本类不再直接 WinMove 伴生窗口。
     ;
     ; ⚠ **只适配一次**：真正会动笔记窗口的只有「第一次」，适配完就置位 _docked，
     ;   此后三条事件一律不再碰它（语义与理由见 _docked 的注释）。所以上面那句
@@ -30,7 +34,7 @@ class WindowFeature {
     ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
     static _preStackRect := ""
 
-    ; 是否已经为伴生窗口「适配过一次」。置位之后，Peer.* 三条事件一律不再碰笔记窗口 ——
+    ; 是否已经为伴生窗口「适配过一次」。置位之后，Launcher.* 三条事件一律不再碰笔记窗口 ——
     ; 这是本机制现在的核心语义：用顺了之后，笔记的尺寸位置就是用户自己的格局，
     ; 不该每次呼出终端 / DeepSeek 都被重算、重摆一遍。
     ;
@@ -40,11 +44,13 @@ class WindowFeature {
     static _docked := false
 
     ; ─── 挂载：订阅伴生窗口生命周期 ───
-    ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
+    ; 组合根在 LauncherModule.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
     static Init() {
-        EventBus.On("Peer.Placed",    (rect) => this._OnPeerPlaced(rect))
-        EventBus.On("Peer.Preparing", (*)    => this._CollapseForPeer())
-        EventBus.On("Peer.Failed",    (*)    => this._RestoreAfterFailedPeer())
+        EventBus.On("Launcher.Opened",    (rect) => this._OnLauncherOpened(rect))
+        EventBus.On("Launcher.Preparing", (*)    => this._CollapseForLauncher())
+        EventBus.On("Launcher.Failed",    (*)    => this._RestoreAfterFailedLauncher())
+        ; Phase 5b：平台算好的笔记窗口目标矩形（物理像素）由这里落到窗口上。
+        EventBus.On("SevenNote.Move",     (data) => this._OnNoteMove(data))
     }
 
     ; 伴生窗口马上要露面，先让笔记窗口退场。**只在第一次** —— 已经适配过的格局不再动。
@@ -58,7 +64,7 @@ class WindowFeature {
     ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
     ; 与用户自己按 Alt+Z 收起完全同一条路。这份记忆随后正好被 _AdaptToPeer 拿来
     ; 判断「伙伴会不会压到笔记原来待的地方」。
-    static _CollapseForPeer() {
+    static _CollapseForLauncher() {
         if this._docked
             return
         if !State.GetGuiHwnd()
@@ -71,7 +77,7 @@ class WindowFeature {
     ; 窗口得还回来。少了这条兜底，用户按一次 Alt+C，屏幕上就什么都剩不下。
     ; 记忆里那份 _peerRect 若指向已消失的窗口，_StackWithPeer 开头有 alive
     ; 检查兜着，Show() 会自行回落到记忆位置 / 默认落点。
-    static _RestoreAfterFailedPeer() {
+    static _RestoreAfterFailedLauncher() {
         if !State.GetGuiHwnd()
             return
         if this.IsShowing()
@@ -82,7 +88,7 @@ class WindowFeature {
     ; 记下伴生窗口的位置，再让笔记窗口适配 —— 两步都要做：
     ; 少记一步（this._peerRect := rect）的话，_StackWithPeer 没有分区依据，
     ; 会直接退回记忆位置。
-    static _OnPeerPlaced(rect) {
+    static _OnLauncherOpened(rect) {
         this._peerRect := rect
         this._AdaptToPeer(rect)
     }
@@ -103,9 +109,9 @@ class WindowFeature {
 
         ghwnd := State.GetGuiHwnd()
 
-        ; 笔记此刻多半已被 _CollapseForPeer 收走，位置取 Hide 时刚记下的那份 ——
+        ; 笔记此刻多半已被 _CollapseForLauncher 收走，位置取 Hide 时刚记下的那份 ——
         ; 那正是「笔记原来待的地方」，该拿它去比。万一它还显示着（订阅缺失，或将来
-        ; 有别的来源广播 Peer.Placed），就现量一个。
+        ; 有别的来源广播 Launcher.Opened），就现量一个。
         noteRect := State.HasHiddenRect()
             ? State.GetHiddenRect()
             : this._CurrentRect(ghwnd)
@@ -123,7 +129,7 @@ class WindowFeature {
 
         ; ── 冲突（或量不到笔记矩形，保守当作冲突）：按原设计适配一次 ──
         ; ⚠ 先收再摆：_StackWithPeer 要改位置改尺寸，这一整段不该被看见
-        ;   （理由同 _CollapseForPeer）。若它已经收过，这次调用会跳过。
+        ;   （理由同 _CollapseForLauncher）。若它已经收过，这次调用会跳过。
         if this.IsShowing()
             this.Hide()
         this.Show()
@@ -131,6 +137,34 @@ class WindowFeature {
         ; 让窗口退回了记忆位置）就不置位，留着以后还有机会再试。
         if this._stacked
             this._FreezeDocked(ghwnd)
+    }
+
+    ; SevenNote.Move：平台协调器算好的笔记窗口**物理外框**。
+    ; ⚠ 调用发生在 _PlaceWindow 的 g.Show("Hide") 之后，窗口此刻是隐藏的 ——
+    ;   必须临时开 DetectHiddenWindows，否则 WinMove 会抛 "Target window not found"。
+    ;   用完恢复原值，别改变其它代码的可见性语义。
+    static _OnNoteMove(data) {
+        if !IsObject(data)
+            return
+        if !(data.HasProp("hwnd") && data.HasProp("x") && data.HasProp("y")
+            && data.HasProp("w") && data.HasProp("h"))
+            return
+        if !(IsNumber(data.x) && IsNumber(data.y)
+            && IsNumber(data.w) && IsNumber(data.h))
+            return
+        if (data.w <= 0 || data.h <= 0)
+            return
+        ; 只接自己这扇笔记窗口的 Move，避免误搬别的 hwnd
+        if (data.hwnd != State.GetGuiHwnd())
+            return
+
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            WinMove(data.x, data.y, data.w, data.h, "ahk_id " . data.hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
     }
 
     ; 两个矩形是否相交 —— 即「有没有一块地方同时被两个窗口占着」。
@@ -376,32 +410,19 @@ class WindowFeature {
                 this._preStackRect := ""
         }
 
-        ; 几何计算已上收到平台层 PeerCoordinator（Phase 3b）：这里只负责
-        ; 状态判断、底稿与把算出来的落点应用到窗口上。
+        ; 几何计算已上收到平台层 PeerCoordinator（Phase 3b）：Phase 5b 起这里只负责
+        ; 状态判断与底稿，落点由 PlanStack(..., true) 广播的 Move 事件应用到窗口上。
         plan := PeerCoordinator.PlanStack(ghwnd, pr, true)
         if !plan.ok
             return false
 
-        ; 方案二会把伴生窗口下移 —— 这是唯一一种「伙伴也要动」的情形；
-        ; 宽高留空 = 保持不变。
-        if IsObject(plan.peer) {
-            WinMove(plan.peer.x, plan.peer.y, , , "ahk_id " . pr.hwnd)
-            ; 伴生窗口挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
+        ; Phase 5b：PlanStack(..., true) 已在计算完成时同步广播 Move 事件 ——
+        ;   伙伴由 LauncherModule._OnMove() 下移，笔记由本类 _OnNoteMove() 摆位。
+        ;   这里只更新状态：方案二会改伙伴位置，记下新矩形供下次呼出使用。
+        if IsObject(plan.peer)
             this._peerRect := plan.peerRect
-        }
-
-        this._MoveToVisible(ghwnd, plan.note.x, plan.note.y
-            , plan.note.w, plan.note.h, plan.note.frame)
         this._stacked := true
         return true
-    }
-
-    ; 按「可见边界」摆放窗口：传进来的是肉眼看到的矩形，
-    ; 内部补上该窗口的不可见边框偏移再交给 WinMove（后者认的是含边框的矩形）。
-    static _MoveToVisible(hwnd, visL, visT, visW, visH, frame) {
-        rectW := Max(visW + frame.r - frame.l, 1)
-        rectH := Max(visH + frame.b - frame.t, 1)
-        WinMove(visL + frame.l, visT + frame.t, rectW, rectH, "ahk_id " . hwnd)
     }
 
     ; 几何实现已上收到 PeerCoordinator；保留这个名字给历史调用与探针。

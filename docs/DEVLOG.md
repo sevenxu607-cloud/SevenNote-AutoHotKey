@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 已提交
-- **最近一次改动**：运行代码统一收纳到 `src/`，根目录只留极简启动器
-- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 人工验收（需关闭现有实例）
-- **下一步**：Phase 5b：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b 已实现
+- **最近一次改动**：Phase 5b：`SevenNote.Move` / `Launcher.Move` 接管窗口，移除 `Peer.*` 桥接
+- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 / 5b 人工验收（需关闭现有实例）
+- **下一步**：推送提交、用新入口编译验证，然后进入 Phase 6 改名
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -31,12 +31,13 @@
 - [x] Phase 3b：`PeerCoordinator` 接管伙伴窗口堆叠几何，`Launcher.Opened` / `SevenNote.WindowReady` 已接入
 - [x] Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，`Alt+Shift+C` 与动态 HJKL 归模块
 - [x] Phase 5：`WorkBenchUI` 统一帮助，`HotkeyRouter.RegisterAll()` 聚合平台 + 模块热键
+- [x] Phase 5b：Move 事件接管窗口，移除 `Peer.*` 桥接
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
 - [x] 运行代码统一收进 `src/`，根 `SevenNote.ahk` 只做启动器
 - [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
 - [ ] Phase 5 人工验收：`Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
-- [ ] Phase 5b：Move 事件接管窗口，再移除 `Peer.*` 桥接
+- [ ] Phase 5b 人工验收：`Alt+C` / `Alt+X` 呼出 / 隐藏 / 切换、笔记让位、重启认回窗口
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -57,6 +58,35 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 23:05　Phase 5b：Move 事件接管窗口
+
+**我说**
+> 开始 Phase 5b：Move 事件接管窗口
+
+**意图**
+把窗口执行路径从 `WindowFeature` / Launcher 的直接 `WinMove` 改为平台算几何、模块各自订阅
+Move 事件；同时清掉 `Peer.*` 桥接。
+
+**决定 / 过程**
+- `PeerCoordinator._PublishMoves()` 成为执行路径：先 `Launcher.Move`（伙伴下移）、后
+  `SevenNote.Move`（笔记堆叠）；
+- `WindowFeature` 订阅 `SevenNote.Move` → `_OnNoteMove()`；`_StackWithPeer()` 只保留状态与底稿；
+- `LauncherModule` 订阅 `Launcher.Move` → `_OnMove()`，统一搬终端 / 浏览器；
+- 生命周期改为 `Launcher.Preparing` / `Launcher.Opened` / `Launcher.Failed`，删除
+  `Peer.Preparing` / `Peer.Placed` / `Peer.Failed`；
+- 验证：真机启动 stderr 为空、`_error.log` 未增长；探针触发两次 `PlanStack(..., true)`，
+  计划矩形与实际 `WinGetPos` 逐项相同（笔记 `200,10,800,693` / `200,10,800,1092`，
+  伙伴下移 `200,1099`）；生命周期探针 `shown 1 → Preparing 0 → Opened 1 → Failed 1`。
+
+**代价 / 风险**
+- 执行路径改为事件订阅，行为等价但需人工验收 `Alt+C` / `Alt+X` 的呼出 / 隐藏 / 切换、
+  笔记让位与重启认回；
+- `LauncherModule.Init()` 增加只注册一次的守卫；移动事件同步，保持旧顺序。
+
+**待办**
+- [ ] 人工验收上述窗口流程
+- [ ] 推送提交 / 新入口编译验证
 
 ### 2026-10-19 21:43　把运行代码统一收进 src/
 

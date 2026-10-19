@@ -5,7 +5,7 @@
 ; ═══════════════════════════════════════════════════════════════════════════
 
 ; ─── Alt+X 呼出 DeepSeek 网页端 ───
-; 「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的第二个使用者 ——
+; 「伴生窗口适配」契约（Launcher.Preparing / Launcher.Opened / Launcher.Failed）的第二个使用者 ——
 ; 与 PowerShellFeature 同一套玩法，只把「终端」换成浏览器窗口。
 ; 三条广播的语义、时序、失败兜底完全一致；接入步骤见 README「开发指南」。
 ;
@@ -271,7 +271,7 @@ class DeepSeekFeature {
         }
 
         ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
-        EventBus.Emit("Peer.Preparing")
+        EventBus.Emit("Launcher.Preparing")
 
         ; ⚠ 升级路径上的一次性清理：老实例（--app 时代的进程）还活着就先退掉它，
         ;   否则本次 --new-window 会被 Chromium 的单实例复用吃掉，照旧开出应用窗口。
@@ -309,7 +309,7 @@ class DeepSeekFeature {
             Run(cmd)
         } catch as err {
             MsgBox("启动浏览器失败：`n" . err.Message, "SevenNote", "Icon!")
-            EventBus.Emit("Peer.Failed")
+            EventBus.Emit("Launcher.Failed")
             return
         }
 
@@ -346,7 +346,7 @@ class DeepSeekFeature {
         }
 
         MsgBox("浏览器已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
-        EventBus.Emit("Peer.Failed")
+        EventBus.Emit("Launcher.Failed")
     }
 
     ; 当前同族进程的 PID 集合（含只有隐藏窗口的宿主进程）
@@ -380,9 +380,9 @@ class DeepSeekFeature {
 
     static _ShowAndFocus(hwnd) {
         ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。
-        ; 理由详见 WindowFeature._CollapseForPeer。重复发是无害的：已收起时那次会跳过。
+        ; 理由详见 WindowFeature._CollapseForLauncher。重复发是无害的：已收起时那次会跳过。
         ; ⚠ 这条广播管的是笔记窗口，不是浏览器：浏览器的露面时机由它自己的宿主掌握。
-        EventBus.Emit("Peer.Preparing")
+        EventBus.Emit("Launcher.Preparing")
         WinShow("ahk_id " . hwnd)
         ; ⚠ WinShow 之后必须再 WinRestore：Chromium 的窗口被 WinHide 藏起来后会把自己
         ;   标记成「最小化」—— 本机实测再按 Alt+X 呼出时 iconic=1、rect 停在
@@ -464,17 +464,16 @@ class DeepSeekFeature {
         this._WatchSize(hwnd, round + 1)
     }
 
-    ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Launcher.Opened 契约）。
     ; 读矩形的细节见 PeerLayoutService.RectOf。
     static _BroadcastRect(hwnd) {
         rect := PeerLayoutService.RectOf(hwnd)
         if !IsObject(rect)
             return
         data := {kind: "deepseek", hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h}
-        ; Phase 3b：模块级「已打开」交给平台协调器记录 / 计算；
-        ; 旧的 Peer.Placed 仍保留给 WindowFeature 的已验证状态机。
+        ; Phase 5b：Launcher.Opened 同时是伙伴落位事件，WindowFeature 据此适配；
+        ; 旧的桥接事件已移除。
         EventBus.Emit("Launcher.Opened", data)
-        EventBus.Emit("Peer.Placed", data)
     }
 
     ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，

@@ -22,7 +22,7 @@
 | 6 | 主题染色 | Dwm `SetWindowAttribute` + Uxtheme `SetWindowTheme` |
 | 7 | 背景图 | GDI 双 DC + `StretchBlt`(HALFTONE) |
 | 8 | 外部程序呼出 | `Run` + WT profile / Edge 命令行 |
-| 9 | 窗口自动让位 | `Peer.*` 事件契约 + `DwmGetWindowAttribute` |
+| 9 | 窗口自动让位 | `Launcher.*` 生命周期 + `SevenNote.Move` / `Launcher.Move` + `DwmGetWindowAttribute` |
 | 10 | 热键系统 | 平台 / 模块 `GetHotkeys()` 聚合 + `HotIf` |
 | 11 | 配置 / 状态 / 解耦 | Ini + 进程内缓存 + `EventBus` |
 | 12 | 格式出口 | 内嵌 Pandoc `RunWait` |
@@ -186,14 +186,19 @@ msedge.exe --new-window https://chat.deepseek.com/
 
 ```
 发布方（PowerShellFeature / DeepSeekFeature）
-  只广播三个事件：Peer.Placed / Peer.Hidden / Peer.Failed
+  只广播三个生命周期事件：Launcher.Preparing / Launcher.Opened / Launcher.Failed
   ⚠ 不碰笔记窗口 —— Feature 之间零调用
 
-订阅方（WindowFeature）
+平台（PeerCoordinator）
   · 读伙伴外框：DwmGetWindowAttribute(hwnd, 9, ...)   ← DWMWA_EXTENDED_FRAME_BOUNDS
-  · 摆位算法统一在 PeerLayoutService：
+  · 摆位算法：PlanStack() 算「笔记在上、伙伴在下」的物理外框
+  · 广播执行事件：SevenNote.Move → WindowFeature._OnNoteMove()
+                  Launcher.Move  → LauncherModule._OnMove()
+
+执行方（各自订阅、只搬自己的窗口）
+  · WindowFeature 搬笔记窗口；LauncherModule 搬终端 / 浏览器窗口
+  · 落点公式与可摆性闸仍在 PeerLayoutService：
       IsPlaceable / TargetW / TargetH / CornerRect / RectOf
-  · 笔记窗口按目标矩形让位 / 堆叠
 ```
 
 **只在第一次适配**：笔记窗口被撞到才让位，随后冻结，归用户自己管（v2.1 起）。
@@ -237,7 +242,8 @@ class SevenNoteModule {
 | `StatusBar` | 三个 Static 控件：日期+星期 / 标签 / 字数+提示 |
 
 **已用的事件**（部分）：`Window.BeforeHide`、`Window.Shown`、`Save.Requested`、
-`Date.Changed`、`Date.JumpRequested`、`Peer.Placed`。
+`Date.Changed`、`Date.JumpRequested`、`Launcher.Preparing` / `Launcher.Opened` /
+`Launcher.Failed`、`SevenNote.Move` / `Launcher.Move`。
 
 **配置落点**：`_config.ini` 按开发版 / 发布版隔离目录；`pandoc.exe` 跨版本共用（100+MB 不重复释放）。
 ⚠ 缓存带来的代价：运行期手改 `_config.ini` 不生效，改完要重启。
