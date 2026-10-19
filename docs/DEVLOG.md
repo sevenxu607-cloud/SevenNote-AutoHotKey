@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a 已提交，Phase 3b 已实现（待验收 / 提交）
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b 已提交，工作区干净
 - **最近一次改动**：Phase 3b：堆叠几何上收到 `PeerCoordinator`，接入 `Launcher.Opened` / `SevenNote.WindowReady`
 - **正在处理**：Phase 2 / 3a / 3b 人工验收（需关闭现有实例）
 - **下一步**：Phase 4 KeysInput；Phase 5 再让 `SevenNote.Move` / `Launcher.Move` 接管窗口
