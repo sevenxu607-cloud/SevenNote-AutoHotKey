@@ -12,7 +12,7 @@
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
 - **最近一次改动**：`Ctrl+H` 动态分隔线 + 帮助热键 `Alt+H` → `Alt+S`
-- **正在处理**：两项改动的真机验收（需关闭现有实例）
+- **正在处理**：`Ctrl+H` 动态分隔线的真机验收（`Alt+S` 帮助已在 2026-10-20 真机验证通过）
 - **下一步**：人工验收 `Alt+S` / `Ctrl+H`，再跑保存 / 主题 / `Alt+Z` 回归
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -61,6 +61,34 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 01:40　[仅讨论] 核查合并结果：无冲突残留，真机启动正常
+
+**我说**（原话）
+> 检查是否合并有问题
+
+**意图**
+推断：怀疑某次合并（`feature/groups` → `main`，或从 GitHub 拉取）留下了冲突残留、
+重复定义或丢失的改动，想确认仓库与运行状态是否干净。
+
+**决定 / 过程**
+- 仓库面：无未提交改动、无冲突标记（`git grep` 全库为 0 命中）、无 stash；
+  `origin/main` 是 HEAD 祖先（本地领先 66、不落后），唯一合并提交 `b6bf8ba` 只加了 `LICENSE`。
+- 结构面：45 个 `#Include` 目标全部存在，无重复类定义，`PeerLayoutService` /
+  `PeerCoordinator` / `BackdropService` / `PlacementExecutor` / `WindowProbe` / `RectMath` /
+  各 Service 的「调用 vs 静态定义」无一缺失；`Config` / `State` 成员与 `EventBus`
+  事件名两端一致（无「订阅了却没人发」）。
+- 编码面：全部 `.ahk` 无 BOM、`bareLF=0`；`src\SevenWork.ahk` 473 行。
+- 运行面：语法预检 `exit=0`；真机启动 `stderr` 为空、`Alt+Z` 呼出、`Alt+S` 开帮助，
+  `.logs\_error.log` 未新增（仍只有 10-18 的自检记录）。
+- `Alt+H` 只剩在 DEVLOG 历史条目与 `docs/WORKBENCH-PLAN.md` 计划里，属历史记录，非代码残留。
+
+**代价 / 风险**
+无已知代价。未改任何代码，仅补本条目；上下文热键（`Ctrl+G` 等）仍未经人工按键验收，
+本次结论不覆盖它们。
+
+**待办**
+- [ ] 需要的话分批 push（本地 66 个提交还没上远端）
 
 ### 2026-10-20 01:01　Ctrl+H 动态分隔线，帮助热键 Alt+H → Alt+S
 
