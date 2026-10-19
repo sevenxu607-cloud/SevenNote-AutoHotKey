@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 已提交，工作区干净
-- **最近一次改动**：Phase 2：7 Service + `StatusBar` + 18 Feature 搬入 `modules/SevenNote/`，`SevenNoteModule` 接管 GUI / OnSize / 启动
-- **正在处理**：Phase 2 人工验收（需关闭现有实例）
-- **下一步**：Phase 3：Launcher 模块化（`PeerLayoutService` + `PowerShellFeature` + `DeepSeekFeature`）
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 已提交，Phase 3a 改动待提交
+- **最近一次改动**：Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由 `LauncherModule.GetHotkeys()` 声明
+- **正在处理**：Phase 2 / 3a 人工验收（需关闭现有实例）
+- **下一步**：Phase 3b：`PeerCoordinator` 接管伙伴窗口布局；之后 Phase 4 KeysInput
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -27,8 +27,10 @@
 - [x] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
 - [ ] Phase 1 / 2 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题 / 全部上下文热键
 - [x] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
+- [x] Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由模块 `GetHotkeys()`
+- [ ] Phase 3b：`PeerCoordinator` 接管 `Launcher.Opened` / `SevenNote.WindowReady` 的布局
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
-- [ ] Phase 2–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
+- [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -49,6 +51,34 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 23:55　Phase 3a：Launcher 三个类搬出主脚本
+
+**我说**（原话）
+> 继续
+
+**意图**
+按 Phase 3 把 `PeerLayoutService`、`PowerShellFeature`、`DeepSeekFeature` 收进
+`modules/Launcher/`，并让 `Alt+C` / `Alt+X` 由模块声明、Router 统一注册。
+
+**决定 / 过程**
+- 按原行范围机械切出三个类，新增 `modules/Launcher/{Services,Features}/`；
+  主脚本原位改为 `#Include`，类体逐行比对与 HEAD 只剩「移除自注册热键」一行差异；
+- 新建 `LauncherModule.ahk`：`Init()` 调用两个 Feature 的 `Init()`，`GetHotkeys()`
+  返回两条全局热键；`SevenNoteModule.Init()` 删掉对 Launcher 的调用；
+- `HotkeyTable()` 在末尾并入 `LauncherModule.GetHotkeys()`，注册与 `Alt+H` 帮助
+  仍共用一张表；模块热键不再由 Feature 自己 `Hotkey()`。
+
+**代价 / 风险**
+- `PeerCoordinator` 仍是占位：现有 `Peer.*` 契约与 `WindowFeature` 让位逻辑原样保留，
+  Phase 3b 再接管；这避免在搬类同批改动已验证的窗口行为；
+- 主脚本 614 行，仍含 `CapsLockFeature`（Phase 4）与组合根热键表；
+- 沙箱已验证 `HotkeyTable()` 共 32 条、`!c` / `!x` 各 1 条、帮助含两行；
+  上下文热键与真实呼出只能人工按键验收。
+
+**待办**
+- [ ] 关闭现有实例后验收笔记 + `Alt+C` / `Alt+X` / 笔记让位 / 重启认回窗口
+- [ ] Phase 3b：`PeerCoordinator` 接管 `Launcher.Opened` / `SevenNote.WindowReady`
 
 ### 2026-10-19 23:40　保留源码快照，完成 Phase 2 拆分
 

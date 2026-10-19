@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 2 已完成（待人工验收）
+> 状态：设计定稿，Phase 2 已完成（待人工验收），Phase 3a 已完成（待人工验收）
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -75,7 +75,7 @@ SevenWork/
 | 4 | `WorkBench.Init()` | 注册 Kernel、创建 Registry / Router / UI 占位 |
 | 5 | `ModuleRegistry.Register(SevenNote, Launcher, KeysInput)` | 只登记，不初始化 |
 | 6 | `SevenNoteModule.Init()` | GUI、`State.Set*`、`StatusBar`、18 个 Feature |
-| 7 | `LauncherModule.Init()` | 伙伴窗口、`PeerLayoutService` |
+| 7 | `LauncherModule.Init()` | 初始化 PowerShell / DeepSeek Feature；热键由 `GetHotkeys()` 交给 Router |
 | 8 | `KeysInputModule.Init()` | CapsLock 状态 |
 | 9 | `HotkeyRouter.RegisterAll()` | 静态表 + 各模块 `GetHotkeys()` |
 | 10 | `LoadFeature.Load()` + 主题 / 字体 / CapsLock 配置 | 恢复上次状态 |
@@ -102,7 +102,7 @@ SevenWork/
 | `SevenNote` | editor | `Ctrl+S`、`Ctrl+Z`、`Ctrl+Shift+Z`、`Ctrl+Y`、`Ctrl+D`、`Ctrl+Shift+↑↓`、`Tab`、`Shift+Tab`、`Ctrl+Shift+V` | 静态 |
 | `SevenNote` | global / editor | `Alt+↑↓`、`Alt+Home`、`Ctrl+G`、`Ctrl+Shift+T` | 静态 |
 | `SevenNote` | editor | `Ctrl+T`、`Ctrl+H`、`Ctrl+Shift+H` | 静态 |
-| `Launcher` | global | `Alt+C` / `Alt+X` 呼出伙伴窗口 | 动态：外部窗口存在时才挂 |
+| `Launcher` | global | `Alt+C` / `Alt+X` 呼出伙伴窗口 | 静态：`LauncherModule.GetHotkeys()` |
 | `KeysInput` | global | `Alt+Shift+C` 切换 CapsLock 层 | 静态 |
 | `KeysInput` | 全局（层内） | `CapsLock` / `CapsLock+H/J/K/L` | 动态：开关时 `Add` / `Remove` |
 
@@ -169,7 +169,7 @@ class SevenNoteModule {
 已完成：
 
 - 7 个 Service 搬入 `modules/SevenNote/Services/`；`StatusBar` 与 18 个 Feature 搬入
-  `modules/SevenNote/`，主脚本原位改为 `#Include`（当前 1363 行）；
+  `modules/SevenNote/`，主脚本原位改为 `#Include`（Phase 2 完成时 1363 行；Phase 3a 后 614 行）；
 - `SevenNoteModule.Init()` 接管 GUI 创建、`OnSize`、Feature 挂载；`Start()` 负责启动恢复；
 - `OnSize` 改为经 `State.GetXxx()` / `GuiCtrlFromHwnd(State.GetEd())` 取控件；
   `search*` 由 `SearchFeature.Layout()` 管理；
@@ -183,15 +183,29 @@ class SevenNoteModule {
 
 - 人工验收（需关闭现有实例）：笔记全部功能 + 主题 / 背景图 / 搜索 / 日期 / 标签 /
   图片 / 自动保存；窗口拉伸时文字不闪；
-- `GetHotkeys()` 暂缓：热键表仍由组合根 `HotkeyTable()` 持有（跨平台 / Launcher /
-  KeysInput 三组），待 Phase 5 的 `WorkBenchUI` 聚合时再拆。
+- `GetHotkeys()` 暂缓（Phase 2 范围）：SevenNote / KeysInput 的热键仍由组合根
+  `HotkeyTable()` 持有；Launcher 已在 Phase 3a 改用 `GetHotkeys()`，其余待 Phase 5 的
+  `WorkBenchUI` 聚合时再拆。
 
-### Phase 3 · Launcher 模块化
+### Phase 3 · Launcher 模块化（3a 已完成，3b 待做）
 
-- `PeerLayoutService` + `PowerShellFeature` + `DeepSeekFeature` 搬入 `modules/Launcher/`；
+已完成（3a）：
+
+- `PeerLayoutService` 搬入 `modules/Launcher/Services/`；
+  `PowerShellFeature` / `DeepSeekFeature` 搬入 `modules/Launcher/Features/`，
+  主脚本原位改为 `#Include`；
+- 新增 `modules/Launcher/LauncherModule.ahk`：`Init()` 持有两个 Feature 的生命周期，
+  `GetHotkeys()` 声明 `Alt+C` / `Alt+X`；
+- 两个 Feature 的 `Init()` 不再自注册热键；组合根 `HotkeyTable()` 并入
+  `LauncherModule.GetHotkeys()`，仍由 `HotkeyRouter` 统一注册，帮助文本同源；
+- `SevenNoteModule.Init()` 不再调用 Launcher 的 Feature。
+
+待做（3b）：
+
 - 抽 `WorkBench/Coordinator/PeerCoordinator.ahk`：订阅 `Launcher.Opened` /
   `SevenNote.WindowReady`，算完布局发 `SevenNote.Move` / `Launcher.Move`；
-- `Alt+C` / `Alt+X` 从 Feature 自注册改为 `LauncherModule.GetHotkeys()`，由 Router 注册；
+- 当前仍沿用已验证的 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 契约，
+  `WindowFeature` 的让位 / 堆叠逻辑不动，以免在模块拆分同批改动窗口行为；
 - 验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口。
 
 ### Phase 4 · KeysInput 模块化

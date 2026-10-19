@@ -83,8 +83,6 @@ class SevenNoteModule {
         SaveFeature.Init()
         CaretFeature.Init()
         StatFeature.Init(Config.StatInterval)
-        PowerShellFeature.Init()
-        DeepSeekFeature.Init()
         DateJumpFeature.Init()
         BackdropFeature.Init(g)
     }
