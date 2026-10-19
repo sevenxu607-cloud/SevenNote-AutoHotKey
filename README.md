@@ -5,8 +5,8 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
 >
-> 📄 **只想快速了解？** 看 [`PROJECT-OVERVIEW.md`](./PROJECT-OVERVIEW.md) —— 一页纸全景（定位 / 规模 / 欠账 / 限制）
-> 🔧 **想看技术实现？** 看 [`PROJECT-IMPLEMENTATION.md`](./PROJECT-IMPLEMENTATION.md) —— 15 个技术块（RichEdit / GDI / Dwm / Peer 契约…）
+> 📄 **只想快速了解？** 看 [`docs/PROJECT-OVERVIEW.md`](./docs/PROJECT-OVERVIEW.md) —— 一页纸全景（定位 / 规模 / 欠账 / 限制）
+> 🔧 **想看技术实现？** 看 [`docs/PROJECT-IMPLEMENTATION.md`](./docs/PROJECT-IMPLEMENTATION.md) —— 15 个技术块（RichEdit / GDI / Dwm / Peer 契约…）
 
 ![version](https://img.shields.io/badge/version-2.4.3-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
@@ -199,7 +199,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `tests\` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault）。`run_user_journey_demo.ps1` 把主脚本**源码读进内存做定点替换**再与驱动**拼成一份临时脚本**运行（不是 `#Include`），所以驱动能直调 `State.*` / `EditorService.*`；也正因如此，主脚本里被替换的那几行**写法不能变**，见 `.clinerules\04-workflow.md` |
 | `screenshots\` | README 配图 |
-| `DEVLOG.md` | **开发日志**：按会话记录「我说了什么 / 为什么这么选 / 放弃了什么 / 下一步做什么」。由 AI 按 `.clinerules\06-devlog.md` 维护；代码实现细节仍看本文的版本历史 |
+| `docs\` | 项目文档：`DEVLOG.md`（开发日志）、`PROJECT-OVERVIEW.md`（一页纸全景）、`PROJECT-IMPLEMENTATION.md`（技术清单） |
 | `.clinerules\` | 架构约定与踩坑记录（`05-theme-image.md` 是「看图生成主题」的配方 + 偏好） |
 
 ---

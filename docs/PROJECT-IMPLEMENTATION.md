@@ -1,7 +1,7 @@
 # SevenNote 技术实现清单
 
 > **用途**：回答「到底用了什么技术、实现了什么」—— 每条都是「技术手段 → 实现效果」。
-> 功能怎么用看 `README.md`；项目全景看 `PROJECT-OVERVIEW.md`；人的决策看 `DEVLOG.md`。
+> 功能怎么用看 `../README.md`；项目全景看 `PROJECT-OVERVIEW.md`；人的决策看 `DEVLOG.md`。
 > 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `SevenNote.ahk` 为准**，本文只是索引。
 
 ---

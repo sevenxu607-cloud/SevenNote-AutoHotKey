@@ -1,6 +1,6 @@
 # SevenNote 开发日志
 
-> 这份文件记录**人的输入、判断与方向**，不记录代码实现细节（那些在 `README.md` 的版本历史里）。
+> 这份文件记录**人的输入、判断与方向**，不记录代码实现细节（那些在 `../README.md` 的版本历史里）。
 > 由 AI 在每次会话结束时按 `.clinerules/06-devlog.md` 追加；历史条目只追加、不改写。
 >
 > 标记说明：`[追溯整理]` = 建日志之前的事后回填（原话按当时记录还原，时间可近似）；
@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，工作区未提交（`SevenNote.ahk` / `README.md` / `.gitignore` / `.clinerules` 两处）
-- **最近一次改动**：新增 `PROJECT-OVERVIEW.md`（一页纸全景）；此前是报错日志落点改为「开发版 `<项目根>\.logs\`、编译版 AppData」
-- **正在处理**：删掉末尾空行后视口不跟手 —— 当前是 **500ms 兜底**方案（修好了，但慢半拍）
-- **下一步**：待定
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；工作区有目录收纳改动（文档移动 + 引用同步）
+- **最近一次改动**：根目录收纳 —— `DEVLOG.md` / `PROJECT-OVERVIEW.md` / `PROJECT-IMPLEMENTATION.md` 移入 `docs/`，源码与必要文件留根
+- **正在处理**：工作台化重构的**设计对齐**（只讨论与文档整理，未动 `SevenNote.ahk`）
+- **下一步**：补三张表（模块归属 / 启动顺序 / 热键归属）→ Phase 0（修正 `.clinerules/04` 的 auto-execute 表述、改 demo 锚点、探针验证 `#Include` 与 `mod.Init()`）
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -21,8 +21,11 @@
 ## 待办与方向
 
 - [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
-- [ ] `PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
+- [ ] 补三张表：模块归属 / 启动顺序 / 热键归属（评审已列，待落纸）
+- [ ] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、改 demo 锚点、探针验证 `#Include` 与 `mod.Init()`
+- [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
+- [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
 - [x] 开发版报错日志落项目根 `.logs\`
 - [x] 滑条「拖不动」回归修复（加脱节守卫）
 - [x] 回退到「修好但不跟手」的中间版
@@ -40,6 +43,29 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 19:06　根目录收纳，为模块化重组做准备
+
+**我说**（原话）
+> 先进行设计理解,而不是代码重构,需要对齐开发者思路需求,先将项目文件夹做精简收纳,现在根目录太多文件,只保留源码和必要留下的文件,其他收纳,为重组做准备
+
+**意图**
+先把仓库摆整齐再谈拆分：根目录只留源码与必须留根的文件，项目文档统一收进 `docs/`；
+这一轮不改 `SevenNote.ahk`，也不动 Feature / Service。
+
+**决定 / 过程**
+- `git mv` 三份文档：`DEVLOG.md`、`PROJECT-OVERVIEW.md`、`PROJECT-IMPLEMENTATION.md` → `docs/`，保留历史；
+- 留根：`SevenNote.ahk`、`README.md`、`LICENSE`、`.gitattributes`、`.gitignore`、`.vscode/`、`.clinerules/`、`screenshots/`、`tests/`、`tools/`（后三者被文档/规则按相对路径引用）；
+- 同步引用：README 顶部索引与仓库表、`.clinerules/06-devlog.md` 的写入路径、两份文档的互链。
+
+**代价 / 风险**
+- GitHub 上旧路径的书签会失效，且没有迁移提示；
+- 历史条目里「落成 PROJECT-OVERVIEW.md（项目根）」按当时事实保留，不改写；
+- 未创建 `platform/` / `modules/` 空目录 —— 等 Phase 1 再建，避免空目录误导。
+
+**待办**
+- [ ] 补三张表：模块归属 / 启动顺序 / 热键归属
+- [ ] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、改 demo 锚点、探针验证 `#Include` 与 `mod.Init()`
 
 ### 2026-10-18 12:30　要一份「实现了什么」的技术梳理
 

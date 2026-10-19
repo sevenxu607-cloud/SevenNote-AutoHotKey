@@ -1,7 +1,7 @@
 # SevenNote 项目全景（一页纸）
 
 > **用途**：一屏看完「这是什么 · 做到哪了 · 还欠什么」。
-> 完整手册见 `README.md`（818 行）；人的决策记录见 `DEVLOG.md`。
+> 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`。
 > 统计口径：`2026-10-18`，版本 `v2.4.3`，分支 `feature/groups`。
 
 ---
@@ -127,9 +127,9 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | --- | --- |
 | `SevenNote.ahk` | 全部源码，单文件 |
 | `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 / 版本历史 |
-| `PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
-| `PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
-| `DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
+| `docs/PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
+| `docs/PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
+| `docs/DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
 | `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
 | `tests/` | 端到端用户旅程演示（沙箱隔离，不碰真实 Vault） |
