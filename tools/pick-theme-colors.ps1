@@ -1,5 +1,5 @@
 <#
-    pick-theme-colors.ps1 -- suggest a SevenNote image-theme palette from a wallpaper.
+    pick-theme-colors.ps1 -- suggest a SevenWork image-theme palette from a wallpaper.
 
     Usage:
         powershell -NoProfile -ExecutionPolicy Bypass -File tools\pick-theme-colors.ps1 `

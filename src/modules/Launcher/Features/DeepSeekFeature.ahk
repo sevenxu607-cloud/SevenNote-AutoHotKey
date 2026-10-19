@@ -10,7 +10,7 @@
 ; 三条广播的语义、时序、失败兜底完全一致；接入步骤见 README「开发指南」。
 ;
 ; 有三处与终端不同，值得记下：
-;   ① **窗口怎么认**：终端能靠标题（"SevenNote PowerShell"）认，浏览器不能 ——
+;   ① **窗口怎么认**：终端能靠标题（"SevenWork PowerShell"）认，浏览器不能 ——
 ;      本机日常 Edge 里也开着 DeepSeek 网页，标题一样含 "DeepSeek"，靠标题一认就错。
 ;      这里改用「专用 profile → 独立进程树」的办法：窗口按 PID 认。
 ;   ② **尺寸与位置要自己给**：终端由 Windows Terminal 的 profile 决定落点（本机 744x1020），
@@ -266,7 +266,7 @@ class DeepSeekFeature {
         if (exe = "") {
             MsgBox("未找到可用的 Chromium 系浏览器（Edge / Chrome）。`n"
                 . "可在 _config.ini 的 [Paths] BrowserPath 指定浏览器路径。"
-                , "SevenNote", "Icon!")
+                , Config.AppName, "Icon!")
             return
         }
 
@@ -308,7 +308,7 @@ class DeepSeekFeature {
                 . ' --no-first-run --no-default-browser-check'
             Run(cmd)
         } catch as err {
-            MsgBox("启动浏览器失败：`n" . err.Message, "SevenNote", "Icon!")
+            MsgBox("启动浏览器失败：`n" . err.Message, Config.AppName, "Icon!")
             EventBus.Emit("Launcher.Failed")
             return
         }
@@ -345,7 +345,7 @@ class DeepSeekFeature {
             Sleep(20)
         }
 
-        MsgBox("浏览器已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+        MsgBox("浏览器已启动，但未能找到它的窗口。", Config.AppName, "Icon!")
         EventBus.Emit("Launcher.Failed")
     }
 

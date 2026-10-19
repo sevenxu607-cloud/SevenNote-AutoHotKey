@@ -5,7 +5,7 @@
 - 每个脚本首行必须有 `#Requires AutoHotkey v2.0`。
 - 本机解释器（64 位）：`D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe`
   （同值见 `.vscode/settings.json` → `AHK++.v2.file.interpreterPath`）
-- 源码编码：**UTF-8 无 BOM**（`src\SevenNote.ahk` 实测首字节为 `23 52 65`，即 `#Re`）。
+- 源码编码：**UTF-8 无 BOM**（`src\SevenWork.ahk` 实测首字节为 `23 52 65`，即 `#Re`）。
 - 换行：`.gitattributes` 规定 `*.ahk` 用 **CRLF**、`*.md` 用 **LF**。
 - **必须 64 位**运行/编译：32 位会导致 RichEdit 字符格式异常。
 
@@ -16,7 +16,7 @@
 - 函数调用必须带括号、字符串必须加引号：`MsgBox("hi")`。
 - `#HotIf` 取代 v1 的 `#If`。
 
-## 本项目踩过的坑（README / src\SevenNote.ahk 头注释原文）
+## 本项目踩过的坑（README / src\SevenWork.ahk 头注释原文）
 
 | 坑 | 说明 |
 | --- | --- |
@@ -41,7 +41,7 @@
 ## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
 
 - `OnError(OnScriptError)` —— 未捕获异常 → `Config.LogPath`
-  （**开发版 `<项目根>\.logs\_error.log`**；编译版 `%AppData%\SevenNote-Dev\_error.log`。
+  （**开发版 `<项目根>\.logs\_error.log`**；编译版 `%AppData%\SevenWork\_error.log`。
   含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
 - `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
 
@@ -52,4 +52,4 @@
   （照 `AutoSaveFeature.Tick` 的写法）；「这个分支很少发生」不是不写的理由，
   它们最终都会以一个留在屏幕上的模态框收场；
 - 用户报「按了没反应」时，**先看 `_error.log`**（开发版在项目根 `.logs\`，
-  编译版在 `%AppData%\SevenNote-Dev\`），再去枚举 `#32770` 读正文。
+  编译版在 `%AppData%\SevenWork\`），再去枚举 `#32770` 读正文。

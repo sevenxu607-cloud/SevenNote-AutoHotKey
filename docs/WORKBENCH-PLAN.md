@@ -1,10 +1,10 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 2 / 3a / 3b / 4 / 5 已完成（待人工验收）
+> 状态：设计定稿，Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已完成（待人工验收）
 > 最后更新：2026-10-19
-> 目录现状：运行代码已统一收进 `src/`，根 `SevenNote.ahk` 只是启动器；
+> 目录现状：运行代码已统一收进 `src/`，根 `SevenWork.ahk` 只是启动器；
 > 本文 Phase 0–5 记录里的 `WorkBench/`、`modules/` 路径是当时原貌，当前路径加 `src/` 前缀。
-> 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
+> 目标：把单文件 `SevenWork.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
 
 ---
@@ -89,7 +89,7 @@ SevenWork/
 再 `StatusBar.Init()`、`SearchFeature.Init()`、其余 Feature；最后 `BackdropFeature.Init(g)`。
 `LauncherModule.Init()` 必须在 `SevenNoteModule.Init()` 之后，确保伙伴窗口出现时笔记窗口已就绪。
 
-> 当前组合根（`SevenNote.ahk` 末尾的装配 + 启动段）就是这张表的基线；Phase 2 只搬位置，不改先后。
+> 当前组合根（`SevenWork.ahk` 末尾的装配 + 启动段）就是这张表的基线；Phase 2 只搬位置，不改先后。
 
 ---
 
@@ -289,14 +289,32 @@ class SevenNoteModule {
 - `Launcher.Move` 由模块级处理，`LauncherModule.Init()` 增加了只注册一次的守卫；
 - 移动事件是同步的，保持旧顺序（先伙伴、后笔记）；异步时序不变。
 
-### Phase 6 · 改名（最后做）
+### Phase 6 · 改名（已完成，待人工验收）
 
-- 主脚本 `SevenWork.ahk`、`Config.AppName`、AppData / `ConfigPath`、日志兜底路径、
-  README / docs / `.clinerules`、GitHub 仓库名；
-- AppData 迁移：`SevenNote-Dev` → `SevenWork-Dev`，复制 `_config.ini`（Vault / 主题 / 字体）；
-  DeepSeek profile 是否迁移由用户决定；
-- 验收：旧配置可读、Vault 不变、日志写到新目录、全部热键不变、编译产物可运行；
-- 风险：**不要与拆模块同批**；旧链接 301 但徽章 / Release 链接要同步。
+已完成：
+
+- 根启动器与组合根改名为 `SevenWork.ahk` / `src/SevenWork.ahk`，根启动器只
+  `#Include src\SevenWork.ahk`；
+- `Config.AppName`、`AppDataDir` / `ConfigPath` / `PandocPath`、日志兜底路径全部改为
+  `SevenWork` / `SevenWork-Dev` / `SevenWork\pandoc.exe`；
+- 新增 `MigrateLegacyAppData()`：首次升级时复制 `_config.ini`、`_deepseek-profile`、
+  `_deepseek.mode` 与旧 pandoc；旧 `SevenNote-Dev` 原样保留，不自动删除；
+- `PowerShellFeature` 窗口标题改为 `SevenWork PowerShell`，并保留旧
+  `SevenNote PowerShell` 的认窗兜底；消息框标题统一用 `Config.AppName`；
+- README / `docs/` / `.clinerules` 的路径与产品名同步；GitHub 仓库名 / Release 资产名
+  仍需在 GitHub 上手动改。
+
+验证：
+
+- 真实复制 DeepSeek profile **950,623,396 字节**，源 / 目标字节数一致；
+- 新入口 `SevenWork.ahk` 编译成功（64 位、PE `0x8664`），启动 6 秒存活且
+  `_error.log` 无新增；上下文热键仍须人工按键验收。
+
+代价 / 风险：
+
+- 首次升级启动要复制约 950MB profile，会多花几秒；
+- 旧 `SevenNote-Dev` 目录保留，确认新配置可用后再由用户删除；
+- GitHub 仓库名、徽章与 Release 链接不会因本地改名自动更新。
 
 ---
 

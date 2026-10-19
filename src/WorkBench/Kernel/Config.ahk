@@ -3,16 +3,19 @@
 ; Moved from SevenNote.ahk (Phase 1). Implementation unchanged.
 
 class Config {
-    static AppName := "SevenNote"
+    static AppName := "SevenWork"
     static Version := "2.4.3"
 
     ; ⚠ 配置目录与 pandoc 目录**故意不同**，不是笔误：
     ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按版本隔离 ——
-    ;     开发版走 SevenNote-Dev，发布版走 SevenNote，升级时不会互相覆盖配置。
+    ;     开发版走 SevenWork-Dev，发布版走 SevenWork，升级时不会互相覆盖配置。
     ;   · pandoc.exe 是 100+MB 的内嵌可执行文件，跨版本共用一份，不随配置目录搬家。
-    static AppDataDir := A_AppData . "\SevenNote-Dev"
-    static ConfigPath := A_AppData . "\SevenNote-Dev\_config.ini"
-    static PandocPath := A_AppData . "\SevenNote\pandoc.exe"
+    ; ⚠ 用 `=>` 简写属性：A_IsCompiled 在取值时才求值，源码运行与编译版各走各的目录。
+    static AppDataDir => A_IsCompiled
+        ? A_AppData . "\SevenWork"
+        : A_AppData . "\SevenWork-Dev"
+    static ConfigPath => this.AppDataDir . "\_config.ini"
+    static PandocPath := A_AppData . "\SevenWork\pandoc.exe"
 
     ; 报错日志落点：**开发版写项目根的 .logs\**，翻起来不用到处找；
     ; 编译版仍回 AppData —— exe 可能在桌面 / U 盘 / Program Files，那里
@@ -21,14 +24,14 @@ class Config {
     ;   不在类加载期赌内置变量是否已就绪。
     ; ⚠ 这两个身份别塞进上面的声明里 —— 它们依赖运行时内置变量。
     static LogDir => A_IsCompiled
-        ? A_AppData . "\SevenNote-Dev"
+        ? A_AppData . "\SevenWork"
         : A_ScriptDir . "\.logs"
     static LogPath => this.LogDir . "\_error.log"
 
     static GetVault() {
         v := ConfigService.Read("Paths", "Vault")
         if (v = "")
-            return A_MyDocuments . "\SevenNote"
+            return A_MyDocuments . "\SevenWork"
         return v
     }
     static SetVault(path) => ConfigService.Write("Paths", "Vault", path)

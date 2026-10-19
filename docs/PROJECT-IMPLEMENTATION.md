@@ -1,8 +1,8 @@
-# SevenNote 技术实现清单
+# SevenWork 技术实现清单
 
 > **用途**：回答「到底用了什么技术、实现了什么」—— 每条都是「技术手段 → 实现效果」。
 > 功能怎么用看 `../README.md`；项目全景看 `PROJECT-OVERVIEW.md`；人的决策看 `DEVLOG.md`。
-> 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `src/SevenNote.ahk` 为准**，本文只是索引。
+> 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `src/SevenWork.ahk` 为准**，本文只是索引。
 
 ---
 
@@ -253,10 +253,10 @@ class SevenNoteModule {
 ## 12. 用 `RunWait` + 内嵌 `pandoc.exe`，实现了 RTF → Markdown 转换
 
 ```
-"<AppData>\SevenNote\pandoc.exe" "<tmp>\in.rtf" -o "<vault>\2026-09-20.md" --extract-media=...
+"<AppData>\SevenWork\pandoc.exe" "<tmp>\in.rtf" -o "<vault>\2026-09-20.md" --extract-media=...
 ```
 
-- Pandoc 由 `FileInstall` 打包，首选释放到 `%AppData%\SevenNote\pandoc.exe`；
+- Pandoc 由 `FileInstall` 打包，首选释放到 `%AppData%\SevenWork\pandoc.exe`；
 - **软依赖**：探测不到就降级为纯文本 MD（笔记不丢）；
 - **可用性缓存**：探测到「可用」就永久记住 —— 否则每次 `Alt+Z` 隐藏都要 `RunWait`
   起一个 200MB 进程；
@@ -267,7 +267,7 @@ class SevenNoteModule {
 ## 13. 用 `OnError` + 旋转日志，实现了「程序不倒」
 
 - `OnError(OnScriptError)`：未捕获异常 → 写日志（消息 / 文件 / 行 / 调用栈）→ `return 1` **继续跑**；
-- 落点：开发版 `<项目根>\.logs\_error.log`，编译版 `%AppData%\SevenNote-Dev\_error.log`，
+- 落点：开发版 `<项目根>\.logs\_error.log`，编译版 `%AppData%\SevenWork\_error.log`，
   项目目录不可写时自动回退；
 - 超 **512KB** 自动轮转；
 - `#Warn VarUnset, OutputDebug`：未赋值变量警告不再弹模态框。
@@ -309,7 +309,7 @@ class SevenNoteModule {
 
 ## 维护说明
 
-- 本文**只做索引**，技术事实以 `src/SevenNote.ahk` 为准；消息号与 API 名随版本可能漂移；
+- 本文**只做索引**，技术事实以 `src/SevenWork.ahk` 为准；消息号与 API 名随版本可能漂移；
 - 改动下列任一模块时顺手更新对应条目：
 
 | 改了什么 | 更新哪条 |

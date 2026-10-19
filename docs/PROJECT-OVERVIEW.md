@@ -1,4 +1,4 @@
-# SevenNote 项目全景（一页纸）
+# SevenWork 项目全景（一页纸）
 
 > **用途**：一屏看完「这是什么 · 做到哪了 · 还欠什么」。
 > 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`；
@@ -20,7 +20,7 @@
 
 | 项 | 数值 |
 | --- | --- |
-| 源码 | 根 `SevenNote.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
+| 源码 | 根 `SevenWork.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
 | 类 | 34 个 = Kernel 4 + Service 8 + StatusBar 1 + Feature 21 |
 | 文档 | `README.md` 818 行（含 v2.2 → v2.4.3 版本历史） |
 | 发行物 | 编译后约 250 MB（含内嵌 Pandoc 100+ MB） |
@@ -73,8 +73,8 @@
 ├── _assets/2026-09-20/image1.png   ★ 图片统一收纳
 └── _tmp/                           Pandoc 临时目录（自动清理）
 
-%AppData%\SevenNote\                pandoc.exe（100+MB，两版共用）
-%AppData%\SevenNote-Dev\            _config.ini、_error.log（编译版）
+%AppData%\SevenWork\                pandoc.exe（100+MB，两版共用）
+%AppData%\SevenWork\                _config.ini、_error.log（编译版）
 <项目根>\.logs\_error.log           开发版报错日志（已 gitignore）
 ```
 
@@ -126,8 +126,8 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 
 | 路径 | 用途 |
 | --- | --- |
-| `SevenNote.ahk` | 根目录启动器：把入口转给 `src/`，保持项目根为 `A_ScriptDir` |
-| `src/SevenNote.ahk` | 组合根：装配 + 启动 |
+| `SevenWork.ahk` | 根目录启动器：把入口转给 `src/`，保持项目根为 `A_ScriptDir` |
+| `src/SevenWork.ahk` | 组合根：装配 + 启动 |
 | `src/WorkBench/` | 平台层：Kernel / 热键路由 / 模块登记 / 帮助 / 伙伴协调 |
 | `src/modules/SevenNote/` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 生命周期 |
 | `src/modules/Launcher/` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 生命周期 |

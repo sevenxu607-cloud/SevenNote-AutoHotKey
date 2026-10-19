@@ -1,4 +1,4 @@
-# SevenNote 开发日志
+# SevenWork 开发日志
 
 > 这份文件记录**人的输入、判断与方向**，不记录代码实现细节（那些在 `../README.md` 的版本历史里）。
 > 由 AI 在每次会话结束时按 `.clinerules/06-devlog.md` 追加；历史条目只追加、不改写。
@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b 已实现
-- **最近一次改动**：Phase 5b：`SevenNote.Move` / `Launcher.Move` 接管窗口，移除 `Peer.*` 桥接
-- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 / 5b 人工验收（需关闭现有实例）
-- **下一步**：推送提交、用新入口编译验证，然后进入 Phase 6 改名
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
+- **最近一次改动**：Phase 6：改名为 `SevenWork`，配置 / DeepSeek profile / pandoc 迁到新 AppData
+- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 人工验收（需关闭现有实例）
+- **下一步**：推送 Phase 6 提交、人工验收，然后在 GitHub 改仓库名 / Release 资产名
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -32,12 +32,14 @@
 - [x] Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，`Alt+Shift+C` 与动态 HJKL 归模块
 - [x] Phase 5：`WorkBenchUI` 统一帮助，`HotkeyRouter.RegisterAll()` 聚合平台 + 模块热键
 - [x] Phase 5b：Move 事件接管窗口，移除 `Peer.*` 桥接
+- [x] Phase 6：改名 `SevenWork`，迁移配置 / DeepSeek profile / pandoc
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
-- [x] 运行代码统一收进 `src/`，根 `SevenNote.ahk` 只做启动器
-- [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
+- [x] 运行代码统一收进 `src/`，根 `SevenWork.ahk` 只做启动器
+- [x] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 实现；E2E 待模块接口稳定后重建
 - [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
 - [ ] Phase 5 人工验收：`Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
 - [ ] Phase 5b 人工验收：`Alt+C` / `Alt+X` 呼出 / 隐藏 / 切换、笔记让位、重启认回窗口
+- [ ] Phase 6 人工验收：全部热键、`Alt+C` / `Alt+X`、保存、重启后配置与 DeepSeek 登录仍在
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -58,6 +60,33 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 23:25　Phase 6：改名 SevenWork 并迁移 AppData
+
+**我说**（原话）
+> 开始 Phase 6：配置和 DeepSeek profile 都迁到 SevenWork-Dev（会复制约 950MB）
+
+**意图**
+把脚本名、`AppName`、AppData 与文档里的产品名统一成 `SevenWork`；DeepSeek profile 一起迁移，
+避免升级后重新登录。
+
+**决定 / 过程**
+- 根启动器与组合根改为 `SevenWork.ahk` / `src/SevenWork.ahk`；`Config.AppName`、AppData、
+  `PandocPath`、日志兜底路径同步；
+- 新增 `MigrateLegacyAppData()`：首次升级复制 `_config.ini`、`_deepseek-profile`、
+  `_deepseek.mode` 与旧 pandoc；旧 `SevenNote-Dev` 保留不删；
+- 源码运行走 `SevenWork-Dev`，编译版走 `SevenWork`（`A_IsCompiled` 分流）；
+- 真实复制 profile **950,623,396 字节**，源 / 目标字节数一致；新入口语法预检 `exit=0`、
+  真机启动 6 秒存活、`_error.log` 无新增，`Alt+Z` 窗口标题为 `SevenWork`。
+
+**代价 / 风险**
+- 首次升级要复制约 950MB，启动会多花几秒；旧目录需用户确认后再删；
+- GitHub 仓库名 / Release 资产名不会自动改；上下文热键仍只能人工验收。
+
+**待办**
+- [ ] 人工验收全部热键、`Alt+C` / `Alt+X`、保存与重启后的 DeepSeek 登录
+- [ ] GitHub 仓库改名并同步徽章 / Release 链接
+- [ ] 确认新配置可用后删除旧 `SevenNote-Dev`
 
 ### 2026-10-19 23:05　Phase 5b：Move 事件接管窗口
 

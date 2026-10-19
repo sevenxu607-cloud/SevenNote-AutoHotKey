@@ -15,7 +15,7 @@ Persistent()
 #Warn VarUnset, OutputDebug
 
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenNote —— v2.4.3
+;  SevenWork —— v2.4.3
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
 ;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+H 帮助窗口底部），改这里要一并改它。
 ;
@@ -61,7 +61,7 @@ Persistent()
 ;    FEATURE 功能层（21 项，按用户旅程排列）→ SERVICE 服务层（8 项，纯能力）
 ;     → KERNEL 骨架层（4 项：生命周期 / 状态 / 事件 / 配置）
 ;     → 表示层 StatusBar → 组合根（装配 + 启动，在文件末尾）
-;    Kernel 实现在 src/WorkBench/Kernel/；SevenNote 的 7 个 Service、StatusBar、
+;    Kernel 实现在 src/WorkBench/Kernel/；SevenNote 模块的 7 个 Service、StatusBar、
 ;    18 个 Feature 与模块生命周期在 src/modules/SevenNote/。
 ;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册与帮助窗口已分别归
 ;    src/WorkBench/HotkeyRouter.ahk 与 src/WorkBench/WorkBenchUI.ahk。
@@ -79,8 +79,8 @@ Persistent()
 ;    8. 路径分离
 ;    9. assets 统一收纳（v1.7）
 ;   10. pandoc 文件大小检查（v1.9）
-;   11. 伴生窗口适配走 Peer.* 通用契约（v2.0）—— 发布方只广播三个事件，
-;       摆位 / 记忆 / 失败兜底全在 WindowFeature 里，见 README「添加呼出外部窗口的功能」
+;   11. 伴生窗口适配走 Launcher.* / SevenNote.Move 事件 —— 发布方只广播生命周期，
+;       摆位 / 记忆 / 失败兜底在 WindowFeature 与 PeerCoordinator 里，见 README「添加呼出外部窗口的功能」
 ;   12. 背景图主题只是 Themes 数组里的普通成员（v2.2）—— 切到铺图、切走撤图，没有全局开关
 ;   13. 编辑区滚动条与标题栏跟着主题明暗走（v2.3）
 ;
@@ -283,7 +283,7 @@ Persistent()
 ; 屏幕上），只能手动杀进程 —— 项目在 v2 迁移期踩过三次（见 .clinerules/03）。
 ; 这里改成「写日志 + 继续跑」：单个 Feature 出错不该拖垮整个程序。
 ; 注册点放在这里（而不是文件更早处）是因为 LogError 要先建日志目录
-; （开发版项目根 .logs\、编译版 %AppData%\SevenNote-Dev\），
+; （开发版项目根 .logs\、编译版 %AppData%\SevenWork\），
 ; 而其中的 AppData 目录就在下面几行才建。
 OnError(OnScriptError)
 
@@ -300,7 +300,7 @@ OnScriptError(err, mode) {
 }
 
 ; 追加一条到日志（落点见 Config.LogPath：开发版 .logs\_error.log，
-; 编译版 %AppData%\SevenNote-Dev\_error.log）。
+; 编译版 %AppData%\SevenWork\_error.log）。
 ; 超 512 KB 就轮转（删掉重来）—— 日志只用来事后定位，不归档。
 LogError(msg) {
     entry := "── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n" . msg . "`r`n`r`n"
@@ -313,15 +313,50 @@ LogError(msg) {
     } catch {
         ; 项目目录只读 / 被占用时退回 AppData —— 日志丢一次就白查了
         try {
-            fallbackDir := A_AppData . "\SevenNote-Dev"
+            fallbackDir := Config.AppDataDir
             DirCreate(fallbackDir)
             FileAppend(entry, fallbackDir . "\_error.log", "UTF-8")
         }
     }
 }
 
+; ═══ Phase 6：旧版数据迁移 ═══
+; 新路径已有同名项时一律跳过；旧目录原样保留，确认新配置可用后再由用户删除。
+; 复制失败不阻断启动 —— 新目录会退回默认配置 / 重新创建 profile。
+MigrateLegacyAppData() {
+    oldDir := A_AppData . "\SevenNote-Dev"
+    if !DirExist(oldDir)
+        return
+
+    oldConfig := oldDir . "\_config.ini"
+    if !FileExist(Config.ConfigPath) && FileExist(oldConfig)
+        try FileCopy(oldConfig, Config.ConfigPath, false)
+
+    ; DeepSeek profile 是独立 Edge 用户目录（约 950MB），只在目标不存在时整目录复制
+    oldProfile := oldDir . "\_deepseek-profile"
+    newProfile := Config.AppDataDir . "\_deepseek-profile"
+    if !DirExist(newProfile) && DirExist(oldProfile)
+        try DirCopy(oldProfile, newProfile, false)
+
+    ; 模式是小文件；pid 指向旧进程，绝不复制
+    oldMode := oldDir . "\_deepseek.mode"
+    newMode := Config.AppDataDir . "\_deepseek.mode"
+    if !FileExist(newMode) && FileExist(oldMode)
+        try FileCopy(oldMode, newMode, false)
+
+    ; pandoc 也是跨版本共用的独立目录；旧文件存在就不必重新解包
+    oldPandoc := A_AppData . "\SevenNote\pandoc.exe"
+    if !FileExist(Config.PandocPath) && FileExist(oldPandoc)
+        try FileCopy(oldPandoc, Config.PandocPath, false)
+}
+
 ; ═══ 确保 AppData 目录存在 ═══
 DirCreate(Config.AppDataDir)
+
+; ═══ Phase 6：迁移旧版 SevenNote-Dev 数据 ═══
+; 只在新路径缺失时复制，旧目录保留；DeepSeek profile 约 950MB，
+; 首次升级启动会多花几秒，之后各路径已存在就直接跳过。
+MigrateLegacyAppData()
 
 ; ═══ 打包 pandoc.exe（v1.9 修复）═══
 ; 【关键修复】
@@ -331,9 +366,9 @@ DirCreate(Config.AppDataDir)
 ;   · 只在文件不存在或 < 1MB 时才释放
 ; ⚠ 编译前把下面的源路径改成你本机 pandoc.exe 的实际路径
 ; ⚠ 编译时务必确认源文件是 100+ MB 的 x86_64 版 pandoc
-if !FileExist(A_AppData . "\SevenNote\pandoc.exe") || FileGetSize(A_AppData . "\SevenNote\pandoc.exe") < 1048576 {
-    try FileDelete(A_AppData . "\SevenNote\pandoc.exe")
-    FileInstall "C:\Users\Seven\AppData\Local\Pandoc\pandoc.exe", A_AppData . "\SevenNote\pandoc.exe", 1
+if !FileExist(Config.PandocPath) || FileGetSize(Config.PandocPath) < 1048576 {
+    try FileDelete(Config.PandocPath)
+    FileInstall "C:\Users\Seven\AppData\Local\Pandoc\pandoc.exe", A_AppData . "\SevenWork\pandoc.exe", 1
 }
 
 ; ═══ 加载 RichEdit 控件库 ═══
@@ -388,7 +423,7 @@ EnsureVaultConfigured() {
     if (vault != "" && DirExist(vault))
         return
 
-    defaultPath := A_MyDocuments . "\SevenNote"
+    defaultPath := A_MyDocuments . "\SevenWork"
     if (vault != "")
         defaultPath := vault
 

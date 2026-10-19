@@ -1,9 +1,9 @@
 #Requires AutoHotkey v2.0
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenNote 启动器
+;  SevenWork 启动器
 ;  运行代码统一收纳在 src\；本文件只负责把入口转进去。
 ;  这样可以保持 A_ScriptDir 指向项目根，开发版 .logs\ 与文档 / 工具路径不变。
 ;  正常使用：双击本文件（A_ScriptDir = 项目根，日志在 .logs\）；
-;  开发调试：也可直接运行 src\SevenNote.ahk（此时 A_ScriptDir = src，日志在 src\.logs\）。
+;  开发调试：也可直接运行 src\SevenWork.ahk（此时 A_ScriptDir = src，日志在 src\.logs\）。
 ; ═══════════════════════════════════════════════════════════════════════════
-#Include src\SevenNote.ahk
+#Include src\SevenWork.ahk

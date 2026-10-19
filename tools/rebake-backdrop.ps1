@@ -1,5 +1,5 @@
 <#
-    rebake-backdrop.ps1 -- rebuild a SevenNote image-theme backdrop from a hi-res source.
+    rebake-backdrop.ps1 -- rebuild a SevenWork image-theme backdrop from a hi-res source.
 
     Two jobs, and both matter:
 

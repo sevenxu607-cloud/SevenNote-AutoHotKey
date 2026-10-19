@@ -15,7 +15,9 @@
 class PowerShellFeature {
     static _initialized := false
     static _powershellPath := A_WinDir . "\System32\WindowsPowerShell\v1.0\powershell.exe"
-    static _windowTitle := "SevenNote PowerShell"
+    static _windowTitle := "SevenWork PowerShell"
+    ; Phase 6 改名前的窗口标题：升级后仍能认回旧终端，避免「Alt+C 又开一个」
+    static _legacyWindowTitle := "SevenNote PowerShell"
 
     static Init() {
         if (this._initialized)
@@ -52,6 +54,8 @@ class PowerShellFeature {
         DetectHiddenWindows(true)
         try {
             ids := WinGetList(this._windowTitle)
+            if !ids.Length
+                ids := WinGetList(this._legacyWindowTitle)
             return ids.Length ? ids[1] : 0
         } finally {
             DetectHiddenWindows(detectHidden = "On")
@@ -144,7 +148,7 @@ class PowerShellFeature {
 
     static _LaunchPowerShell() {
         if !FileExist(this._powershellPath) {
-            MsgBox("未检测到 Windows PowerShell，无法使用 Alt+C 启动。", "SevenNote", "Icon!")
+            MsgBox("未检测到 Windows PowerShell，无法使用 Alt+C 启动。", Config.AppName, "Icon!")
             return
         }
 
@@ -172,7 +176,7 @@ class PowerShellFeature {
             ; 藏窗口绕过它，等于把整台终端换掉。
             Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
         } catch as err {
-            MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
+            MsgBox("启动 PowerShell 失败：`n" . err.Message, Config.AppName, "Icon!")
             EventBus.Emit("Launcher.Failed")
             return
         }
@@ -192,7 +196,7 @@ class PowerShellFeature {
         if (hwnd != 0) {
             this._ShowAndFocus(hwnd)
         } else {
-            MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+            MsgBox("PowerShell 已启动，但未能找到它的窗口。", Config.AppName, "Icon!")
             EventBus.Emit("Launcher.Failed")
         }
     }

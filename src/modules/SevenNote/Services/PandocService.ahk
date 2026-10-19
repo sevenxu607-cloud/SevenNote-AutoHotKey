@@ -24,7 +24,7 @@ class PandocService {
     }
 
     ; ─── 返回可用的 pandoc 命令 ───（v1.9 修复：加大小检查）
-    ; 优先 %AppData%\SevenNote\pandoc.exe（必须有效）
+    ; 优先 %AppData%\SevenWork\pandoc.exe（必须有效）
     ; 否则退化到系统 PATH 里的 pandoc
     static GetCmd() {
         p := Config.PandocPath
