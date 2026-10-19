@@ -189,14 +189,17 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 1. 安装 [AutoHotkey v2](https://www.autohotkey.com/)
 2. 安装 [Pandoc](https://mirrors.lzu.edu.cn/)（国内镜像，选 `x86_64` 版）
-3. 把 `SevenNote.ahk` 放任意位置，双击运行
+3. 把整个项目目录放任意位置，双击 `SevenNote.ahk`（它通过 `#Include` 读取 `WorkBench/` 与 `modules/`）
 4. 首次运行会弹框让你选笔记目录
 
 仓库里的其它东西：
 
 | 路径 | 用途 |
 | --- | --- |
-| `SevenNote.ahk` | 全部源码，单文件 |
+| `SevenNote.ahk` | 组合根：装配 + 启动 |
+| `WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 帮助 / 伙伴协调 |
+| `modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
+| `legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `screenshots\` | README 配图 |
 | `docs\` | 项目文档：`DEVLOG.md`（开发日志）、`PROJECT-OVERVIEW.md`（一页纸全景）、`PROJECT-IMPLEMENTATION.md`（技术清单）、`WORKBENCH-PLAN.md`（工作台化路线） |
@@ -929,7 +932,7 @@ DeepSeekH=1020
 #### 设计思考：为什么「呼出 + 窗口自适应」这么贵
 
 > 这一节不是操作指南，是一份**成本账** —— 给将来想再挂一个外挂窗口的人（包括我自己）一个判断依据。
-> 数据取自 2026-10-17 对 `SevenNote.ahk` 的实测统计。
+> 数据取自 2026-10-17 单体版 `SevenNote.ahk` 的实测统计（拆分后代码位置变了，成本量级不变）。
 
 **先把两件事分开**：
 

@@ -1,0 +1,521 @@
+#Requires AutoHotkey v2.0
+; ======================================================================
+;  WindowFeature.ahk
+;  Moved verbatim from SevenNote.ahk (Phase 2); behavior unchanged.
+; ======================================================================
+
+class WindowFeature {
+    ; ═══ 伴生窗口适配（peer docking）═══
+    ; 「呼出一个外部窗口 → 笔记窗口自动让位 / 堆叠」这套机制对所有 Feature 通用，
+    ; 不限于终端 —— 以后要换成资源管理器、Obsidian、浏览器，照同一份契约做即可。
+    ; 契约就三个事件，详见 README「开发指南 → 添加呼出外部窗口的功能」：
+    ;   Peer.Preparing  外部窗口**即将露面**   → 笔记窗口先退场（别当着用户的面搬它）
+    ;   Peer.Placed     已落位，带 {hwnd, x, y, w, h}（**真实**窗口矩形）→ 笔记窗口按它摆
+    ;   Peer.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
+    ; 发布方只管广播这三条；订阅、摆放算法全在本类里，接入新窗口不用改它。
+    ;
+    ; ⚠ **只适配一次**：真正会动笔记窗口的只有「第一次」，适配完就置位 _docked，
+    ;   此后三条事件一律不再碰它（语义与理由见 _docked 的注释）。所以上面那句
+    ;   「先退场」也只发生在第一次 —— 过了那一回，伙伴再怎么呼出隐藏，笔记都纹丝不动。
+    ;
+    ; 伴生窗口的位置与尺寸（发布方摆好后广播过来）。
+    ; 非对象 = 屏幕上没有伴生窗口，呼出时按记忆位置 / 默认落点走。
+    static _peerRect := ""
+
+    ; 当前窗口位置是不是「与伴生窗口上下堆叠」摆出来的。是的话收窗口时不覆盖位置记忆 ——
+    ; 那份坐标和高度都是临时算的（见 _StackWithPeer），不该被当成用户摆的格局。
+    static _stacked := false
+
+    ; 堆叠前窗口的位置与尺寸。堆叠是临时布局，脱离（伴生窗口关掉）后要照这份底稿还原 ——
+    ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
+    static _preStackRect := ""
+
+    ; 是否已经为伴生窗口「适配过一次」。置位之后，Peer.* 三条事件一律不再碰笔记窗口 ——
+    ; 这是本机制现在的核心语义：用顺了之后，笔记的尺寸位置就是用户自己的格局，
+    ; 不该每次呼出终端 / DeepSeek 都被重算、重摆一遍。
+    ;
+    ; ⚠ 刻意**不落盘**。位置记忆（State._hiddenX 那一组）本来就是纯内存的，重启即丢、
+    ;   笔记回到默认落点 —— 那时本来就需要重新落位一次。于是「重启程序 = 重新适配一次」
+    ;   这个逃生门是自然存在的，不必额外加配置项，也不必往用户的 _config.ini 里写状态。
+    static _docked := false
+
+    ; ─── 挂载：订阅伴生窗口生命周期 ───
+    ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
+    static Init() {
+        EventBus.On("Peer.Placed",    (rect) => this._OnPeerPlaced(rect))
+        EventBus.On("Peer.Preparing", (*)    => this._CollapseForPeer())
+        EventBus.On("Peer.Failed",    (*)    => this._RestoreAfterFailedPeer())
+    }
+
+    ; 伴生窗口马上要露面，先让笔记窗口退场。**只在第一次** —— 已经适配过的格局不再动。
+    ;
+    ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：伙伴落位后
+    ; _AdaptToPeer 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
+    ; 「隐藏态下把位置尺寸算好、最后一次性露面」（见 _PlaceWindow）。不这么做的话，
+    ; 就是当着用户的面把一个**已经显示**的窗口搬去堆叠位，平移与控件重排连在一起，
+    ; 看着就是「飘一下」。
+    ;
+    ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
+    ; 与用户自己按 Alt+Z 收起完全同一条路。这份记忆随后正好被 _AdaptToPeer 拿来
+    ; 判断「伙伴会不会压到笔记原来待的地方」。
+    static _CollapseForPeer() {
+        if this._docked
+            return
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            this.Hide()
+    }
+
+    ; 伴生窗口最终没起来（Run 抛错，或等满超时都找不到窗口）—— 刚才为它让位而收起的
+    ; 窗口得还回来。少了这条兜底，用户按一次 Alt+C，屏幕上就什么都剩不下。
+    ; 记忆里那份 _peerRect 若指向已消失的窗口，_StackWithPeer 开头有 alive
+    ; 检查兜着，Show() 会自行回落到记忆位置 / 默认落点。
+    static _RestoreAfterFailedPeer() {
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            return
+        this.Show()
+    }
+
+    ; 记下伴生窗口的位置，再让笔记窗口适配 —— 两步都要做：
+    ; 少记一步（this._peerRect := rect）的话，_StackWithPeer 没有分区依据，
+    ; 会直接退回记忆位置。
+    static _OnPeerPlaced(rect) {
+        this._peerRect := rect
+        this._AdaptToPeer(rect)
+    }
+
+    ; 伴生窗口落位了 → 决定笔记窗口要不要动。三种情形：
+    ;   ① 已经适配过       → 一个坐标都不改（_docked）
+    ;   ② 伙伴没压到它身上 → 原样还回来，一个坐标都不改，然后固定下来
+    ;   ③ 真压上了         → 按原设计适配一次，然后固定下来
+    ;
+    ; 「② 不冲突就不动」是这套机制现在的要害：笔记摆在左边、伙伴在右下，两者互不
+    ; 妨碍 —— 那就谁也别动谁。改之前是无条件重算重摆，于是每次呼出都把用户自己
+    ; 摆好的格局冲掉，笔记窗口次次跟着伙伴动。
+    static _AdaptToPeer(rect) {
+        if !State.GetGuiHwnd()
+            return
+        if this._docked
+            return
+
+        ghwnd := State.GetGuiHwnd()
+
+        ; 笔记此刻多半已被 _CollapseForPeer 收走，位置取 Hide 时刚记下的那份 ——
+        ; 那正是「笔记原来待的地方」，该拿它去比。万一它还显示着（订阅缺失，或将来
+        ; 有别的来源广播 Peer.Placed），就现量一个。
+        noteRect := State.HasHiddenRect()
+            ? State.GetHiddenRect()
+            : this._CurrentRect(ghwnd)
+
+        if IsObject(noteRect) && IsObject(rect) && !this._RectsOverlap(noteRect, rect) {
+            ; ── 不冲突：原样还回来，坐标尺寸一字不动 ──
+            ; ⚠ 必须**先固定、再 Show**。Show 内部会走 _PlaceWindow → _StackWithPeer，
+            ;   那时 _docked 已置位，于是它退回「记忆位置」= 刚 Hide 时记下的那份，
+            ;   窗口正好回到原处。顺序反了就会在 Show 里被重新堆叠一次，白固定。
+            this._FreezeDocked(ghwnd)
+            if !this.IsShowing()
+                this.Show()
+            return
+        }
+
+        ; ── 冲突（或量不到笔记矩形，保守当作冲突）：按原设计适配一次 ──
+        ; ⚠ 先收再摆：_StackWithPeer 要改位置改尺寸，这一整段不该被看见
+        ;   （理由同 _CollapseForPeer）。若它已经收过，这次调用会跳过。
+        if this.IsShowing()
+            this.Hide()
+        this.Show()
+        ; 真摆成了才算「适配过一次」：没摆成（屏幕太矮等，_StackWithPeer 返回 false
+        ; 让窗口退回了记忆位置）就不置位，留着以后还有机会再试。
+        if this._stacked
+            this._FreezeDocked(ghwnd)
+    }
+
+    ; 两个矩形是否相交 —— 即「有没有一块地方同时被两个窗口占着」。
+    ; 两个入参都只用到 {x, y, w, h} 这四个字段，不关心别的。
+    static _RectsOverlap(a, b) {
+        return (a.x < b.x + b.w && a.x + a.w > b.x
+            && a.y < b.y + b.h && a.y + a.h > b.y)
+    }
+
+    ; 窗口当前的矩形；窗口没了、或位置不可用（最小化停放位）时返回 ""。
+    ; ⚠ 要开 DetectHiddenWindows：笔记可能正处在 Hide() 之后的状态，而 WinGetPos
+    ;   默认忽略隐藏窗口、直接抛错。用完恢复原值，免得改变其它代码的可见性语义。
+    static _CurrentRect(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } catch {
+            ; 显式赋空：AHK v2 里未赋值的变量参与比较会触发 VarUnset 警告
+            x := "", y := "", w := "", h := ""
+        }
+        DetectHiddenWindows(detectOld)
+        if !this.IsUsableRect(x, y, w, h)
+            return ""
+        return {x: x, y: y, w: w, h: h}
+    }
+
+    ; 把这次适配的结果「转正」成用户格局，此后不再联动。三件事都要做，少一件都露馅：
+    ;   ① 留下的矩形成为正式格局 —— 在这之前它是 _preStackRect 那份临时底稿；
+    ;   ② 清掉堆叠态标记，_RememberPosition 从此走非堆叠分支，日后如实记录用户的拖动；
+    ;   ③ 置位 _docked。
+    ; ⚠ 只有窗口正显示着才量矩形：隐藏态下 State 里已经有 Hide() 记下的那份（就是
+    ;   用户原来的位置），留着它才对 —— 那时量出来的也是同一个值，多此一举。
+    static _FreezeDocked(ghwnd) {
+        this._docked := true
+        this._stacked := false
+        this._preStackRect := ""
+        if !this.IsShowing()
+            return
+        rect := this._CurrentRect(ghwnd)
+        if IsObject(rect)
+            State.SetHiddenRect(rect.x, rect.y, rect.w, rect.h)
+    }
+
+    ; ─── 入口：Alt+Z ───
+    static Toggle() {
+        if this.IsShowing()
+            this.Hide()
+        else
+            this.Show()
+    }
+
+    ; 判断“当前是否正在显示”。
+    ; 注意：最小化窗口的 WS_VISIBLE 仍是 1，必须连同 IsIconic 一起排除；
+    ; 否则最小化状态下按 Alt+Z 会被误判成“正在显示”而执行隐藏，越按越找不着。
+    static IsShowing() {
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return false
+        return DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            && !DllCall("IsIconic", "ptr", hwnd, "int")
+    }
+
+    ; ─── 收起：先广播、再记位置、最后隐藏 ───
+    static Hide() {
+        g := State.GetGui()
+        EventBus.Emit("Window.BeforeHide")
+        this._RememberPosition(g.Hwnd)
+        g.Hide()
+    }
+
+    ; ─── 呼出：暂停重绘 → 定位 → 还原光标 → 恢复重绘 → 激活 ───
+    static Show() {
+        g := State.GetGui()
+        hwnd := State.GetEd()
+        ghwnd := g.Hwnd
+        try {
+            this._SuspendRedraw(hwnd)
+            this._PlaceWindow(g, ghwnd)
+            this._RestoreCaret(hwnd)
+            this._ResumeRedraw(hwnd)
+            DllCall("RedrawWindow", "ptr", hwnd, "ptr", 0, "ptr", 0
+                , "uint", 0x0001 | 0x0100)
+        } finally {
+            try this._ResumeRedraw(hwnd)
+        }
+        WinActivate("ahk_id " . ghwnd)
+        EventBus.Emit("Window.Shown")
+    }
+
+    ; ═══ 位置记忆与定位 ═══
+
+    ; 记住当前窗口位置，供下次呼出还原。
+    ; 只记屏幕内的有效位置；屏幕外坐标（最小化停放位、已拔掉的外接屏）一律丢弃
+    ; 并清空记忆，让 Show() 回落到默认落点——否则窗口会被永久搬到看不见的地方。
+    ;
+    ; 若当前是按「与伴生窗口上下堆叠」摆出来的，位置和高度都是临时算的 —— 改用堆叠前的底稿，
+    ; 不覆盖记忆；否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
+    static _RememberPosition(hwnd) {
+        ; ⚠ 底稿**用完不丢**：堆叠态下隐藏只是「暂时收起来」，用户随时会 Alt+C 再摆回来，
+        ;   那时仍要按同一份底稿记。真正作废是在下面的非堆叠分支 —— 那时窗口的位置
+        ;   就是用户自己的格局，底稿已完成使命。
+        if this._stacked {
+            this._stacked := false
+            pre := this._preStackRect
+            if IsObject(pre) && this.IsUsableRect(pre.x, pre.y, pre.w, pre.h) {
+                State.SetHiddenRect(pre.x, pre.y, pre.w, pre.h)
+                return
+            }
+            State.ClearHiddenRect()
+            return
+        }
+        ; 非堆叠态：当前坐标就是用户自己的格局 —— 正常记忆，并作废旧底稿
+        this._preStackRect := ""
+        try
+            WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . hwnd)
+        catch
+            return
+        if this.IsUsableRect(rectX, rectY, rectW, rectH)
+            State.SetHiddenRect(rectX, rectY, rectW, rectH)
+        else
+            State.ClearHiddenRect()
+    }
+
+    ; 位置可用性：必须与某个显示器的工作区相交。
+    ; 最小化窗口的坐标是 -32000 一类的停放位（会按 DPI 缩放成 -21333 等），
+    ; 而它的 WS_VISIBLE 仍为真，只靠可见性判断拦不住。
+    static IsUsableRect(x, y, w, h) {
+        ; 数值守卫：State 里未初始化的记忆值是空字符串，
+        ; 而 AHK v2 的 <= 遇到空字符串会抛「Expected a Number」
+        if !(IsNumber(x) && IsNumber(y) && IsNumber(w) && IsNumber(h))
+            return false
+        if (w <= 0 || h <= 0)
+            return false
+        loop MonitorGetCount() {
+            MonitorGetWorkArea(A_Index, &wkLeft, &wkTop, &wkRight, &wkBottom)
+            if (x < wkRight && y < wkBottom && x + w > wkLeft && y + h > wkTop)
+                return true
+        }
+        return false
+    }
+
+    ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
+    ;
+    ; ⚠ 全程在「隐藏」状态下完成 —— 先 Show 再 Move 会让窗口先在 AHK 的默认落点露面，
+    ;   约 190ms 后才跳到目标位置（实测 924,357 → 1629,238），视觉上就是「飘一下」。
+    ;   Show("Hide") 先把窗口建好、让 OnSize 把控件布局跑完，位置算准了再一次性露面。
+    ;
+    ; ⚠ 尺寸不硬设 —— 本机 150% 缩放（A_ScreenDPI = 144）下 Gui 控件坐标会按 DPI 放大 1.5 倍，
+    ;   窗口最小尺寸由控件固有尺寸决定（逻辑 +MinSize450x300 → 物理 675x450），
+    ;   而 Gui 控件坐标是「逻辑单位」、WinMove 收「物理像素」。
+    ;   实测把 450x550 直接传给 WinMove：宽被 675 的最小宽拒绝、高却通过了，窗口被压矮
+    ;   （881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
+    static _PlaceWindow(g, ghwnd) {
+        ; 定位全程在隐藏状态下做：Show("Hide") 过的窗口 WS_VISIBLE 仍是 0，
+        ; 而 WinGetPos 默认不认隐藏窗口（会直接抛错）—— 项目里 BackdropFeature 踩过同一个坑。
+        ; 用完恢复原值，免得改变其它代码的可见性语义。
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            g.Show("Hide")
+
+            ; 伴生窗口在屏幕上时按「同宽上下堆叠」摆放 —— 两个窗口拼成一列，界面规整。
+            ; 摆不成（伙伴已被关掉、或屏幕塞不下两窗）才退回记忆位置 / 默认落点。
+            if !this._StackWithPeer(ghwnd) {
+                rect := State.GetHiddenRect()
+                if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
+                    ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
+                    ;   （本机 1.5）。而 rect 来自 WinGetPos，是「物理像素」——喂给 g.Move 会被
+                    ;   二次放大（实测 1629,238 → 2444,357）。WinMove 与 WinGetPos 同一单位，配套。
+                    WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+                } else {
+                    State.ClearHiddenRect()
+                    this._MoveToDefault(g, ghwnd)
+                }
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+
+        g.Show()
+        WinRestore("ahk_id " . ghwnd)
+    }
+
+    ; 与伴生窗口上下堆叠成规整的一列：同宽、左边对齐、上下紧贴。
+    ; 笔记窗口固定在伴生窗口上方，顶边贴工作区顶部，宽度跟着伴生窗口走。
+    ;
+    ; 伴生窗口若已在屏幕下半区（上方能容下笔记窗口）就原地不动；
+    ; 若它贴着屏幕顶部、上方塞不下，就把它**下移**到底边贴工作区底 ——
+    ; 只改位置、尺寸一字不动，腾出上半屏给笔记窗口。
+    ; 两步都不成立（屏幕太矮、两窗叠起来放不下）才返回 false，交回记忆位置处置。
+    ;
+    ; ⚠ 这套算法假定「伙伴在下、笔记在上」。以后接入的窗口若更适合左右并排，
+    ;   改的就是这里 —— 发布方一行不用动（见 README 同名小节）。
+    ; 调用方需已开 DetectHiddenWindows（窗口可能还是 Show("Hide") 状态）。
+    static _StackWithPeer(ghwnd) {
+        pr := this._peerRect
+        if !IsObject(pr)
+            return false
+
+        ; 已经适配过一次 → 格局已定，绝不再按伴生窗口的位置重算。
+        ;   本方法有两条调用路径，这一条把两条都管住：
+        ;     · _PlaceWindow —— Alt+Z 展开笔记时，于是走「记忆位置」= 用户自己的格局；
+        ;     · _AdaptToPeer —— 伴生窗口落位时，那里另有 _docked 守卫，这里是双保险。
+        ;   返回 false 让调用方回落到记忆位置，正是想要的：不动坐标。
+        if this._docked
+            return false
+
+        ; 伴生窗口可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            alive := WinExist("ahk_id " . pr.hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if !alive
+            return false
+
+        ; 先把窗口尺寸量定型：Show("Hide") 之后控件固有尺寸要等 OnSize 跑完才反映到
+        ; 外框上，这之后设的尺寸才不会被随后的布局盖回去
+        nw := 0, nh := 0
+        if !this._MeasureStable(ghwnd, &nw, &nh)
+            return false
+
+        ; 头一次堆叠时留个底 —— 堆叠会把窗口压矮，收窗口时要照这份原始位置尺寸还原。
+        ; ⚠ 只在「还没有底稿」时留：底稿的语义是**用户自己的窗口格局**。
+        ;   若每次堆叠都重留，就会把上一次堆叠后的压扁尺寸当作新旧稿 ——
+        ;   「堆叠 → Alt+Z 收起 → Alt+Z 展开」一轮下来，实测 711x885 会被写成 744x533，
+        ;   之后终端不在时窗口就再也回不到原来的大小。
+        ;   底稿由 _RememberPosition 在**非堆叠态**隐藏时刷新（见那里的注释）。
+        if !IsObject(this._preStackRect) {
+            try {
+                WinGetPos(&ox, &oy, &ow, &oh, "ahk_id " . ghwnd)
+                this._preStackRect := {x: ox, y: oy, w: ow, h: oh}
+            } catch
+                this._preStackRect := ""
+        }
+
+        tx := pr.x, ty := pr.y, tw := pr.w, th := pr.h
+
+        ; 工作区取伴生窗口所在的**那块**显示器 —— 它可能被放到副屏上
+        monIdx := 1
+        cx := tx + tw // 2, cy := ty + th // 2
+        loop MonitorGetCount() {
+            MonitorGet(A_Index, &mL, &mT, &mR, &mB)
+            if (cx >= mL && cx < mR && cy >= mT && cy < mB) {
+                monIdx := A_Index
+                break
+            }
+        }
+        MonitorGetWorkArea(monIdx, &wkLeft, &wkTop, &wkRight, &wkBottom)
+
+        gap := Config.DockGap, margin := Config.DockMargin
+        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
+        ; （+MinSize450x300 → 本机 150% 缩放下的 675x450）
+        minW := 450 * A_ScreenDPI // 96
+        minH := 300 * A_ScreenDPI // 96
+
+        ; 摆位置一律按「可见边界」算 —— 直接拿 WinGetPos 的矩形去拼，
+        ; 肉眼看会多出上窗那 9px 的不可见底边框（12 的缝看着像 21），显得松散。
+        pFrame := this._InvisibleFrame(pr.hwnd)
+        nFrame := this._InvisibleFrame(ghwnd)
+        peerVisL := tx - pFrame.l, peerVisT := ty - pFrame.t
+        peerVisR := tx + tw - pFrame.r, peerVisB := ty + th - pFrame.b
+
+        ; 笔记窗口的可见目标：左边与伙伴对齐、同宽、顶边贴工作区顶、底边在伙伴上方留 gap
+        noteVisL := peerVisL
+        noteVisW := peerVisR - peerVisL
+        noteVisT := wkTop + margin
+
+        ; 方案一：伴生窗口原地不动，笔记窗口填它上方的空间
+        noteVisB := peerVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
+            this._stacked := true
+            return true
+        }
+
+        ; 方案二：伴生窗口已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
+        ; 尺寸（宽高）原样保留，只挪位置
+        newPeerVisT := (wkBottom - margin) - (peerVisB - peerVisT)
+        noteVisB := newPeerVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            newPeerY := newPeerVisT + pFrame.t
+            WinMove(tx, newPeerY, , , "ahk_id " . pr.hwnd)   ; 宽高留空 = 保持不变
+            ; 伴生窗口挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
+            this._peerRect := {hwnd: pr.hwnd, x: tx, y: newPeerY, w: tw, h: th}
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
+            this._stacked := true
+            return true
+        }
+
+        return false
+    }
+
+    ; 按「可见边界」摆放窗口：传进来的是肉眼看到的矩形，
+    ; 内部补上该窗口的不可见边框偏移再交给 WinMove（后者认的是含边框的矩形）。
+    static _MoveToVisible(hwnd, visL, visT, visW, visH, frame) {
+        rectW := Max(visW + frame.r - frame.l, 1)
+        rectH := Max(visH + frame.b - frame.t, 1)
+        WinMove(visL + frame.l, visT + frame.t, rectW, rectH, "ahk_id " . hwnd)
+    }
+
+    ; 窗口矩形比「可见边界」多出来的那圈不可见调整边框（含 DWM 阴影）。
+    ; 返回 {l, t, r, b} = 各自的「矩形边 − 可见边」，左 / 上通常为负。
+    ; ⚠ 本机（150% 缩放）实测：左 −9、上 0、右 9、下 9；25% 缩放或旧系统上可能不同，
+    ;   所以这里每次都实测，不写死。
+    static _InvisibleFrame(hwnd) {
+        buf := Buffer(16, 0)
+        try
+            DllCall("dwmapi\DwmGetWindowAttribute", "ptr", hwnd, "uint", 9, "ptr", buf, "uint", 16)
+        catch
+            return {l: 0, t: 0, r: 0, b: 0}   ; 拿不到就当作没有不可见边框
+        WinGetPos(&rx, &ry, &rw, &rh, "ahk_id " . hwnd)
+        vx := NumGet(buf, 0, "int"), vy := NumGet(buf, 4, "int")
+        vr := NumGet(buf, 8, "int"), vb := NumGet(buf, 12, "int")
+        return {l: rx - vx, t: ry - vy, r: (rx + rw) - vr, b: (ry + rh) - vb}
+    }
+
+    ; 移到默认落点
+    static _MoveToDefault(g, ghwnd) {
+        w := 0, h := 0
+        if !this._MeasureStable(ghwnd, &w, &h)
+            return
+        rect := this._DefaultRect(w, h)
+        ; 同样用 WinMove（物理像素），只设位置不设尺寸 —— 尺寸交给 AHK 按 DPI 决定
+        WinMove(rect.x, rect.y, , , "ahk_id " . ghwnd)
+    }
+
+    ; 等窗口尺寸稳定下来。Show 之后控件的固有尺寸要等 OnSize 跑完才反映到窗口外框上，
+    ; 连续两次量到同一个值才认为定型。全程窗口不可见，多花几毫秒用户看不见。
+    static _MeasureStable(hwnd, &w, &h) {
+        prevW := -1, prevH := -1, same := 0
+        loop 40 {
+            try
+                WinGetPos(&_, &_, &w, &h, "ahk_id " . hwnd)
+            catch
+                return false
+            if (w > 0 && h > 0 && w = prevW && h = prevH) {
+                if (++same >= 2)
+                    return true
+            } else {
+                same := 0
+            }
+            prevW := w, prevH := h
+            Sleep 5
+        }
+        return (w > 0 && h > 0)
+    }
+
+    ; 默认落点坐标：贴主屏工作区右上角 —— 右边距 Config.PlaceRight、顶边距 Config.PlaceTop。
+    ;
+    ; ⚠ 尺寸必须按窗口的「实际」值算 —— A_ScreenWidth 是物理像素，而窗口实际宽含 DPI
+    ;   放大后的控件与边框（本机约 711），远大于 450 这样的逻辑值。
+    ; ⚠ 用 MonitorGetWorkArea 而非 A_ScreenWidth / A_ScreenHeight：后者是全屏尺寸，
+    ;   多屏时也只反映主屏。
+    static _DefaultRect(winW, winH) {
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        posX := wkRight - winW - Config.PlaceRight
+        posY := wkTop + Config.PlaceTop
+        ; 窗口比工作区还大（或边距过大）时兜底，免得落到负坐标、跑到屏幕外
+        if (posX < wkLeft + 10)
+            posX := wkLeft + 10
+        if (posY < wkTop + 10)
+            posY := wkTop + 10
+        if (posY + winH > wkBottom)
+            posY := wkBottom - winH - 10
+        return {x: posX, y: posY}
+    }
+
+    ; ═══ 光标与重绘 ═══
+
+    ; 还原光标：隐藏前记录的位置优先，没有记录就落到正文末尾
+    static _RestoreCaret(hwnd) {
+        if State.HasCaret() {
+            caret := State.GetCaret()
+            totalLen := SendMessage(0x000E, 0, 0, hwnd)
+            EditorService.SetSel(hwnd, Min(caret.min, totalLen), Min(caret.max, totalLen))
+        } else {
+            EditorService.MoveCaretToEnd(hwnd)
+        }
+    }
+
+    ; WM_SETREDRAW：批量改动期间关掉重绘，避免中间态闪烁
+    static _SuspendRedraw(hwnd) => SendMessage(0x000B, 0, 0, hwnd)
+    static _ResumeRedraw(hwnd) => SendMessage(0x000B, 1, 0, hwnd)
+}

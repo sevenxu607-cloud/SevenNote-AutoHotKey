@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `41a168b`，工作区有 Phase 1b 代码改动
-- **最近一次改动**：Phase 1b：`HotkeyRouter` 接管热键注册，新增 `ModuleRegistry` / `WorkBenchUI` / `PeerCoordinator` 占位
-- **正在处理**：Phase 1 验收（热键与界面需人工按键）
-- **下一步**：Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `683f128`，工作区有 Phase 2 改动
+- **最近一次改动**：Phase 2：7 Service + `StatusBar` + 18 Feature 搬入 `modules/SevenNote/`，`SevenNoteModule` 接管 GUI / OnSize / 启动
+- **正在处理**：Phase 2 人工验收（需关闭现有实例）
+- **下一步**：Phase 3：Launcher 模块化（`PeerLayoutService` + `PowerShellFeature` + `DeepSeekFeature`）
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -25,8 +25,9 @@
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
 - [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
 - [x] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
-- [ ] Phase 1 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题
-- [ ] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
+- [ ] Phase 1 / 2 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题 / 全部上下文热键
+- [x] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
+- [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
 - [ ] Phase 2–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
@@ -48,6 +49,31 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 23:40　保留源码快照，完成 Phase 2 拆分
+
+**我说**（原话）
+> 源码没有问题,重构时可以保留源码,重构新工作
+
+**意图**
+确认不必删掉旧单文件；保留一份可对照的源码，同时继续 Phase 2 重构。
+
+**决定 / 过程**
+- 新建 `legacy/SevenNote.v2.4.3.ahk`，保存拆分前完整快照，不参与运行；
+- 7 个 Service 搬入 `modules/SevenNote/Services/`，`StatusBar` + 18 个 Feature 搬入 `modules/SevenNote/`；
+- `SevenNoteModule.Init()` 接管 GUI 创建 / OnSize / Feature 挂载，`Start()` 接管启动恢复；
+- `OnSize` 改经 `State.GetXxx()` / `GuiCtrlFromHwnd(State.GetEd())` 取控件；
+- Router 改收 `SevenNoteModule.GetContexts()`，不再直接引用 `SearchFeature`；
+- 主脚本从 4209 行降到 1363 行。
+
+**代价 / 风险**
+- 热键表仍在组合根；`GetHotkeys()` 推迟到 Phase 5；
+- Launcher / KeysInput 的类还在主脚本，Phase 3–4 才能完全拆开；
+- 沙箱只证明「能初始化、能显示、无异常」，上下文热键与视觉效果仍需人工按键验收。
+
+**待办**
+- [ ] 关闭现有实例后启动 `SevenNote.ahk` 人工验收
+- [ ] Phase 3：Launcher 模块化
 
 ### 2026-10-19 23:10　Phase 1b：热键路由接管
 

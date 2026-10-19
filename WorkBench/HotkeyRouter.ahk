@@ -2,13 +2,11 @@
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  HotkeyRouter —— 热键注册的唯一入口
 ; ═══════════════════════════════════════════════════════════════════════════
-; Phase 1 先包住原 RegisterHotkeys()：输入仍是 HotkeyTable() 的数组，
-; ctx 仍沿用 global / editor / search，注册结果与改造前逐条一致。
-; Phase 2 起 ctx 表达式改由 SevenNoteModule.GetContexts() 提供，
-; Router 不再直接引用 SearchFeature。
+; Phase 1 包住原 RegisterHotkeys()；Phase 2 起 contexts 由
+; SevenNoteModule.GetContexts() 提供，Router 不再直接引用 SearchFeature。
 
 class HotkeyRouter {
-    static RegisterAll(table) {
+    static RegisterAll(table, contexts) {
         ; 注册顺序 = 全局 → 编辑器内 → 搜索栏（与改造前三个 #HotIf 块的先后一致）。
         ; 全局变体（无上下文）的优先级天然最低，所以「先建全局」不会抢上下文变体的命中。
         for ctxName in ["global", "editor", "search"] {
@@ -16,9 +14,9 @@ class HotkeyRouter {
                 case "global":
                     HotIf()
                 case "editor":
-                    HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible())
+                    HotIf(contexts.editor)
                 case "search":
-                    HotIf((*) => WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible())
+                    HotIf(contexts.search)
             }
             for hk in table {
                 if (hk.key = "" || hk.ctx != ctxName)

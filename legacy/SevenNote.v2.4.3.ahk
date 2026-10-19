@@ -1,0 +1,4209 @@
+#Requires AutoHotkey v2.0
+#SingleInstance Force
+Persistent()
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  【警告策略 —— 改默认动作，别再让警告拦住程序】
+;  AHK v2 对「未赋值变量」（VarUnset）默认既开警告、动作又是 **MsgBox** ——
+;  一弹就停摆：模态框挡在屏幕上、热键全无反应，只能手动杀进程。
+;  项目在 v2 迁移期连踩三次（`JSON.Stringify` / `Gui` 当变量名 / 空串比较），
+;  每次症状都是「Alt+Z 没反应」，排查还得先枚举 #32770 读正文。
+;  这里把动作改成 OutputDebug —— VS Code 的 AHK++ 调试器里照样看得到，
+;  但不再拦路。未赋值变量的根本预防手段仍是「变量名写长一点」（guiHwnd / idxMap），
+;  见 .clinerules/03。
+; ═══════════════════════════════════════════════════════════════════════════
+#Warn VarUnset, OutputDebug
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  SevenNote —— v2.4.3
+;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
+;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+H 帮助窗口底部），改这里要一并改它。
+;
+;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
+;    v2.4.3  一轮「去重与仓库卫生」：① 新增 Service `PeerLayoutService` —— 终端 / DeepSeek
+;            两处各自留底的「右下角落点公式 + 可摆性闸 + 矩形读取」收拢成一份（原先改
+;            一处要记着同步另一处；实测两版摆位逐项一致）；② 删掉全局覆盖键
+;            [Appearance] BackdropImage / BackdropOpacity（它会盖掉所有带 bg 的主题）
+;            —— 图的路径与浓淡只写在主题自己的 bg / bgAlpha 上；③ StatFeature.Tick
+;            补窗口可见性守卫；④ 加 .gitignore，演示测试产物出库。
+;    v2.4.2  补齐运行时兜底与三处实测到的浪费：① 注册 OnError —— 未捕获异常写
+;            _error.log（开发版落项目根 .logs\，编译版落 AppData）并**继续跑**，
+;            不再弹模态框停摆；
+;            同时把 VarUnset 警告动作改成 OutputDebug（同上，不再拦路）。
+;            ② pandoc 可用性探测缓存（原先每次保存都 RunWait 起一个 200MB 进程）、
+;            ConfigService 加进程内读缓存（GetVault 在保存链路上就要读 6 次盘）。
+;            ③ ListAllTags 冒泡 O(n²) 换内置 Sort；SetTimer 回调统一过一遍
+;            「窗口还在不在」守卫（照 AutoSaveFeature.Tick 的写法）
+;    v2.4.1  修复连按 Alt+C / Alt+X 弹模态框卡死（异步复核去摆一个已隐藏的窗口）；
+;            终端宽度与另外两个窗口统一，目标宽定 772（实测 Edge 会吸附 --window-size 的宽度）
+;    v2.4    主题表精简 8 → 5 套并做一次性旧下标迁移（[Appearance] ThemeSchema）；
+;            时间戳改为手动 Ctrl+T 插入（不再自动加）
+;    v2.3    修背景图主题拉伸时编辑区文字闪烁（_ScheduleRender 抖动合并 + _RenderNow 同矩形跳过）；
+;            编辑区滚动条随主题明暗；金克斯按「保留明暗 + 主体完整」重烘（-CropW 0.72 → 1.00）
+;    v2.2    主题扩到 8 套，末尾两套为**背景图主题**（星空 / 金克斯，都是「暗图 + 亮字」，
+;            裁剪与色调全烘进图片，运行时 bgAlpha 保持 0）；沉淀出 tools\rebake-backdrop.ps1
+;    v2.1    伴生窗口适配只在首次跑一次（与笔记原来待的地方相撞才摆位，随后冻结，归用户自己管）
+;    v2.0    Alt+X 呼出 / 隐藏 DeepSeek 网页；Alt+C 的窗口适配泛化成 Peer.* 通用契约
+;    v1.9    修 pandoc 打包 0KB 问题；PandocService 加文件有效性校验（> 1MB）
+;    v1.8    状态栏日期后显示星期（📅 2026-09-20 周日）
+;    v1.7    assets 统一收纳到 _assets/日期/；切日期 / 跳转 / 启动加载后光标到开头 + 视口到顶
+;
+;  【用户旅程编号】组合根热键区与各 Feature 头部都用这套编号标注归属 ——
+;    ① 唤起与关闭    Alt+Z 呼出 / 隐藏
+;    ② 输入与编辑    粘贴 / 行编辑 / 缩进 / 撤销 / 输入增强
+;    ③ 保存与持久化  加载 / 保存 / 自动保存 / 时间戳
+;    ④ 查看与浏览    搜索 / 字数 / 光标记忆
+;    ⑤ 组织与管理    日期切换 / 搜索跳转 / 标签 / 返回当天
+;    ⚠ 全局热键只覆盖 ①②⑤；③④ 是编辑器内热键（见组合根 #HotIf 段），所以在全局那一段里
+;      编号看起来是跳着的（② 之后直接 ⑤），那是正常的。
+;
+;  【整体架构 —— 四层 + 组合根】
+;    FEATURE 功能层（21 项，按用户旅程排列）→ SERVICE 服务层（8 项，纯能力）
+;     → KERNEL 骨架层（4 项：生命周期 / 状态 / 事件 / 配置）
+;     → 表示层 StatusBar → 组合根（装配 + 启动，在文件末尾）
+;    本文件在原位置用 #Include 装配 Kernel；Kernel 实现在 WorkBench/Kernel/。
+;    其余层仍按此顺序排布，层级之间用 ═══ 分隔线标出，方便按层定位。
+;
+;  【依赖方向】Feature → Service → Kernel → OS（严禁反向）
+;
+;  【核心技术决策】
+;    1. EM_STREAMOUT/EM_STREAMIN 直读直写 RTF
+;    2. Pandoc 转换 RTF → Markdown
+;    3. 双 RTF 输出（936 + 65001）
+;    4. 系统默认 Ctrl+V
+;    5. 空笔记不落盘
+;    6. 先查后存
+;    7. 标签写文件名
+;    8. 路径分离
+;    9. assets 统一收纳（v1.7）
+;   10. pandoc 文件大小检查（v1.9）
+;   11. 伴生窗口适配走 Peer.* 通用契约（v2.0）—— 发布方只广播三个事件，
+;       摆位 / 记忆 / 失败兜底全在 WindowFeature 里，见 README「添加呼出外部窗口的功能」
+;   12. 背景图主题只是 Themes 数组里的普通成员（v2.2）—— 切到铺图、切走撤图，没有全局开关
+;   13. 编辑区滚动条与标题栏跟着主题明暗走（v2.3）
+;
+;  【已知坑点】全文见 .clinerules/03-ahk-v2.md（那里是单一事实源），这里只列最常踩的：
+;    · AHK v2 内置函数名不能做变量名（Clear/log/min/max/Indent）；
+;      ⚠ **Gui 也不能** —— 它是内置类名，`gui := WinExist(...)` 直接报错
+;    · AHK v2 的 < > 是数值比较，字符串比较用 StrCompare
+;    · AHK v2 的 <= / >= 遇空字符串会抛错，数值比较前先 IsNumber() 守卫
+;    · EM_SETSEL/EM_GETSEL 用 DllCall 4 参数版本
+;    · FINDTEXTEXW 读偏移 16/20（chrgText）
+;    · 32 位编译导致 RichEdit 字符格式异常——必须 64 位
+;    · FileInstall 必须一行，源路径不存在会打包 0KB 空文件（v1.9）
+;    · 最小化窗口的 IsWindowVisible 仍是 1 —— 判断「在显示」要 IsWindowVisible && !IsIconic
+;    · WinMove / WinGetPos 默认忽略隐藏窗口，对隐藏窗口直接抛 "Target window not found"；
+;      **凡在异步定时器回调里碰窗口，先过一道闸**（DetectHiddenWindows(false) + WinExist + !IsIconic）
+;    · 先 Show 再 WinMove 会让窗口「飘一下」：定位要在隐藏状态下做完（Show("Hide") → 摆好 → Show）
+;    · 启动终端别传 Run 的 "Hide"：隐藏启动会绕过 Windows Terminal 委派，终端退回
+;      conhost 默认（120x50 = 1488x1256、#012456 蓝底），拿不到 WT profile 的星空背景
+;
+;  依赖：pandoc.exe（软依赖，未安装则 MD 降级为纯文本）
+; ═══════════════════════════════════════════════════════════════════════════
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  KERNEL 骨架层 —— 实现见 WorkBench/Kernel/
+; ═══════════════════════════════════════════════════════════════════════════
+
+#Include WorkBench\Kernel\Config.ahk
+#Include WorkBench\Kernel\ConfigService.ahk
+#Include WorkBench\Kernel\EventBus.ahk
+#Include WorkBench\Kernel\State.ahk
+#Include WorkBench\ModuleRegistry.ahk
+#Include WorkBench\HotkeyRouter.ahk
+#Include WorkBench\WorkBenchUI.ahk
+#Include WorkBench\Coordinator\PeerCoordinator.ahk
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  SERVICE 服务层
+; ═══════════════════════════════════════════════════════════════════════════
+
+class EditorService {
+    static CLOCK := Chr(0x1F550)
+    static SEPARATOR := "--------------------"
+    static INDENT_STR := "    "
+
+    static NormalizeNL(s) {
+        s := StrReplace(s, "`r`n", "`n")
+        s := StrReplace(s, "`r", "`n")
+        return s
+    }
+
+    static GetText(hwnd) {
+        len := SendMessage(0x000E, 0, 0, hwnd)
+        if (len = 0)
+            return ""
+        buf := Buffer((len + 1) * 2, 0)
+        SendMessage(0x000D, len + 1, buf.Ptr, hwnd)
+        return this.NormalizeNL(StrGet(buf, "UTF-16"))
+    }
+
+    static GetLength(hwnd) => SendMessage(0x000E, 0, 0, hwnd)
+
+    static SetText(hwnd, text) {
+        SendMessage(0x00B1, 0, -1, hwnd)
+        SendMessage(0x00C2, 1, StrPtr(this.NormalizeNL(text)), hwnd)
+        this.MoveCaretToEnd(hwnd)
+    }
+
+    static InsertText(hwnd, text) {
+        SendMessage(0x00C2, 1, StrPtr(this.NormalizeNL(text)), hwnd)
+    }
+
+    static MoveCaretToEnd(hwnd) {
+        len := SendMessage(0x000E, 0, 0, hwnd)
+        SendMessage(0x00B1, len, len, hwnd)
+    }
+
+    ; ─── 光标到开头 + 视口到顶 ───（v1.7）
+    static MoveCaretToStart(hwnd) {
+        SendMessage(0x00B1, 0, 0, hwnd)
+        firstVisible := SendMessage(0x00CE, 0, 0, hwnd)
+        if (firstVisible > 0)
+            SendMessage(0x00B6, 0, -firstVisible, hwnd)
+    }
+
+    static EmptyUndo(hwnd) => SendMessage(0x00C6, 0, 0, hwnd)
+
+    static GetSel(hwnd) {
+        bufMin := Buffer(4, 0)
+        bufMax := Buffer(4, 0)
+        DllCall("SendMessage", "ptr", hwnd, "uint", 0x00B0
+            , "ptr", bufMin.Ptr, "ptr", bufMax.Ptr, "ptr")
+        return {
+            min: NumGet(bufMin, 0, "uint"),
+            max: NumGet(bufMax, 0, "uint")
+        }
+    }
+
+    static SetSel(hwnd, min, max) {
+        SendMessage(0x00B1, min, max, hwnd)
+    }
+
+    ; ─── 内容变短后，把 RichEdit 的内部滚动位置对齐回 SCROLLINFO ───（v2.4.4）
+    ; 现象（用户报的「删掉末尾几行空行，画面不跟着变，拖一下滚动条才一次性闪回」）：
+    ;   · 删除后 SCROLLINFO 已经重算对了 —— nMax / nPos 都是新值，滚动条滑块当场变长；
+    ;   · 但 EM_GETFIRSTVISIBLELINE 和画面都停在删除前 —— 内容已短、视口没动；
+    ;   · 唯 WM_VSCROLL 能修，WM_SIZE / 重绘 / EM_SCROLLCARET 都不能。
+    ; 实测（40 行正文 + 末尾 5 个空行，150% 缩放）：
+    ;   删除后   fv=19  nPos=502  nMax=1476   scrollPt.y=684   画面像素只变 0.04%
+    ;   写回后   fv=13  nPos=501  nMax=1476   scrollPt.y=501   画面重绘 9.9%
+    ; 做法：EM_SETSCROLLPOS 只把 SCROLLINFO 里**已经算好**的 nPos 交给 RichEdit，
+    ;      它会据此重算行布局并重绘；滚动位置本身不动（前后都在底部）。
+    ; 注意：EM_GETSCROLLPOS 读到的像素位置仍是旧值（684 = 多算了 5 行 × 36px），
+    ;      所以不能用它往回写——必须用 nPos。但反过来，**它正好可以当「是否脱节」的探针**：
+    ;      scrollPt.y 与 nPos 对不上，就说明行布局还停在旧内容上。
+    ; ⚠ 只在真的脱节时动手：若两者一致（正常滚动 / 正常编辑），直接返回。
+    ;   无条件写回虽然实测不重绘，但**用户正拖滚动条时会把它弹回去**，
+    ;   表现就是「滑条经常拖不动」——必须靠这道守卫挡掉。
+    static SyncScrollAfterShrink(hwnd) {
+        si := Buffer(28, 0)
+        NumPut("uint", 28, si, 0)        ; cbSize
+        NumPut("uint", 0x17, si, 4)      ; SIF_RANGE | SIF_PAGE | SIF_POS | SIF_TRACKPOS
+        if !DllCall("GetScrollInfo", "ptr", hwnd, "int", 1, "ptr", si, "int")   ; SB_VERT
+            return
+        npos := NumGet(si, 20, "int")
+        nmax := NumGet(si, 12, "int")
+        npage := NumGet(si, 16, "int")
+
+        ; ① 脱节检测：内部渲染用的像素位置 vs SCROLLINFO 的逻辑位置
+        cur := Buffer(8, 0)
+        DllCall("SendMessageW", "ptr", hwnd, "uint", 0x04DD, "uptr", 0, "ptr", cur, "ptr")   ; EM_GETSCROLLPOS
+        py := NumGet(cur, 4, "int")
+        if (Abs(py - npos) <= 2)
+            return      ; 已同步 —— 别打扰用户正常的滚动/编辑
+
+        ; ② 删除后 nPos 可能比 max-page 多 1（实测 502 对 501）。钳到上界之后，
+        ;    结果与「拖一下滚动条」逐像素一致（DIFF 0.0374 -> 0.0000）。
+        if (nmax > npage && npos > nmax - npage)
+            npos := nmax - npage
+        pt := Buffer(8, 0)
+        NumPut("int", 0, pt, 0)         ; x
+        NumPut("int", npos, pt, 4)      ; y = nPos
+        DllCall("SendMessageW", "ptr", hwnd, "uint", 0x04DE, "uptr", 0, "ptr", pt, "ptr")   ; EM_SETSCROLLPOS
+    }
+
+    static GetTextRange(hwnd, cpMin, cpMax) {
+        len := cpMax - cpMin
+        if (len <= 0)
+            return ""
+        buf := Buffer((len + 1) * 2, 0)
+        tr := Buffer(16)
+        NumPut("int", cpMin, tr, 0)
+        NumPut("int", cpMax, tr, 4)
+        NumPut("ptr", buf.Ptr, tr, 8)
+        copied := SendMessage(0x044B, 0, tr, hwnd)
+        return this.NormalizeNL(StrGet(buf, copied, "UTF-16"))
+    }
+
+    static GetLineRange(hwnd) {
+        sel := this.GetSel(hwnd)
+        cpMin := sel.min
+        cpMax := sel.max
+        startLine := SendMessage(0x00C9, cpMin, 0, hwnd)
+        endLine := SendMessage(0x00C9, cpMax, 0, hwnd)
+        if (cpMax > cpMin) {
+            prevLine := SendMessage(0x00C9, cpMax - 1, 0, hwnd)
+            if (prevLine < endLine)
+                endLine := prevLine
+        }
+        lineStart := SendMessage(0x00BB, startLine, 0, hwnd)
+        nextStart := SendMessage(0x00BB, endLine + 1, 0, hwnd)
+        if (nextStart = -1)
+            lineEnd := SendMessage(0x000E, 0, 0, hwnd)
+        else
+            lineEnd := nextStart
+        return {start: lineStart, end: lineEnd
+            , startLine: startLine, endLine: endLine}
+    }
+
+    static DeleteCurrentLine(hwnd) {
+        range := this.GetLineRange(hwnd)
+        if (range.start = range.end)
+            return
+        this.SetSel(hwnd, range.start, range.end)
+        SendMessage(0x00C2, 1, StrPtr(""), hwnd)
+    }
+
+    static DuplicateCurrentLine(hwnd) {
+        range := this.GetLineRange(hwnd)
+        text := this.GetTextRange(hwnd, range.start, range.end)
+        if (text = "")
+            return
+        hasNewline := RegExMatch(text, "\n$")
+        insertText := hasNewline ? text : "`n" . text
+        this.SetSel(hwnd, range.end, range.end)
+        SendMessage(0x00C2, 1, StrPtr(insertText), hwnd)
+        if hasNewline
+            this.SetSel(hwnd, range.end, range.end + StrLen(insertText))
+        else
+            this.SetSel(hwnd, range.end + 1, range.end + StrLen(insertText))
+    }
+
+    static Undo(hwnd) => SendMessage(0x00C7, 0, 0, hwnd)
+    static Redo(hwnd) => SendMessage(0x0454, 0, 0, hwnd)
+
+    static SwapLines(hwnd, lineStart, lineMid, lineEnd) {
+        first := this.GetTextRange(hwnd, lineStart, lineMid)
+        second := this.GetTextRange(hwnd, lineMid, lineEnd)
+        firstHasNL := RegExMatch(first, "\n$")
+        secondHasNL := RegExMatch(second, "\n$")
+        firstClean := RTrim(first, "`n")
+        secondClean := RTrim(second, "`n")
+        newFirst := secondClean
+        newSecond := firstClean
+        if firstHasNL
+            newFirst .= "`n"
+        if secondHasNL
+            newSecond .= "`n"
+        SendMessage(0x00B1, lineStart, lineEnd, hwnd)
+        SendMessage(0x00C2, 1, StrPtr(newFirst . newSecond), hwnd)
+    }
+
+    static MoveLineUp(hwnd) {
+        range := this.GetLineRange(hwnd)
+        if (range.startLine = 0)
+            return false
+        prevStart := SendMessage(0x00BB, range.startLine - 1, 0, hwnd)
+        lineStart := SendMessage(0x00BB, range.startLine, 0, hwnd)
+        lineEnd := SendMessage(0x00BB, range.endLine + 1, 0, hwnd)
+        if (lineEnd = -1)
+            lineEnd := SendMessage(0x000E, 0, 0, hwnd)
+        this.SwapLines(hwnd, prevStart, lineStart, lineEnd)
+        newLineStart := SendMessage(0x00BB, range.startLine - 1, 0, hwnd)
+        this.SetSel(hwnd, newLineStart, newLineStart)
+        return true
+    }
+
+    static MoveLineDown(hwnd) {
+        range := this.GetLineRange(hwnd)
+        nextStart := SendMessage(0x00BB, range.endLine + 1, 0, hwnd)
+        if (nextStart = -1)
+            return false
+        nextEnd := SendMessage(0x00BB, range.endLine + 2, 0, hwnd)
+        if (nextEnd = -1)
+            nextEnd := SendMessage(0x000E, 0, 0, hwnd)
+        lineStart := SendMessage(0x00BB, range.startLine, 0, hwnd)
+        this.SwapLines(hwnd, lineStart, nextStart, nextEnd)
+        newLineStart := SendMessage(0x00BB, range.startLine + 1, 0, hwnd)
+        this.SetSel(hwnd, newLineStart, newLineStart)
+        return true
+    }
+
+    static DoIndent(hwnd) {
+        sel := this.GetSel(hwnd)
+        if (sel.min = sel.max) {
+            SendMessage(0x00C2, 1, StrPtr(this.INDENT_STR), hwnd)
+            return
+        }
+        range := this.GetLineRange(hwnd)
+        positions := []
+        line := range.endLine
+        while (line >= range.startLine) {
+            pos := SendMessage(0x00BB, line, 0, hwnd)
+            if (pos = -1)
+                break
+            positions.Push(pos)
+            line--
+        }
+        for pos in positions {
+            this.SetSel(hwnd, pos, pos)
+            SendMessage(0x00C2, 1, StrPtr(this.INDENT_STR), hwnd)
+        }
+        count := positions.Length
+        indentLen := StrLen(this.INDENT_STR)
+        newStart := range.start + indentLen
+        newEnd := range.end + count * indentLen
+        this.SetSel(hwnd, newStart, newEnd)
+    }
+
+    static DoOutdent(hwnd) {
+        sel := this.GetSel(hwnd)
+        range := this.GetLineRange(hwnd)
+        firstLineRemoved := 0
+        totalRemoved := 0
+        line := range.endLine
+        while (line >= range.startLine) {
+            pos := SendMessage(0x00BB, line, 0, hwnd)
+            if (pos = -1)
+                break
+            nextPos := SendMessage(0x00BB, line + 1, 0, hwnd)
+            if (nextPos = -1)
+                nextPos := SendMessage(0x000E, 0, 0, hwnd)
+            lineText := this.GetTextRange(hwnd, pos, nextPos)
+            removed := 0
+            if (SubStr(lineText, 1, 4) = "    ")
+                removed := 4
+            else if (SubStr(lineText, 1, 1) = "`t")
+                removed := 1
+            if (removed > 0) {
+                this.SetSel(hwnd, pos, pos + removed)
+                SendMessage(0x00C2, 1, StrPtr(""), hwnd)
+                totalRemoved += removed
+                if (line = range.startLine)
+                    firstLineRemoved := removed
+            }
+            line--
+        }
+        if (sel.min = sel.max) {
+            newPos := sel.min - totalRemoved
+            if (newPos < range.start)
+                newPos := range.start
+            this.SetSel(hwnd, newPos, newPos)
+        } else {
+            newStart := sel.min - firstLineRemoved
+            if (newStart < range.start)
+                newStart := range.start
+            newEnd := sel.max - totalRemoved
+            if (newEnd < newStart)
+                newEnd := newStart
+            this.SetSel(hwnd, newStart, newEnd)
+        }
+    }
+
+    static AppendTimestamp(hwnd) {
+        text := this.GetText(hwnd)
+        trimmed := RTrim(text, "`t`r`n")
+        if (StrLen(trimmed) < StrLen(text))
+            this.SetText(hwnd, trimmed)
+        this.MoveCaretToEnd(hwnd)
+        now := FormatTime(, "HH:mm")
+        this.InsertText(hwnd, "`n`n" . this.CLOCK . " " . now . "`n")
+    }
+
+    static InsertSeparator(hwnd) {
+        sel := this.GetSel(hwnd)
+        if (sel.min = 0) {
+            this.InsertText(hwnd, this.SEPARATOR . "`n`n")
+            return
+        }
+        prevChar := this.GetTextRange(hwnd, sel.min - 1, sel.min)
+        if (prevChar = "`n")
+            this.InsertText(hwnd, this.SEPARATOR . "`n`n")
+        else
+            this.InsertText(hwnd, "`n" . this.SEPARATOR . "`n`n")
+    }
+
+    static InsertHeading(hwnd) {
+        sel := this.GetSel(hwnd)
+        if (sel.min = 0) {
+            this.InsertText(hwnd, "## 分段`n`n")
+            return
+        }
+        prevChar := this.GetTextRange(hwnd, sel.min - 1, sel.min)
+        if (prevChar = "`n")
+            this.InsertText(hwnd, "## 分段`n`n")
+        else
+            this.InsertText(hwnd, "`n## 分段`n`n")
+    }
+
+    static FindTextEx(hwnd, keyword, startPos, direction) {
+        if (keyword = "")
+            return -1
+        ftBuf := Buffer(32, 0)
+        if (direction = "down") {
+            NumPut("int", startPos, ftBuf, 0)
+            NumPut("int", -1, ftBuf, 4)
+            flags := 0x00000001
+        } else {
+            NumPut("int", -1, ftBuf, 0)
+            NumPut("int", startPos, ftBuf, 4)
+            flags := 0
+        }
+        strBuf := Buffer((StrLen(keyword) + 1) * 2, 0)
+        StrPut(keyword, strBuf, "UTF-16")
+        NumPut("ptr", strBuf.Ptr, ftBuf, 8)
+        ret := SendMessage(0x047C, flags, ftBuf.Ptr, hwnd)
+        if (ret = -1)
+            return -1
+        return {
+            start: NumGet(ftBuf, 8 + A_PtrSize, "int"),
+            end:   NumGet(ftBuf, 12 + A_PtrSize, "int")
+        }
+    }
+
+    static ScrollToLineFixed(hwnd, targetLine) {
+        rect := Buffer(16, 0)
+        SendMessage(0x00B2, 0, rect.Ptr, hwnd)
+        clientH := NumGet(rect, 12, "int") - NumGet(rect, 4, "int")
+        lineHeight := 20
+        visibleLines := clientH // lineHeight
+        if (visibleLines < 3)
+            visibleLines := 3
+        targetPosition := visibleLines // 4
+        targetFirst := targetLine - targetPosition
+        if (targetFirst < 0)
+            targetFirst := 0
+        firstVisible := SendMessage(0x00CE, 0, 0, hwnd)
+        delta := targetFirst - firstVisible
+        if (delta != 0)
+            SendMessage(0x00B6, 0, delta, hwnd)
+    }
+
+    static SaveRTFToFile(hwnd, filePath, codepage := 936) {
+        file := FileOpen(filePath, "w", "CP1252")
+        if !file
+            return false
+        global _streamFile
+        _streamFile := file
+        cb := CallbackCreate(StreamOutCallback, , 4)
+        es := Buffer(A_PtrSize * 2 + 4, 0)
+        NumPut("ptr", 0, es, 0)
+        NumPut("uint", 0, es, A_PtrSize)
+        NumPut("ptr", cb, es, A_PtrSize + 4)
+        flags := 0x0002 | 0x0020 | (codepage << 16)
+        result := SendMessage(0x044A, flags, es.Ptr, hwnd)
+        CallbackFree(cb)
+        file.Close()
+        _streamFile := ""
+        return result != 0
+    }
+
+    static LoadRTFFromFile(hwnd, filePath, moveCaretToStart := true) {
+        if !FileExist(filePath)
+            return false
+        file := FileOpen(filePath, "r", "CP1252")
+        if !file
+            return false
+        global _streamFile
+        _streamFile := file
+        cb := CallbackCreate(StreamInCallback, , 4)
+        es := Buffer(A_PtrSize * 2 + 4, 0)
+        NumPut("ptr", 0, es, 0)
+        NumPut("uint", 0, es, A_PtrSize)
+        NumPut("ptr", cb, es, A_PtrSize + 4)
+        flags := 0x0002
+        result := SendMessage(0x0449, flags, es.Ptr, hwnd)
+        CallbackFree(cb)
+        file.Close()
+        _streamFile := ""
+        SendMessage(0x0453, 100, 0, hwnd)
+
+        totalLen := SendMessage(0x000E, 0, 0, hwnd)
+        if (moveCaretToStart && totalLen > 0) {
+            this.MoveCaretToStart(hwnd)
+        } else {
+            this.MoveCaretToEnd(hwnd)
+        }
+        return result != 0
+    }
+
+    static IsEmptyNote(hwnd, date) {
+        text := this.GetText(hwnd)
+        text := StrReplace(text, "# 📅 " . date . " 速记", "")
+        text := RegExReplace(text
+            , "\s*" . this.CLOCK . "\s+\d{2}:\d{2}\s*", "")
+        text := RegExReplace(text, "\s+", "")
+        return (text = "")
+    }
+
+    ; 新建日期 / 切到空日期时写给编辑区的日期头。
+    ; ⚠ 只能从这里取 —— 原先这段字符串在 LoadFeature / DateJumpFeature / DateSwitchFeature
+    ;   各写一遍（3 份），任一处与上面 IsEmptyNote 的剥离串脱钩，空笔记就会因「剥不干净」
+    ;   被判成非空，于是空笔记照样落盘。
+    static EmptyNoteHeader(date) => "# 📅 " . date . " 速记`n"
+}
+
+StreamOutCallback(cookie, pbBuff, byteCount, pcb) {
+    global _streamFile
+    try {
+        written := _streamFile.RawWrite(pbBuff, byteCount)
+        NumPut("int", written, pcb, "int")
+        return 0
+    } catch {
+        NumPut("int", 0, pcb, "int")
+        return 1
+    }
+}
+
+StreamInCallback(cookie, pbBuff, byteCount, pcb) {
+    global _streamFile
+    try {
+        read := _streamFile.RawRead(pbBuff, byteCount)
+        NumPut("int", read, pcb, "int")
+        return 0
+    } catch {
+        NumPut("int", 0, pcb, "int")
+        return 1
+    }
+}
+
+
+class ClipboardService {
+    static GetText() {
+        try return A_Clipboard
+        catch
+            return ""
+    }
+}
+
+
+; ─── NoteStoreService：笔记仓库管理员 ───
+class NoteStoreService {
+    ; ─── 路径拼接 ───
+    static AssetsDir(date)  => Config.GetVault() . "\_assets\" . date
+
+    static TempDir()        => Config.GetVault() . "\_tmp"
+
+    static EnsureDir(path) => DirCreate(path)
+
+    static WriteFile(path, content, encoding := "UTF-8") {
+        try {
+            f := FileOpen(path, "w", encoding)
+            f.Write(content)
+            f.Close()
+            return true
+        } catch
+            return false
+    }
+
+    ; ─── 路径拼接：rtf / md 两条只此一处（无标签时的默认名，与带标签名同目录同名式）───
+    static DefaultRtfPath(date) => Config.GetVault() . "\" . date . ".rtf"
+    static DefaultMdPath(date)  => Config.GetVault() . "\" . date . ".md"
+
+    ; ─── 按日期查找实际文件（可能带标签）───
+    static FindRtf(date) {
+        if (date = "")
+            return ""
+        Loop Files, Config.GetVault() . "\" . date . "*.rtf" {
+            if (SubStr(A_LoopFileName, 1, 1) = "_")
+                continue
+            if (SubStr(A_LoopFileName, 1, 10) = date)
+                return A_LoopFileFullPath
+        }
+        return ""
+    }
+
+    static FindMd(date) {
+        if (date = "")
+            return ""
+        Loop Files, Config.GetVault() . "\" . date . "*.md" {
+            if (SubStr(A_LoopFileName, 1, 1) = "_")
+                continue
+            if (SubStr(A_LoopFileName, 1, 10) = date)
+                return A_LoopFileFullPath
+        }
+        return ""
+    }
+
+    ; ─── 日期 → 中文星期 ───（v1.8）
+    ; FormatTime 返回字符串（"1"~"7"），必须用 +0 强制转数字
+    static GetWeekday(date) {
+        ymd := StrReplace(date, "-", "")
+        wd := FormatTime(ymd, "WDay") + 0
+        switch wd {
+            case 1: return "周日"
+            case 2: return "周一"
+            case 3: return "周二"
+            case 4: return "周三"
+            case 5: return "周四"
+            case 6: return "周五"
+            case 7: return "周六"
+        }
+        return ""
+    }
+
+    ; ─── 清理标签中的非法字符 ───
+    static SanitizeTag(tag) {
+        tag := Trim(tag)
+        tag := RegExReplace(tag, '[\\/:*?"<>|]', "_")
+        tag := RegExReplace(tag, "\s+", " ")
+        if (StrLen(tag) > 50)
+            tag := SubStr(tag, 1, 50)
+        return tag
+    }
+
+    ; ─── 从文件名提取标签 ───
+    static TagFromFileName(fileNameOrPath) {
+        name := ""
+        SplitPath(fileNameOrPath, &name)
+        name := RegExReplace(name, "\.\w+$", "")
+        if (StrLen(name) <= 10)
+            return ""
+        if (SubStr(name, 11, 1) != "-")
+            return ""
+        return SubStr(name, 12)
+    }
+
+    ; 把字符串数组拼成「行分隔列表」—— 内置 Sort 收的是字符串，不是数组
+    static _JoinLines(arr) {
+        s := ""
+        for i, v in arr
+            s .= (i = 1 ? "" : "`n") . v
+        return s
+    }
+
+    ; ─── 枚举所有标签（扫 Vault 目录）───
+    static ListAllTags() {
+        result := []
+        Loop Files, Config.GetVault() . "\*.md" {
+            name := A_LoopFileName
+            if (SubStr(name, 1, 1) = "_")
+                continue
+            if !RegExMatch(name, "^(\d{4}-\d{2}-\d{2})(?:-(.+))?\.md$", &m)
+                continue
+            date := m[1]
+            tag := (m.Count >= 2 && m[2] != "") ? m[2] : ""
+            result.Push({date: date, tag: tag})
+        }
+        ; 按日期倒序。原先用冒泡（O(n²)）—— 1000 篇笔记要约 50 万次 StrCompare，
+        ; 在 AHK 解释器里是数百 ms 级；换成内置 Sort（C 层实现，O(n log n)）。
+        ; 排序键 = 「日期 + TAB + 6 位下标」：
+        ;   · 日期在前 = 主序，等价于原先的「按 date 比较」；
+        ;   · TAB(0x09) 比任何日期字符都小，同一天的多条（2026-09-19-a.md /
+        ;     2026-09-19-b.md 这类）不会互相串位；
+        ;   · 下标后缀保证键唯一，顺带让同一天的多条保持目录枚举顺序（排序稳定）。
+        ; 选项 "CR"：C = 区分大小写 → 纯字典序（日期是 `YYYY-MM-DD`，字典序即时间序，
+        ;           也避开系统区域设置的自然排序，结果只取决于字节）；
+        ;          R = 降序。
+        n := result.Length
+        if (n > 1) {
+            byKey := Map()
+            keys := []
+            for i, item in result {
+                k := item.date . "`t" . Format("{:06}", i)
+                byKey[k] := item
+                keys.Push(k)
+            }
+            result := []
+            for k in StrSplit(Sort(this._JoinLines(keys), "CR"), "`n")
+                result.Push(byKey[k])
+        }
+        return result
+    }
+
+    ; ─── 重命名 .rtf / .md 两个文件 ───
+    static RenameWithTag(date, oldTag, newTag) {
+        oldPrefix := (oldTag = "") ? date : date . "-" . oldTag
+        newPrefix := (newTag = "") ? date : date . "-" . newTag
+        if (oldPrefix = newPrefix)
+            return true
+
+        for ext in ["rtf", "md"] {
+            oldPath := Config.GetVault() . "\" . oldPrefix . "." . ext
+            newPath := Config.GetVault() . "\" . newPrefix . "." . ext
+            if FileExist(oldPath) {
+                try FileMove(oldPath, newPath, false)
+                catch
+                    return false
+            }
+        }
+        return true
+    }
+}
+
+
+; ─── PandocService：RTF → Markdown ───
+; 【v1.9 关键修复】
+;   · GetCmd / IsAvailable 加文件大小检查（> 1MB 才用）
+;   · 避免 0KB 坏 pandoc 阻塞系统 PATH 里的好 pandoc
+class PandocService {
+    ; 探测过一次「可用」就永久记住。pandoc 是本程序自带的（或系统装的），
+    ; 运行期间不会凭空消失 —— 而每次探测都要 RunWait 起一个 conhost + 一个 200MB 的
+    ; pandoc 进程（实测几十到几百 ms，冷启动更久）。而探测点在保存链路上：
+    ; Window.BeforeHide → Save → IsAvailable，也就是**每次 Alt+Z 隐藏都跑一次**，
+    ; 外加 120s 自动保存。只有「探测不到」才每次都重试，好让用户中途装好 pandoc
+    ; 之后不必重启程序。
+    static _availCache := false
+
+    ; ─── 判断 pandoc 文件是否"有效" ───（v1.9 新增）
+    ; 有效定义：文件存在 且 大小 > 1MB（正常 pandoc 约 150-230MB）
+    static _IsValidPandoc(path) {
+        return FileExist(path) && FileGetSize(path) > 1048576
+    }
+
+    ; ─── 返回可用的 pandoc 命令 ───（v1.9 修复：加大小检查）
+    ; 优先 %AppData%\SevenNote\pandoc.exe（必须有效）
+    ; 否则退化到系统 PATH 里的 pandoc
+    static GetCmd() {
+        p := Config.PandocPath
+        if this._IsValidPandoc(p)
+            return '"' . p . '"'
+        return "pandoc.exe"
+    }
+
+    ; ─── 检测 pandoc 是否可用 ───（v1.9 修复：加大小检查）
+    static IsAvailable() {
+        if this._availCache
+            return true
+        ; 优先 AppData 打包版（必须大小 > 1MB）
+        p := Config.PandocPath
+        if this._IsValidPandoc(p) {
+            try {
+                code := RunWait(A_ComSpec . ' /c "' . p
+                    . '" --version >nul 2>&1', , "Hide")
+                if (code = 0)
+                    return this._availCache := true
+            } catch {
+            }
+        }
+        ; 退化系统 PATH
+        try {
+            code := RunWait(A_ComSpec . " /c pandoc --version >nul 2>&1", , "Hide")
+            if (code = 0)
+                return this._availCache := true
+        } catch {
+        }
+        return false
+    }
+
+    ; ─── 主流程：RTF → MD ───
+    static Convert(srcRtfPath, mdPath, dateStr) {
+        extractDir := NoteStoreService.TempDir() . "\media"
+        assetsDir := NoteStoreService.AssetsDir(dateStr)
+
+        if DirExist(extractDir)
+            try DirDelete(extractDir, true)
+        DirCreate(extractDir)
+        NoteStoreService.EnsureDir(assetsDir)
+
+        cmd := this.GetCmd() . ' -f rtf -t markdown --wrap=none'
+            . ' --extract-media="' . extractDir . '"'
+            . ' "' . srcRtfPath . '" -o "' . mdPath . '"'
+
+        code := RunWait(A_ComSpec . ' /c "' . cmd . '"', , "Hide")
+        if (code != 0)
+            return false
+
+        this._FixMarkdown(mdPath, dateStr, extractDir, assetsDir)
+
+        if DirExist(extractDir)
+            try DirDelete(extractDir, true)
+
+        return true
+    }
+
+    ; ─── 后处理 Markdown ───
+    ; 图片路径改为 ./_assets/日期/文件名
+    static _FixMarkdown(mdPath, dateStr, extractDir, assetsDir) {
+        if !FileExist(mdPath)
+            return
+        f := FileOpen(mdPath, "r", "UTF-8")
+        content := f.Read()
+        f.Close()
+
+        pattern := '!\[.*?\]\([^)]*?[\\/]([^\\/()]+)\)(?:\{[^}]*\})?'
+        content := RegExReplace(content, pattern
+            , "![](" . "./_assets/" . dateStr . "/$1)")
+        content := RegExReplace(content, "(!\[\]\([^)]+\))", "$1`n")
+        content := RegExReplace(content, "\\\s*\r?\n", "`n")
+
+        f := FileOpen(mdPath, "w", "UTF-8")
+        f.Write(content)
+        f.Close()
+
+        if DirExist(extractDir) {
+            Loop Files, extractDir . "\*.*" {
+                try FileMove(A_LoopFileFullPath
+                    , assetsDir . "\" . A_LoopFileName, true)
+            }
+        }
+    }
+}
+
+
+; ─── ThemeService：主题应用 ───
+class ThemeService {
+    static Themes := [
+        ; ⚠ 主题表在 v2.4 精简过一次（8 套 → 5 套）：删掉天空蓝 / 薄荷绿 / 高雅灰，
+        ;   留下「纯米黄 / 护眼绿」两套浅色底 + 「纸白」中性白 + 「星空 / 金克斯」两套图主题。
+        ;   被删的各有替代：薄荷绿 → 护眼绿，天空蓝 / 高雅灰 → 纸白。
+        ; ⚠ 删主题会让**其后所有元素的下标往前挪**，而配置里存的正是下标 —— 老用户会被
+        ;   换成另一套主题，甚至越界兜底。故 _MigrateIndex() 里留了一次性下标迁移。
+        ;   加主题仍应**追加到数组末尾**（同样是为了不动已有下标）。
+        {name: "纯米黄", win: "FFF8E7", edBg: "FFF8E7", text: "3D2B1F", dim: "A89880"},
+        {name: "护眼绿", win: "CCE8CF", edBg: "E0F0E3", text: "2D4A30", dim: "6B8E6E"},
+        {name: "纸白",   win: "FAFAFA", edBg: "FFFFFF", text: "333333", dim: "999999"},
+        ; ⚠ 带背景图的主题：bg 是图片路径，bgAlpha 是把图压暗的遮罩不透明度（0-100）。
+        ;   这套配色取自那张星空图（实测全图均色 #181C25、平均亮度仅 28）：win / edBg 都
+        ;   贴着图的暗部走（亮度 ≈15），编辑区内外浑然一体，没有色块割裂感。
+        ;   bgAlpha = 0 表示不压暗：Windows Terminal 用的就是同一张图、backgroundImageOpacity
+        ;     设成 1（完全不压暗），这里对齐它 —— 星云保持原样、最亮也最清楚。
+        ;     想压暗就改这里的 bgAlpha（值越大越暗）。
+        ;   ⚠ 不压暗之后前景色必须够亮：文字取近白、次级文字也抬到浅灰蓝，
+        ;     否则压在星云亮部（亮度约 60-130）上会发灰读不清。
+        ;   图片缺失时自动降级成纯深色底（edBg），浅色文字照样读得清。
+        ;   不想改源码就换图：改这条目里的 bg（换图后要重启程序才生效）。
+        {name: "星空", win: "0D0F14", edBg: "0D0F14", text: "F5F9FF", dim: "9FAABC"
+            , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\星空\2026-10-14_星空-灰色2.png"
+            , bgAlpha: 0},
+
+        ; ⚠ 竖版人物图和横版漫射图是两种铺法 —— 但**别拿 contain 兜竖图**：
+        ;   · 星空是漫射横图，cover 裁掉左右各 45% 也看不出；
+        ;   · 竖版人物图（0.676）塞进编辑区（0.917）若走 contain，两侧会留出
+        ;     一大条 edBg 底色、人物缩在中间。正解是**先按编辑区比例裁好再铺**：
+        ;     烘出来的图本身就是 0.917，cover 即铺满、一个细节不浪费。
+        ; ⚠ 这套是「暗图 + 亮字」，和「星空」同族 —— 别被"人物图得提亮"带偏：
+        ;   源图是 5897x8719 的高清原图，全图均亮度只有 **75**，本来就满足「亮字」的
+        ;   WCAG 4.5:1 那条线（背景 ≤ 118），**根本不需要提亮**。上一版为了迁就深色字
+        ;   把它抬到均亮 170，整张图当场像蒙了层灰 —— 提亮不等于"更清晰"，是把原图洗白。
+        ;   现在这条路反过来：暗部一个像素都不动，只把压在文字下面的**最亮部分**滚降。
+        ; ⚠ 烘焙由 tools\rebake-backdrop.ps1 一次跑完，输入只有那张高清原图：
+        ;   ① 裁：**取满原图宽**（-CropX 0.00 -CropW 1.00 -CropY 0.00）= 主体按原图大小，
+        ;      不做放大特写。这是 v2.3 重烘时定下的构图；
+        ;   ② 缩：2400x2617（0.917，与编辑区严格同比例，SS_BITMAP 不再重采样）；
+        ;   ③ 色调：**在 V（明度）上等比缩放**，绝不混色 ——
+        ;        V ≤ 138 原样不动，V > 138 线性滚降到 200。只动亮部（脸 / 手 / 白墙），
+        ;      暗部一像素不改，饱和度一丝不掉。
+        ;   ④ unsharp 半径 4 强度 0.9（在**成品尺寸**上做，不是源图尺寸）。
+        ;   还想再暗/再亮：优先改 -Knee / -HiMax 重烘（运行时遮罩会减饱和，别当常法）。
+        ; ⚠⚠ 这套图烘过**三代**，别照抄旧账：
+        ;     一代  -CropW 0.72 / -Knee 116 -HiMax 152  ← 大特写（脸顶到框）、亮部压得太狠，已废
+        ;     二代  -CropW 0.85                          ← 过渡档，已废
+        ;     三代  -CropW 1.00 / -Knee 138 -HiMax 200  ← **当前成品就是这一版**
+        ;   旧成品备份还在图片目录里，可作旁证：金克斯主题_bak_crop85.png、
+        ;   金克斯主题_bak_knee116.png（文件名里的 knee116 正是一代参数）。
+        ;   三代实测账（同一裁剪区对比）：亮部 p95 ≈141 → **177**（原图 214）、
+        ;   最彩 5% 像素饱和度 42.2% → **44.1%**（一丝不掉）、全图均亮度 83.9 → **79.6**
+        ;   —— 代价只是暗档略降，观感仍是原图本身。
+        ; ⚠ 素材是 5897x8719 的高清原图「金克斯竖版.png」，别退回去用 2000x2300 的
+        ;   「金克斯竖版02.png」—— 那张缩到编辑区只剩 3 倍余量，锐化后更容易发糊。
+        ; ⚠ 配色全在图里（图是冷调，B > R）：win / edBg = 0B1624（比图的暗部再蓝一档，
+        ;   深色标题栏随之自动打开），text = EAF2FF、dim = 93AACB —— 亮字压深底，
+        ;   对比度 16:1 / 7.6:1，都远超 4.5:1。
+        {name: "金克斯", win: "0B1624", edBg: "0B1624", text: "EAF2FF", dim: "93AACB"
+            , bg: "D:\00-SevenFiles\Pictures\04-素材库\壁纸\动漫\金克斯主题.png"
+            , bgAlpha: 0
+            , bgFit: "cover"}
+    ]
+
+    static _current := 1
+    static _loading := false
+
+    static GetCurrent() => this._current
+    static GetName() => this.Themes[this._current].name
+
+    static Next() {
+        this._current++
+        if (this._current > this.Themes.Length)
+            this._current := 1
+        this.Apply(this._current)
+    }
+
+    static Apply(idx) {
+        this._current := idx
+        t := this.Themes[idx]
+        g := State.GetGui()
+        hwndEd := State.GetEd()
+        if !g || !hwndEd
+            return
+
+        g.BackColor := t.win
+        SendMessage(0x0443, 0, this._RGBtoBGR(t.edBg), hwndEd)
+
+        cf := Buffer(92, 0)
+        NumPut("uint", 92, cf, 0)
+        NumPut("uint", 0x40000000 | 0x20000000 | 0x80000000 | 0x08000000, cf, 4)
+        NumPut("int", FontService.GetSize() * 20, cf, 12)
+        NumPut("uint", this._RGBtoBGR(t.text), cf, 20)
+        NumPut("uchar", 134, cf, 24)
+        StrPut(FontService.GetName(), cf.Ptr + 26, "UTF-16")
+        SendMessage(0x0444, 4, cf.Ptr, hwndEd)
+
+        ; ⚠ 字号必须与 FontService.Apply 取同一档（size-4）：两处覆盖的是同一批控件，
+        ;   一处写死 s10、一处写 size-4，Alt+T 与 Alt+± 就会互相顶掉对方的字号。
+        for ctrl in [State.GetStat(), State.GetDateCtrl()
+            , State.GetMsgCtrl(), State.GetThemeLabel()] {
+            try ctrl.SetFont("c" . t.dim . " s" . (FontService.GetSize() - 4), FontService.GetName())
+        }
+        try State.GetThemeLabel().SetFont("c" . t.text . " s10", FontService.GetName())
+        try State.GetTagCtrl().SetFont("c" . t.dim . " s10", FontService.GetName())
+
+        try State.GetThemeLabel().Value := this._BuildLabel()
+
+        ; 深色主题连标题栏一起变深 —— Windows 默认画白标题栏，压在深色窗口上很扎眼
+        this._SetDarkTitleBar(t)
+
+        ; 编辑区滚动条一并跟主题：它画在**非客户区**、由系统主题上色，深色主题下会留下
+        ; 一条亮白竖条，压在暗底上格外突兀
+        this._SetScrollBarTheme(hwndEd, this._IsDarkHex(t.win))
+
+        if !this._loading
+            this.SaveToConfig()
+
+        EventBus.Emit("Theme.Changed", {name: t.name, idx: this._current})
+    }
+
+    ; 标题栏深浅跟着主题底色走：按亮度判断，深色主题开 immersive dark mode、浅色主题关掉。
+    ; ⚠ 属性号随 Windows 版本变：Win10 1903+ / Win11 用 20，Win10 1809 用 19；
+    ;   先试 20，DllCall 返回非 0（不支持该属性）再退到 19。
+    static _SetDarkTitleBar(t) {
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return
+        dark := this._IsDarkHex(t.win) ? 1 : 0
+
+        v := Buffer(4, 0)
+        NumPut("int", dark, v, 0)
+        try {
+            for attr in [20, 19] {
+                if !DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
+                    , "int", attr, "ptr", v, "int", 4, "int")
+                    break
+            }
+        }
+
+        ; 标题栏整块染成主题色（Win11 build 22000+ 才有 35 / 36 / 34 这三个属性）：
+        ;   35 = CAPTION_COLOR  标题栏底色，取 win
+        ;   36 = TEXT_COLOR     标题文字色，取 text —— 深底配亮字、浅底配深字，自动成对
+        ;   34 = BORDER_COLOR   外框，与标题栏同色
+        ;   颜色是 COLORREF（0x00BBGGRR），正好复用 _RGBtoBGR()。
+        ; ⚠ Win10 上这三个属性不存在，DllCall 直接返回非 0 —— 静默丢掉、系统配色照旧，
+        ;   所以不必写版本判断（上面那段 immersive dark mode 已经兜住了深浅）。
+        for it in [[35, t.win], [36, t.text], [34, t.win]] {
+            cv := Buffer(4, 0)
+            NumPut("uint", this._RGBtoBGR(it[2]), cv, 0)
+            try DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
+                , "int", it[1], "ptr", cv, "int", 4, "int")
+        }
+    }
+
+    ; 「深色」判据：底色按加权亮度 < 128 即视为深色。标题栏与滚动条共用这一条。
+    static _IsDarkHex(hex) {
+        r  := Integer("0x" . SubStr(hex, 1, 2))
+        gg := Integer("0x" . SubStr(hex, 3, 2))
+        b  := Integer("0x" . SubStr(hex, 5, 2))
+        return (0.299 * r + 0.587 * gg + 0.114 * b) < 128
+    }
+
+    ; 编辑区的滚动条是**非客户区**、由系统主题上色 —— 深色主题下它仍是亮白一条，压在
+    ; 暗底上格外扎眼（浅色主题下则相反：深色滚动条同样突兀）。把窗口主题交给
+    ; DarkMode_Explorer / Explorer，滚动条即随之变暗或变亮，其余观感分毫不动。
+    ; ⚠ 走 DllCall 而不是内置的 SetWindowTheme()：第三参恒为 0（不重置子控件主题），
+    ;   这里写全参数最省心。
+    ; ⚠ 老系统上没有 DarkMode_Explorer 这个主题，DllCall 静默失败、退回系统配色 ——
+    ;   不必写版本判断。
+    static _SetScrollBarTheme(hwndEd, dark) {
+        if !hwndEd
+            return
+        theme := dark ? "DarkMode_Explorer" : "Explorer"
+        try DllCall("uxtheme\SetWindowTheme", "ptr", hwndEd, "wstr", theme, "ptr", 0)
+    }
+
+    static SaveToConfig() {
+        ConfigService.Write("Appearance", "ThemeIndex", this._current)
+    }
+
+    static LoadFromConfig() {
+        this._loading := true
+        idx := ConfigService.ReadInt("Appearance", "ThemeIndex", 1)
+        idx := this._MigrateIndex(idx)
+        if (idx < 1 || idx > this.Themes.Length)
+            idx := 1
+        this.Apply(idx)
+        this._loading := false
+    }
+
+    ; ─── 旧下标迁移（v2.4 精简主题表：8 套 → 5 套）───
+    ; 主题表删掉 3 套之后，配置里存的老下标语义全变了 —— 本机实测老配置是 ThemeIndex=8
+    ; （金克斯），而新表只有 5 套：不迁移就**越界**，被下面那句兜底成「纯米黄」，
+    ; 等于把用户的主题悄悄换掉。按下表把被删主题映到最相近的保留主题：
+    ;     旧 1 米黄 → 1    旧 2 护眼绿 → 2    旧 3 天空蓝 → 3 纸白
+    ;     旧 4 薄荷绿 → 2  旧 5 高雅灰 → 3    旧 6 纸白 → 3
+    ;     旧 7 星空 → 4    旧 8 金克斯 → 5
+    ; ⚠ 迁移**只能做一次**：同一个数字在新旧语义下含义不同（新表 4 = 星空、旧表 4 =
+    ;   薄荷绿），再映射一遍会把用户刚选的主题又改掉。故用 [Appearance] ThemeSchema=2
+    ;   打标记；并且**必须把新下标写回配置** —— Apply 在 _loading 期间不落盘，不写回的
+    ;   话下次启动又拿旧值去走越界兜底，迁移成了摆设。
+    static _MigrateIndex(idx) {
+        if (ConfigService.ReadInt("Appearance", "ThemeSchema", 1) >= 2)
+            return idx
+        idxMap := [1, 2, 3, 2, 3, 3, 4, 5]
+        newIdx := (idx >= 1 && idx <= idxMap.Length) ? idxMap[idx] : idx
+        ConfigService.Write("Appearance", "ThemeIndex", newIdx)
+        ConfigService.Write("Appearance", "ThemeSchema", 2)
+        return newIdx
+    }
+
+    static _BuildLabel() {
+        return ThemeService.GetName()
+            . " · " . FontService.GetName()
+            . " " . FontService.GetSize() . "pt"
+    }
+
+    static _RGBtoBGR(hexRGB) {
+        r := SubStr(hexRGB, 1, 2)
+        g := SubStr(hexRGB, 3, 2)
+        b := SubStr(hexRGB, 5, 2)
+        return Integer("0x" . b . g . r)
+    }
+}
+
+
+; ─── FontService：字体应用 ───
+class FontService {
+    static Fonts := ["楷体", "华文行楷", "华文新魏", "方正舒体"
+        , "仿宋", "微软雅黑", "黑体"]
+    static Sizes := [12, 14, 16, 18, 20]
+
+    static _curFont := 1
+    static _curSize := 2
+    static _loading := false
+
+    static GetName() => this.Fonts[this._curFont]
+    static GetSize() => this.Sizes[this._curSize]
+
+    static NextFont() {
+        this._curFont++
+        if (this._curFont > this.Fonts.Length)
+            this._curFont := 1
+        this.Apply()
+    }
+
+    static BiggerSize() {
+        if (this._curSize < this.Sizes.Length) {
+            this._curSize++
+            this.Apply()
+        }
+    }
+
+    static SmallerSize() {
+        if (this._curSize > 1) {
+            this._curSize--
+            this.Apply()
+        }
+    }
+
+    static Apply() {
+        hwndEd := State.GetEd()
+        if !hwndEd
+            return
+
+        t := ThemeService.Themes[ThemeService.GetCurrent()]
+
+        cf := Buffer(92, 0)
+        NumPut("uint", 92, cf, 0)
+        NumPut("uint", 0x40000000 | 0x20000000 | 0x80000000 | 0x08000000, cf, 4)
+        NumPut("int", this.GetSize() * 20, cf, 12)
+        NumPut("uint", ThemeService._RGBtoBGR(t.text), cf, 20)
+        NumPut("uchar", 134, cf, 24)
+        StrPut(this.GetName(), cf.Ptr + 26, "UTF-16")
+        SendMessage(0x0444, 4, cf.Ptr, hwndEd)
+
+        for ctrl in [State.GetStat(), State.GetDateCtrl()
+            , State.GetMsgCtrl(), State.GetThemeLabel()] {
+            try ctrl.SetFont("c" . t.dim . " s" . (this.GetSize() - 4), this.GetName())
+        }
+        try State.GetThemeLabel().SetFont("c" . t.text . " s10", this.GetName())
+        try State.GetTagCtrl().SetFont("c" . t.dim . " s10", this.GetName())
+
+        try State.GetThemeLabel().Value := ThemeService._BuildLabel()
+
+        if !this._loading
+            this.SaveToConfig()
+
+        EventBus.Emit("Font.Changed", {name: this.GetName(), size: this.GetSize()})
+
+        SendMessage(0x00B1, -1, -1, hwndEd)
+        SendMessage(0x00B7, 0, 0, hwndEd)
+    }
+
+    static SaveToConfig() {
+        ConfigService.Write("Appearance", "FontIndex", this._curFont)
+        ConfigService.Write("Appearance", "FontSizeIndex", this._curSize)
+    }
+
+    static LoadFromConfig() {
+        this._loading := true
+        fi := ConfigService.ReadInt("Appearance", "FontIndex", 1)
+        if (fi < 1 || fi > this.Fonts.Length)
+            fi := 1
+        this._curFont := fi
+        si := ConfigService.ReadInt("Appearance", "FontSizeIndex", 2)
+        if (si < 1 || si > this.Sizes.Length)
+            si := 2
+        this._curSize := si
+        this.Apply()
+        this._loading := false
+    }
+}
+
+
+; ─── BackdropService：背景图能力（位图合成 + 层级铺设）───
+; 纯能力：不读配置、不管开关、不发事件，只负责「把一张图铺到编辑区背后的控件上」。
+;
+; 技术路线（除 ※ 那条外，均经独立 spike 脚本实测确认，非推测）：
+;   · RichEdit 无法真正透明 —— 给编辑区加 WS_EX_TRANSPARENT，让它绘制时跳过自身背景，
+;     由 z-order 更低的同级兄弟控件（承载图片的 Static）先画出的图透上来；
+;   · 子类化 WM_ERASEBKGND 自绘也无效 —— 图会被 RichEdit 在 WM_PAINT 内重填背景盖掉；
+;   · WS_EX_TRANSPARENT 实测不影响鼠标命中与键盘输入，真实滚轮滚动无残影，
+;     被其他窗口遮挡再露出也能正常恢复。
+;
+; ※ 父窗口 WS_EX_COMPOSITED 与编辑区透明的相容性：**有条件，别当绝对禁令**
+;   · ebd95ac（背景图首版，Alt+B 时代、样式由 WinSetExStyle 设）的 spike 实测是
+;     「父窗口加 WS_EX_COMPOSITED → 只剩图、文字全丢」，当时据此写下「绝不能加」；
+;   · 但 v2.3.2（e81c03c）为消除滚动频闪，在组合根的 g.Opt 里加了 +E0x02000000 ——
+;     这条禁令两天后就被违反，且没留下任何复测记录（该提交只提频闪）。
+;   · 当前两者**同时存在**，日常使用未见文字丢失；但**没有一条正向判据证明过**：
+;     那一轮的验收是「resize 前后截图逐像素一致」—— 文字若本来就丢，前后也一致，
+;     照样「通过」。一致性不等于正确性。
+;   ⚠ 动到任一侧（父窗口 COMPOSITED / 编辑区透明）都要复测两条，且用**存在性判据**：
+;     ① 切带背景图的主题、编辑区打满字 → 截图里近白像素应达数万级（证明文字还在）；
+;        不要拿「前后截图一致」当判据 —— 它只证明没变化，证明不了文字在。
+;     ② 拖动窗口 40 次 → 不应出现上下滑动频闪（E0x02000000 正是为它加的）。
+;
+; ⚠ 两个 API 细节：
+;   · 扩展样式必须在 Show() 之前设置；
+;   · 样式开关走 BackdropFeature._SetEdTransparent 的 DllCall，不用 AHK 的 WinSetExStyle ——
+;     后者在窗口**最小化**时会抛「(6) 句柄无效。」（原因见该方法的注释）。
+class BackdropService {
+    static _picCtrl := ""        ; 承载背景图的 Static 控件（带 SS_BITMAP）
+    static _srcBmp := 0          ; 原图 HBITMAP（只解码一次，反复复用）
+    static _srcW := 0
+    static _srcH := 0
+    static _imgPath := ""
+    static _maskColor := "FFF8E7"   ; 遮罩色，十六进制 RGB（取主题编辑区底色）
+    static _maskAlpha := 204        ; 遮罩不透明度 0-255（204 ≈ 80%）
+    static _attached := false
+    static _fit := "cover"       ; 缩放模式：cover = 等比裁剪铺满（默认）；contain = 整图缩放进内
+
+    static HasImage() => (this._imgPath != "" && FileExist(this._imgPath))
+
+    ; 遮罩色 + 不透明度（终端式做法的要点：把图压暗，前景文字才读得清）
+    static SetMask(hexRGB, alphaPercent) {
+        if (hexRGB != "")
+            this._maskColor := hexRGB
+        a := Round(255 * alphaPercent / 100)
+        this._maskAlpha := (a < 0) ? 0 : ((a > 255) ? 255 : a)
+    }
+
+    ; 换图：清掉已解码的原图，下次 Render 时重新加载
+    static SetImage(path) {
+        if (path = this._imgPath)
+            return
+        this._ReleaseSource()
+        this._imgPath := path
+    }
+
+    ; 缩放模式。缺省 cover —— 老主题（含「星空」）不写这个字段，行为分毫不变。
+    static SetFit(mode) {
+        this._fit := (mode = "contain") ? "contain" : "cover"
+    }
+
+    ; ─── 图层控件：创建后压到编辑区之下 ───
+    ; 用 AddText + SS_BITMAP(0x0E) 而非 AddPicture：后者必须给文件路径，
+    ; 而我们要往控件里灌内存位图（图 + 遮罩是合成出来的，不落盘）。
+    static Attach(g) {
+        if this._attached
+            return true
+        try {
+            ; ⚠ 不能带 -Wrap：-Wrap 会清掉 0x0C 位，把 SS_BITMAP(0x0E) 打成 0x02(SS_RIGHT)
+            pic := g.AddText("x8 y32 w434 h440 +0xE", "")
+            pic.Visible := false
+            ; 把 pic 插到编辑区之后 —— z-order 里「之后」即在更下层
+            DllCall("SetWindowPos", "ptr", pic.Hwnd, "ptr", State.GetEd()
+                , "int", 0, "int", 0, "int", 0, "int", 0
+                , "uint", 0x0002 | 0x0001 | 0x0010)   ; NOMOVE | NOSIZE | NOACTIVATE
+            this._picCtrl := pic
+            this._attached := true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static SetVisible(on) {
+        if !this._picCtrl
+            return
+        try this._picCtrl.Visible := on
+    }
+
+    ; ─── 按目标矩形重新合成并铺上图 ───
+    ; 尺寸交给调用方（Feature）用与编辑区 Move 完全相同的参数算，避免 DPI 单位混用。
+    static Render(x, y, w, h) {
+        if !this._attached || !this._picCtrl
+            return false
+        if (w <= 0 || h <= 0)
+            return false
+        if !this.LoadSource()
+            return false
+
+        this._picCtrl.Move(x, y, w, h)
+
+        ; ⚠ 位图尺寸必须与控件的「物理像素尺寸」严格相等，SS_BITMAP 才会 1:1 贴图。
+        ;   只要差 1px，它就改用 COLORONCOLOR（最近邻）把整张图重采样一遍 —— 画面
+        ;   当场发糊，损失比换任何插值算法都大。而 w × A_ScreenDPI/96 只是估算：
+        ;     · 非整数倍 DPI（125% / 175%）下 AHK 内部的换算与这里的舍入可能差 1px；
+        ;     · A_ScreenDPI 只反映主屏 —— 窗口拖到另一块不同缩放的显示器上会整倍地错，
+        ;       这正是「换个屏就糊」的根。
+        ;   所以不猜：Move 完直接从 Win32 读回真实像素尺寸，所见即所得。
+        pw := 0, ph := 0
+        if !this._CtrlPixelSize(&pw, &ph)
+            return false
+        hbm := this._Compose(pw, ph)
+        if !hbm
+            return false
+
+        ; STM_SETIMAGE(0x0172) / wParam = IMAGE_BITMAP(0)
+        ; SS_BITMAP 控件会自行销毁上一张位图，这里不必手动 DeleteObject
+        SendMessage(0x0172, 0, hbm, this._picCtrl.Hwnd)
+        ; ⚠ SS_BITMAP 控件收到 STM_SETIMAGE 后会把自身尺寸改成「位图的像素尺寸」——
+        ;   那是物理值、不走 DPI 缩放，会把上面那次 Move 的逻辑尺寸冲掉。实测 150%
+        ;   缩放下图只盖住编辑区 1/1.5 的面积（控件 443x483，编辑区 665x725）。
+        ;   位图灌完后按原逻辑尺寸再压一次，控件物理矩形即回到 pw×ph，与位图严丝合缝。
+        this._picCtrl.Move(x, y, w, h)
+        return true
+    }
+
+    ; ─── 读承载控件的真实物理像素尺寸 ───
+    ; GetWindowRect 返回的永远是物理像素（进程已 DPI 感知），不经过 AHK 的逻辑换算。
+    ; 因此它一并解决两件事：消掉「估算差 1px → 整图重采样」，以及让尺寸自动跟随
+    ; 窗口所在的显示器缩放（副屏 100%、主屏 150% 也不会再糊）。
+    static _CtrlPixelSize(&w, &h) {
+        rc := Buffer(16, 0)
+        if !DllCall("GetWindowRect", "ptr", this._picCtrl.Hwnd, "ptr", rc)
+            return false
+        w := NumGet(rc, 8, "int") - NumGet(rc, 0, "int")
+        h := NumGet(rc, 12, "int") - NumGet(rc, 4, "int")
+        return (w > 0 && h > 0)
+    }
+
+    ; ─── 解码原图（惰性，只做一次）───
+    static LoadSource() {
+        if this._srcBmp
+            return true
+        if !this.HasImage()
+            return false
+        try {
+            bmp := LoadPicture(this._imgPath, "G")   ; G = 只要 HBITMAP，不要 Bitmap 对象
+        } catch {
+            return false
+        }
+        if !bmp
+            return false
+
+        ; BITMAP 结构：bmWidth 在偏移 4，bmHeight 在偏移 8
+        info := Buffer(32, 0)
+        if !DllCall("GetObject", "ptr", bmp, "int", 32, "ptr", info, "int")
+            return false
+        this._srcBmp := bmp
+        this._srcW := NumGet(info, 4, "int")
+        this._srcH := NumGet(info, 8, "int")
+        return (this._srcW > 0 && this._srcH > 0)
+    }
+
+    static _ReleaseSource() {
+        if this._srcBmp {
+            try DllCall("DeleteObject", "ptr", this._srcBmp)
+            this._srcBmp := 0
+            this._srcW := 0
+            this._srcH := 0
+        }
+    }
+
+    ; ─── 合成：原图缩放到目标尺寸 + 叠一层半透明遮罩色 ───
+    ; w/h 是**物理像素**，由 _CtrlPixelSize 从控件读回，不再自己按 A_ScreenDPI 估算 ——
+    ; 位图与控件因此像素对齐，SS_BITMAP 不会再多拉伸一次，跨显示器缩放也自动跟随。
+    static _Compose(w, h) {
+        if (w < 1 || h < 1)
+            return 0
+        hdcScreen := DllCall("GetDC", "ptr", 0, "ptr")
+        hdcMem := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+        hbm := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", w, "int", h, "ptr")
+        oldMem := DllCall("SelectObject", "ptr", hdcMem, "ptr", hbm, "ptr")
+
+        ; ① 原图 → 目标尺寸，逐级对折（每级最多缩一半）。
+        ;    等比缩放而非拉伸：3840x2400（16:10）硬塞进 665x725（0.92）会被压扁，
+        ;    星云拉成竖条就"不清晰"了。两种铺法的比例都保持原样：
+        ;      · cover（默认）：按 max 缩放系数放大到刚好盖满，再从中心裁出与目标同比例
+        ;        的一块来画 —— 只裁不压。适合横版漫射图（星空 1.6 裁掉左右也看不出）。
+        ;      · contain（bgFit 指定）：按 min 系数把整张图缩到能放进目标区，居中摆放 ——
+        ;        一个像素都不裁。竖版人物图必须用它，否则 cover 会把上下裁掉、人物被切。
+        ;
+        ;    ⚠ 为什么不能一步缩到位：HALFTONE 本质是 box 采样，一次缩 5.8 倍等于源图上
+        ;      每 5.8 个像素只留 1 个进结果，中间的亮度被直接丢掉 —— 星点被采成锯齿、
+        ;      亮部起摩尔纹，这才是「不细腻」的大头（比换插值算法的影响还大）。
+        ;      拆成每级 ≤2 倍，每级都先做一次平均，等效于多抽头低通滤波，纹理立刻干净。
+        ;      放大时（源比目标小）不该分级，一级直出即可，免得白损一次插值。
+        hdcSrc := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+        oldSrc := DllCall("SelectObject", "ptr", hdcSrc, "ptr", this._srcBmp, "ptr")
+
+        ; 目标绘制矩形（物理像素）：cover 铺满整块，contain 缩进内、四周留底色。
+        dstX := 0, dstY := 0, dstW := w, dstH := h
+
+        if (this._fit = "contain") {
+            ; contain：整张源图等比缩到能放进 w×h，居中摆放 —— 一个像素都不裁。
+            k := (w / this._srcW < h / this._srcH) ? w / this._srcW : h / this._srcH
+            dstW := Round(this._srcW * k)
+            dstH := Round(this._srcH * k)
+            dstX := (w - dstW) // 2
+            dstY := (h - dstH) // 2
+
+            ; ⚠ 留边会露出 CreateCompatibleBitmap 从未初始化过的内存（花屏 / 黑块），
+            ;   必须先用遮罩色铺一层底。遮罩色就是主题的 edBg，留边与窗框同色、浑然一体。
+            ;   cover 铺满整块用不着，也就不碰它 —— 老主题的画面分毫不变。
+            hbr := DllCall("CreateSolidBrush", "uint", this._RGBtoBGR(this._maskColor), "ptr")
+            if hbr {
+                rc := Buffer(16, 0)
+                NumPut("int", 0, rc, 0)
+                NumPut("int", 0, rc, 4)
+                NumPut("int", w, rc, 8)
+                NumPut("int", h, rc, 12)
+                DllCall("FillRect", "ptr", hdcMem, "ptr", rc, "ptr", hbr)
+                DllCall("DeleteObject", "ptr", hbr)
+            }
+
+            cw := this._srcW           ; 源取整张
+            ch := this._srcH
+            cX := 0, cY := 0
+        } else {
+            ; cover：等比放大到刚好盖满，再从中心裁出与目标同比例的一块。
+            k  := (w / this._srcW > h / this._srcH) ? w / this._srcW : h / this._srcH
+            cw := Round(w / k)
+            ch := Round(h / k)
+            cX := Round((this._srcW - cw) / 2)
+            cY := Round((this._srcH - ch) / 2)
+        }
+
+        curDC := hdcSrc
+        curX  := cX
+        curY  := cY
+        curW  := cw
+        curH  := ch
+        mids  := []                ; 逐级产生的临时位图/DC，画完统一回收
+
+        ; ⚠ 分级对折的判据和目标要用「图的落点尺寸」(dstW/dstH)，不是整块区域 ——
+        ;   contain 时图只占中间一小块，用 w/h 会让分级提前收手、缩出来发糙。
+        while (curW > dstW * 2 && curH > dstH * 2) {
+            nw := Max(dstW, curW // 2)
+            nh := Max(dstH, curH // 2)
+            nb := DllCall("CreateCompatibleBitmap", "ptr", hdcScreen, "int", nw, "int", nh, "ptr")
+            nd := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+            if !(nb && nd) {
+                ; 分配失败就退回「上一级单步缩到位」：宁可略糙，也不能把图弄丢
+                if nb
+                    DllCall("DeleteObject", "ptr", nb)
+                if nd
+                    DllCall("DeleteDC", "ptr", nd)
+                break
+            }
+            old := DllCall("SelectObject", "ptr", nd, "ptr", nb, "ptr")
+            DllCall("SetStretchBltMode", "ptr", nd, "int", 4)      ; HALFTONE
+            DllCall("SetBrushOrgEx", "ptr", nd, "int", 0, "int", 0, "ptr", 0)
+            DllCall("StretchBlt", "ptr", nd, "int", 0, "int", 0, "int", nw, "int", nh
+                , "ptr", curDC, "int", curX, "int", curY, "int", curW, "int", curH
+                , "uint", 0x00CC0020)                              ; SRCCOPY
+            mids.Push({dc: nd, bmp: nb, old: old})
+            curDC := nd, curX := 0, curY := 0, curW := nw, curH := nh
+        }
+
+        DllCall("SetStretchBltMode", "ptr", hdcMem, "int", 4)      ; HALFTONE
+        DllCall("SetBrushOrgEx", "ptr", hdcMem, "int", 0, "int", 0, "ptr", 0)
+        DllCall("StretchBlt", "ptr", hdcMem, "int", dstX, "int", dstY, "int", dstW, "int", dstH
+            , "ptr", curDC, "int", curX, "int", curY, "int", curW, "int", curH
+            , "uint", 0x00CC0020)                                  ; SRCCOPY
+
+        for m in mids {
+            DllCall("SelectObject", "ptr", m.dc, "ptr", m.old)
+            DllCall("DeleteDC", "ptr", m.dc)
+            DllCall("DeleteObject", "ptr", m.bmp)
+        }
+        DllCall("SelectObject", "ptr", hdcSrc, "ptr", oldSrc)
+        DllCall("DeleteDC", "ptr", hdcSrc)
+
+        ; ② 半透明遮罩：用 1x1 的 32bpp DIB 源配合 AlphaBlend 整体合成，
+        ;    避免逐像素遍历（840x600 有 50 万像素，逐像素在 AHK 里会明显卡顿）
+        ;    ⚠ 两个坑（都实测踩过）：
+        ;      · 源必须是 32bpp 且像素内嵌 alpha —— CreateCompatibleBitmap 造出的 DDB
+        ;        没有 alpha 通道，AlphaBlend 会直接返回 0（失败）
+        ;      · BLENDFUNCTION 是「按值传递」的 4 字节结构，必须打包成 uint 传，
+        ;        传指针会导致 AlphaBlend 静默失败
+        if (this._maskAlpha > 0) {
+            bmih := Buffer(40, 0)
+            NumPut("uint", 40, bmih, 0)      ; biSize
+            NumPut("int", 1, bmih, 4)        ; biWidth
+            NumPut("int", 1, bmih, 8)        ; biHeight
+            NumPut("ushort", 1, bmih, 12)    ; biPlanes
+            NumPut("ushort", 32, bmih, 14)   ; biBitCount
+            NumPut("uint", 0, bmih, 16)      ; biCompression = BI_RGB
+            NumPut("uint", 4, bmih, 20)      ; biSizeImage
+            ppv := 0
+            hbmSolid := DllCall("CreateDIBSection", "ptr", 0, "ptr", bmih, "uint", 0
+                , "ptr*", &ppv, "ptr", 0, "uint", 0, "ptr")
+
+            if (hbmSolid && ppv) {
+                ; BGRA 单像素：遮罩色 + 不透明度
+                NumPut("uint"
+                    , (this._maskAlpha << 24) | this._RGBtoBGR(this._maskColor), ppv, 0)
+
+                hdcSolid := DllCall("CreateCompatibleDC", "ptr", hdcScreen, "ptr")
+                oldSolid := DllCall("SelectObject", "ptr", hdcSolid, "ptr", hbmSolid, "ptr")
+
+                ; AC_SRC_OVER(0) | BlendFlags(0) | SourceConstantAlpha(255) | AC_SRC_ALPHA(1)
+                ftn := (1 << 24) | (255 << 16)
+                DllCall("msimg32\AlphaBlend", "ptr", hdcMem, "int", 0, "int", 0, "int", w, "int", h
+                    , "ptr", hdcSolid, "int", 0, "int", 0, "int", 1, "int", 1, "uint", ftn)
+
+                DllCall("SelectObject", "ptr", hdcSolid, "ptr", oldSolid)
+                DllCall("DeleteDC", "ptr", hdcSolid)
+            }
+            if hbmSolid
+                DllCall("DeleteObject", "ptr", hbmSolid)
+        }
+
+        DllCall("SelectObject", "ptr", hdcMem, "ptr", oldMem)
+        DllCall("DeleteDC", "ptr", hdcMem)
+        DllCall("ReleaseDC", "ptr", 0, "ptr", hdcScreen)
+        return hbm
+    }
+
+    static _RGBtoBGR(hexRGB) {
+        r := SubStr(hexRGB, 1, 2)
+        g := SubStr(hexRGB, 3, 2)
+        b := SubStr(hexRGB, 5, 2)
+        return Integer("0x" . b . g . r)
+    }
+}
+
+
+; ─── PeerLayoutService：伴生窗口的落点与可摆性（纯几何 + 窗口状态查询）───
+; 终端（Alt+C）与 DeepSeek（Alt+X）必须摆到**同一处**：右缘贴工作区右缘（离缘
+; Config.PlaceRight）、底边贴工作区底、宽度同为 [Paths] DeepSeekW。这份「同列同宽」
+; 的算式原本在两个 Feature 里各留一份（Feature 之间不许互相调用），改一处就得记着
+; 改另一处。它不属于任何单个 Feature、是纯计算与纯查询，故上收到 Service 层。
+class PeerLayoutService {
+    ; 隐藏 / 最小化的窗口一律当「不能摆」，调用方直接 return。
+    ; ⚠ AHK v2 默认忽略隐藏窗口 —— 对 WinHide 过的窗口做 WinGetPos / WinMove 会抛
+    ;   "Target window not found"，而调用方里有一支是异步 SetTimer 复核，等它跑起来时
+    ;   用户很可能已经按热键把窗口收起了（实测弹模态框、整个脚本卡死，之后 Alt+X /
+    ;   Alt+C 全无反应）。最小化态也别动：位置停在 -32000 停放位，量到的尺寸是垃圾值。
+    static IsPlaceable(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(false)
+        try {
+            return !!WinExist("ahk_id " . hwnd) && !DllCall("IsIconic", "ptr", hwnd, "int")
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+    }
+
+    ; 目标尺寸（物理像素）。默认 772x1020 —— 772 不是「照 WT profile 推算」的，而是
+    ; **实测 Edge 自己会稳定停住的外框宽**（请求 513 逻辑像素落到 772），终端也按同一
+    ; 宽度摆，于是 Alt+C 与 Alt+X 两种堆叠布局的左 / 右 / 底三条边全齐。
+    ; ⚠ 为什么不写 770：Edge 把内容区尺寸套到窗口外框上时会再补一圈调整边框，WinMove
+    ;   摆到 770 后它自己又套回 772 —— 跟它抢只会来回弹，尺寸复核每轮都判「不符」。
+    ; ⚠ 实测过：直接砍 --window-size 的宽度请求值没用，Edge 会把宽度吸附到自己的值
+    ;   （请求 506 / 512 逻辑都落在 773）。换机器 / 换缩放若要重定：先 WinGetPos 量一次
+    ;   外框，再改这里的默认值；也可在 _config.ini 的 [Paths] DeepSeekW / DeepSeekH 覆盖。
+    static TargetW() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekW", 0)
+        return v > 0 ? v : 772
+    }
+
+    static TargetH() {
+        v := ConfigService.ReadInt("Paths", "DeepSeekH", 0)
+        return v > 0 ? v : 1020
+    }
+
+    ; 右下角对齐的落点：右侧贴工作区右缘（离缘 Config.PlaceRight）、底边贴工作区底。
+    ; 返回 {x, y}；尺寸由调用方决定（终端只改宽，高度仍归 Windows Terminal 的 profile）。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static CornerRect(w, h) {
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        x := wkRight - w - Config.PlaceRight
+        y := wkBottom - h
+        ; 兜底：工作区比窗口还小时别落到屏幕外
+        if (x < wkLeft + 10)
+            x := wkLeft + 10
+        if (y < wkTop + 10)
+            y := wkTop + 10
+        return {x: x, y: y}
+    }
+
+    ; 读伴生窗口此刻的**真实**外框矩形，供 Peer.Placed 广播（笔记窗口据此避让）。
+    ; ⚠ 读之前要开 DetectHiddenWindows —— 伙伴刚 WinShow 出来，隐藏态下 WinGetPos 会抛错。
+    ; 窗口已不在 / 尺寸为 0 时返回 ""（调用方用 IsObject 判断）。
+    static RectOf(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return ""
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (w > 0 && h > 0)
+            return {x: x, y: y, w: w, h: h}
+        return ""
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  表示层组件
+
+; ═══════════════════════════════════════════════════════════════════════════
+
+; ─── StatusBar：状态栏 ───
+class StatusBar {
+    static _dateCtrl := ""
+    static _tagCtrl := ""
+    static _msgCtrl := ""
+    static _clearTimer := 0
+
+    static Init(dateCtrl, tagCtrl, msgCtrl) {
+        this._dateCtrl := dateCtrl
+        this._tagCtrl := tagCtrl
+        this._msgCtrl := msgCtrl
+        this.SetMsg("就绪")
+
+        EventBus.On("Date.Changed",       (d) => this.SetDate(d.new))
+        EventBus.On("Date.Switched",      (d) => (
+            this.SetMsg("→ 已切换到 " . d.date),
+            this.RefreshTag()))
+        EventBus.On("Save.Completed",     (d) => (
+            this.SetMsg("✓ 已保存 " . d.time),
+            this.RefreshTag()))
+        EventBus.On("Timestamp.Appended", (*) => this.SetMsg("✓ 已追加时间戳"))
+        EventBus.On("Separator.Inserted", (*) => this.SetMsg("✓ 已插入分隔线"))
+        EventBus.On("Heading.Inserted",   (*) => this.SetMsg("✓ 已插入分段标题"))
+        EventBus.On("Paste.Plain",        (*) => this.SetMsg("✓ 已粘贴纯文本"))
+        EventBus.On("Theme.Changed",      (d) => this.SetMsg("✓ 主题：" . d.name))
+        EventBus.On("Font.Changed",       (d) => this.SetMsg("✓ 字体：" . d.name . " " . d.size . "pt"))
+        EventBus.On("Line.Indented",      (*) => this.SetMsg("✓ 已缩进"))
+        EventBus.On("Line.Outdented",     (*) => this.SetMsg("✓ 已取消缩进"))
+        EventBus.On("CapsLock.Toggled",   (d) => this.SetMsg(d.msg))
+        EventBus.On("Title.Changed",      (d) => (
+            this.SetTag(d.tag),
+            this.SetMsg(d.tag = "" ? "✓ 标签已清除" : "✓ 标签：" . d.tag)))
+        EventBus.On("Error.Occurred",     (d) => this.SetMsg("✗ " . d.msg))
+    }
+
+    ; v1.8：日期后拼接星期
+    static SetDate(d) {
+        if !this._dateCtrl
+            return
+        weekday := NoteStoreService.GetWeekday(d)
+        this._dateCtrl.Value := "📅 " . d . " " . weekday
+    }
+
+    static SetTag(tag) {
+        if !this._tagCtrl
+            return
+        if (tag = "")
+            this._tagCtrl.Value := ""
+        else
+            this._tagCtrl.Value := "🏷 " . tag
+    }
+
+    static RefreshTag() {
+        date := State.GetDate()
+        if (date = "") {
+            this.SetTag("")
+            return
+        }
+        rtfPath := NoteStoreService.FindRtf(date)
+        tag := (rtfPath != "")
+            ? NoteStoreService.TagFromFileName(rtfPath) : ""
+        this.SetTag(tag)
+    }
+
+    static SetMsg(msg) {
+        if !this._msgCtrl
+            return
+        this._msgCtrl.Value := msg
+        if this._clearTimer
+            SetTimer(this._clearTimer, 0)
+        ; ⚠ 回调里摸控件，得先过一道闸（见 .clinerules/03「异步定时器里操作窗口」）：
+        ;   提示是 2 秒后才清的，这期间窗口可能已被收走甚至销毁（Alt+Shift+Z 退出），
+        ;   那时 `_msgCtrl.Value` 会抛异常 —— 而 SetTimer 回调没有外层 try，
+        ;   异常直接变成模态框，整个程序停摆。
+        this._clearTimer := () => this._ClearMsg()
+        SetTimer(this._clearTimer, -2000)
+    }
+
+    ; 清空提示栏。失败（控件已随窗口销毁）就让它失败 —— 这正是 try 的用途。
+    static _ClearMsg() {
+        try this._msgCtrl.Value := ""
+    }
+}
+; ═══════════════════════════════════════════════════════════════════════════
+;  FEATURE 功能层 —— 用户要做什么
+;
+;  按用户旅程排序：
+;   ① 唤起与关闭    Alt+Z 呼出/隐藏
+;   ② 输入与编辑    粘贴 / 行编辑 / 缩进 / 撤销 / 输入增强
+;   ③ 保存与持久化  加载 / 保存 / 自动保存 / 时间戳
+;   ④ 查看与浏览    搜索 / 字数 / 光标记忆
+;   ⑤ 组织与管理    日期切换 / 搜索跳转 / 标签 / 返回当天
+;   横切·美观       主题 / 字体 / 字号
+; ═══════════════════════════════════════════════════════════════════════════
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  ① 唤起与关闭
+; ═══════════════════════════════════════════════════════════════════════════
+
+class WindowFeature {
+    ; ═══ 伴生窗口适配（peer docking）═══
+    ; 「呼出一个外部窗口 → 笔记窗口自动让位 / 堆叠」这套机制对所有 Feature 通用，
+    ; 不限于终端 —— 以后要换成资源管理器、Obsidian、浏览器，照同一份契约做即可。
+    ; 契约就三个事件，详见 README「开发指南 → 添加呼出外部窗口的功能」：
+    ;   Peer.Preparing  外部窗口**即将露面**   → 笔记窗口先退场（别当着用户的面搬它）
+    ;   Peer.Placed     已落位，带 {hwnd, x, y, w, h}（**真实**窗口矩形）→ 笔记窗口按它摆
+    ;   Peer.Failed     最终没起来              → 把刚才退场的笔记窗口还回来
+    ; 发布方只管广播这三条；订阅、摆放算法全在本类里，接入新窗口不用改它。
+    ;
+    ; ⚠ **只适配一次**：真正会动笔记窗口的只有「第一次」，适配完就置位 _docked，
+    ;   此后三条事件一律不再碰它（语义与理由见 _docked 的注释）。所以上面那句
+    ;   「先退场」也只发生在第一次 —— 过了那一回，伙伴再怎么呼出隐藏，笔记都纹丝不动。
+    ;
+    ; 伴生窗口的位置与尺寸（发布方摆好后广播过来）。
+    ; 非对象 = 屏幕上没有伴生窗口，呼出时按记忆位置 / 默认落点走。
+    static _peerRect := ""
+
+    ; 当前窗口位置是不是「与伴生窗口上下堆叠」摆出来的。是的话收窗口时不覆盖位置记忆 ——
+    ; 那份坐标和高度都是临时算的（见 _StackWithPeer），不该被当成用户摆的格局。
+    static _stacked := false
+
+    ; 堆叠前窗口的位置与尺寸。堆叠是临时布局，脱离（伴生窗口关掉）后要照这份底稿还原 ——
+    ; 堆叠会把窗口压矮（实测 885 → 513），不还原的话单独显示时窗口就又扁又小。
+    static _preStackRect := ""
+
+    ; 是否已经为伴生窗口「适配过一次」。置位之后，Peer.* 三条事件一律不再碰笔记窗口 ——
+    ; 这是本机制现在的核心语义：用顺了之后，笔记的尺寸位置就是用户自己的格局，
+    ; 不该每次呼出终端 / DeepSeek 都被重算、重摆一遍。
+    ;
+    ; ⚠ 刻意**不落盘**。位置记忆（State._hiddenX 那一组）本来就是纯内存的，重启即丢、
+    ;   笔记回到默认落点 —— 那时本来就需要重新落位一次。于是「重启程序 = 重新适配一次」
+    ;   这个逃生门是自然存在的，不必额外加配置项，也不必往用户的 _config.ini 里写状态。
+    static _docked := false
+
+    ; ─── 挂载：订阅伴生窗口生命周期 ───
+    ; 组合根在 PowerShellFeature.Init() 之前调用 —— 监听要在第一次 Alt+C 之前就位。
+    static Init() {
+        EventBus.On("Peer.Placed",    (rect) => this._OnPeerPlaced(rect))
+        EventBus.On("Peer.Preparing", (*)    => this._CollapseForPeer())
+        EventBus.On("Peer.Failed",    (*)    => this._RestoreAfterFailedPeer())
+    }
+
+    ; 伴生窗口马上要露面，先让笔记窗口退场。**只在第一次** —— 已经适配过的格局不再动。
+    ;
+    ; 收起来不是目的，是为了让随后的「适配」退化成一次纯粹的呼出：伙伴落位后
+    ; _AdaptToPeer 会看到窗口并不在显示，于是走 Show() —— 而那条路径本来就是
+    ; 「隐藏态下把位置尺寸算好、最后一次性露面」（见 _PlaceWindow）。不这么做的话，
+    ; 就是当着用户的面把一个**已经显示**的窗口搬去堆叠位，平移与控件重排连在一起，
+    ; 看着就是「飘一下」。
+    ;
+    ; 用 Hide() 而不是裸的 g.Hide()：Hide() 内含位置记忆（堆叠态下改用堆叠前的底稿），
+    ; 与用户自己按 Alt+Z 收起完全同一条路。这份记忆随后正好被 _AdaptToPeer 拿来
+    ; 判断「伙伴会不会压到笔记原来待的地方」。
+    static _CollapseForPeer() {
+        if this._docked
+            return
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            this.Hide()
+    }
+
+    ; 伴生窗口最终没起来（Run 抛错，或等满超时都找不到窗口）—— 刚才为它让位而收起的
+    ; 窗口得还回来。少了这条兜底，用户按一次 Alt+C，屏幕上就什么都剩不下。
+    ; 记忆里那份 _peerRect 若指向已消失的窗口，_StackWithPeer 开头有 alive
+    ; 检查兜着，Show() 会自行回落到记忆位置 / 默认落点。
+    static _RestoreAfterFailedPeer() {
+        if !State.GetGuiHwnd()
+            return
+        if this.IsShowing()
+            return
+        this.Show()
+    }
+
+    ; 记下伴生窗口的位置，再让笔记窗口适配 —— 两步都要做：
+    ; 少记一步（this._peerRect := rect）的话，_StackWithPeer 没有分区依据，
+    ; 会直接退回记忆位置。
+    static _OnPeerPlaced(rect) {
+        this._peerRect := rect
+        this._AdaptToPeer(rect)
+    }
+
+    ; 伴生窗口落位了 → 决定笔记窗口要不要动。三种情形：
+    ;   ① 已经适配过       → 一个坐标都不改（_docked）
+    ;   ② 伙伴没压到它身上 → 原样还回来，一个坐标都不改，然后固定下来
+    ;   ③ 真压上了         → 按原设计适配一次，然后固定下来
+    ;
+    ; 「② 不冲突就不动」是这套机制现在的要害：笔记摆在左边、伙伴在右下，两者互不
+    ; 妨碍 —— 那就谁也别动谁。改之前是无条件重算重摆，于是每次呼出都把用户自己
+    ; 摆好的格局冲掉，笔记窗口次次跟着伙伴动。
+    static _AdaptToPeer(rect) {
+        if !State.GetGuiHwnd()
+            return
+        if this._docked
+            return
+
+        ghwnd := State.GetGuiHwnd()
+
+        ; 笔记此刻多半已被 _CollapseForPeer 收走，位置取 Hide 时刚记下的那份 ——
+        ; 那正是「笔记原来待的地方」，该拿它去比。万一它还显示着（订阅缺失，或将来
+        ; 有别的来源广播 Peer.Placed），就现量一个。
+        noteRect := State.HasHiddenRect()
+            ? State.GetHiddenRect()
+            : this._CurrentRect(ghwnd)
+
+        if IsObject(noteRect) && IsObject(rect) && !this._RectsOverlap(noteRect, rect) {
+            ; ── 不冲突：原样还回来，坐标尺寸一字不动 ──
+            ; ⚠ 必须**先固定、再 Show**。Show 内部会走 _PlaceWindow → _StackWithPeer，
+            ;   那时 _docked 已置位，于是它退回「记忆位置」= 刚 Hide 时记下的那份，
+            ;   窗口正好回到原处。顺序反了就会在 Show 里被重新堆叠一次，白固定。
+            this._FreezeDocked(ghwnd)
+            if !this.IsShowing()
+                this.Show()
+            return
+        }
+
+        ; ── 冲突（或量不到笔记矩形，保守当作冲突）：按原设计适配一次 ──
+        ; ⚠ 先收再摆：_StackWithPeer 要改位置改尺寸，这一整段不该被看见
+        ;   （理由同 _CollapseForPeer）。若它已经收过，这次调用会跳过。
+        if this.IsShowing()
+            this.Hide()
+        this.Show()
+        ; 真摆成了才算「适配过一次」：没摆成（屏幕太矮等，_StackWithPeer 返回 false
+        ; 让窗口退回了记忆位置）就不置位，留着以后还有机会再试。
+        if this._stacked
+            this._FreezeDocked(ghwnd)
+    }
+
+    ; 两个矩形是否相交 —— 即「有没有一块地方同时被两个窗口占着」。
+    ; 两个入参都只用到 {x, y, w, h} 这四个字段，不关心别的。
+    static _RectsOverlap(a, b) {
+        return (a.x < b.x + b.w && a.x + a.w > b.x
+            && a.y < b.y + b.h && a.y + a.h > b.y)
+    }
+
+    ; 窗口当前的矩形；窗口没了、或位置不可用（最小化停放位）时返回 ""。
+    ; ⚠ 要开 DetectHiddenWindows：笔记可能正处在 Hide() 之后的状态，而 WinGetPos
+    ;   默认忽略隐藏窗口、直接抛错。用完恢复原值，免得改变其它代码的可见性语义。
+    static _CurrentRect(hwnd) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            WinGetPos(&x, &y, &w, &h, "ahk_id " . hwnd)
+        } catch {
+            ; 显式赋空：AHK v2 里未赋值的变量参与比较会触发 VarUnset 警告
+            x := "", y := "", w := "", h := ""
+        }
+        DetectHiddenWindows(detectOld)
+        if !this.IsUsableRect(x, y, w, h)
+            return ""
+        return {x: x, y: y, w: w, h: h}
+    }
+
+    ; 把这次适配的结果「转正」成用户格局，此后不再联动。三件事都要做，少一件都露馅：
+    ;   ① 留下的矩形成为正式格局 —— 在这之前它是 _preStackRect 那份临时底稿；
+    ;   ② 清掉堆叠态标记，_RememberPosition 从此走非堆叠分支，日后如实记录用户的拖动；
+    ;   ③ 置位 _docked。
+    ; ⚠ 只有窗口正显示着才量矩形：隐藏态下 State 里已经有 Hide() 记下的那份（就是
+    ;   用户原来的位置），留着它才对 —— 那时量出来的也是同一个值，多此一举。
+    static _FreezeDocked(ghwnd) {
+        this._docked := true
+        this._stacked := false
+        this._preStackRect := ""
+        if !this.IsShowing()
+            return
+        rect := this._CurrentRect(ghwnd)
+        if IsObject(rect)
+            State.SetHiddenRect(rect.x, rect.y, rect.w, rect.h)
+    }
+
+    ; ─── 入口：Alt+Z ───
+    static Toggle() {
+        if this.IsShowing()
+            this.Hide()
+        else
+            this.Show()
+    }
+
+    ; 判断“当前是否正在显示”。
+    ; 注意：最小化窗口的 WS_VISIBLE 仍是 1，必须连同 IsIconic 一起排除；
+    ; 否则最小化状态下按 Alt+Z 会被误判成“正在显示”而执行隐藏，越按越找不着。
+    static IsShowing() {
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return false
+        return DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            && !DllCall("IsIconic", "ptr", hwnd, "int")
+    }
+
+    ; ─── 收起：先广播、再记位置、最后隐藏 ───
+    static Hide() {
+        g := State.GetGui()
+        EventBus.Emit("Window.BeforeHide")
+        this._RememberPosition(g.Hwnd)
+        g.Hide()
+    }
+
+    ; ─── 呼出：暂停重绘 → 定位 → 还原光标 → 恢复重绘 → 激活 ───
+    static Show() {
+        g := State.GetGui()
+        hwnd := State.GetEd()
+        ghwnd := g.Hwnd
+        try {
+            this._SuspendRedraw(hwnd)
+            this._PlaceWindow(g, ghwnd)
+            this._RestoreCaret(hwnd)
+            this._ResumeRedraw(hwnd)
+            DllCall("RedrawWindow", "ptr", hwnd, "ptr", 0, "ptr", 0
+                , "uint", 0x0001 | 0x0100)
+        } finally {
+            try this._ResumeRedraw(hwnd)
+        }
+        WinActivate("ahk_id " . ghwnd)
+        EventBus.Emit("Window.Shown")
+    }
+
+    ; ═══ 位置记忆与定位 ═══
+
+    ; 记住当前窗口位置，供下次呼出还原。
+    ; 只记屏幕内的有效位置；屏幕外坐标（最小化停放位、已拔掉的外接屏）一律丢弃
+    ; 并清空记忆，让 Show() 回落到默认落点——否则窗口会被永久搬到看不见的地方。
+    ;
+    ; 若当前是按「与伴生窗口上下堆叠」摆出来的，位置和高度都是临时算的 —— 改用堆叠前的底稿，
+    ; 不覆盖记忆；否则下次终端不在时，窗口会以那个被压矮的尺寸单独现身（实测 744x513）。
+    static _RememberPosition(hwnd) {
+        ; ⚠ 底稿**用完不丢**：堆叠态下隐藏只是「暂时收起来」，用户随时会 Alt+C 再摆回来，
+        ;   那时仍要按同一份底稿记。真正作废是在下面的非堆叠分支 —— 那时窗口的位置
+        ;   就是用户自己的格局，底稿已完成使命。
+        if this._stacked {
+            this._stacked := false
+            pre := this._preStackRect
+            if IsObject(pre) && this.IsUsableRect(pre.x, pre.y, pre.w, pre.h) {
+                State.SetHiddenRect(pre.x, pre.y, pre.w, pre.h)
+                return
+            }
+            State.ClearHiddenRect()
+            return
+        }
+        ; 非堆叠态：当前坐标就是用户自己的格局 —— 正常记忆，并作废旧底稿
+        this._preStackRect := ""
+        try
+            WinGetPos(&rectX, &rectY, &rectW, &rectH, "ahk_id " . hwnd)
+        catch
+            return
+        if this.IsUsableRect(rectX, rectY, rectW, rectH)
+            State.SetHiddenRect(rectX, rectY, rectW, rectH)
+        else
+            State.ClearHiddenRect()
+    }
+
+    ; 位置可用性：必须与某个显示器的工作区相交。
+    ; 最小化窗口的坐标是 -32000 一类的停放位（会按 DPI 缩放成 -21333 等），
+    ; 而它的 WS_VISIBLE 仍为真，只靠可见性判断拦不住。
+    static IsUsableRect(x, y, w, h) {
+        ; 数值守卫：State 里未初始化的记忆值是空字符串，
+        ; 而 AHK v2 的 <= 遇到空字符串会抛「Expected a Number」
+        if !(IsNumber(x) && IsNumber(y) && IsNumber(w) && IsNumber(h))
+            return false
+        if (w <= 0 || h <= 0)
+            return false
+        loop MonitorGetCount() {
+            MonitorGetWorkArea(A_Index, &wkLeft, &wkTop, &wkRight, &wkBottom)
+            if (x < wkRight && y < wkBottom && x + w > wkLeft && y + h > wkTop)
+                return true
+        }
+        return false
+    }
+
+    ; 定位：坐标优先取记忆位置，不可用则回落默认落点。
+    ;
+    ; ⚠ 全程在「隐藏」状态下完成 —— 先 Show 再 Move 会让窗口先在 AHK 的默认落点露面，
+    ;   约 190ms 后才跳到目标位置（实测 924,357 → 1629,238），视觉上就是「飘一下」。
+    ;   Show("Hide") 先把窗口建好、让 OnSize 把控件布局跑完，位置算准了再一次性露面。
+    ;
+    ; ⚠ 尺寸不硬设 —— 本机 150% 缩放（A_ScreenDPI = 144）下 Gui 控件坐标会按 DPI 放大 1.5 倍，
+    ;   窗口最小尺寸由控件固有尺寸决定（逻辑 +MinSize450x300 → 物理 675x450），
+    ;   而 Gui 控件坐标是「逻辑单位」、WinMove 收「物理像素」。
+    ;   实测把 450x550 直接传给 WinMove：宽被 675 的最小宽拒绝、高却通过了，窗口被压矮
+    ;   （881 → 550）。故尺寸交给 AHK 按 DPI 自行决定。
+    static _PlaceWindow(g, ghwnd) {
+        ; 定位全程在隐藏状态下做：Show("Hide") 过的窗口 WS_VISIBLE 仍是 0，
+        ; 而 WinGetPos 默认不认隐藏窗口（会直接抛错）—— 项目里 BackdropFeature 踩过同一个坑。
+        ; 用完恢复原值，免得改变其它代码的可见性语义。
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            g.Show("Hide")
+
+            ; 伴生窗口在屏幕上时按「同宽上下堆叠」摆放 —— 两个窗口拼成一列，界面规整。
+            ; 摆不成（伙伴已被关掉、或屏幕塞不下两窗）才退回记忆位置 / 默认落点。
+            if !this._StackWithPeer(ghwnd) {
+                rect := State.GetHiddenRect()
+                if State.HasHiddenRect() && this.IsUsableRect(rect.x, rect.y, rect.w, rect.h) {
+                    ; ⚠ 必须用 WinMove 而非 g.Move：g.Move 收的是「逻辑单位」，会自动乘 DPI 比
+                    ;   （本机 1.5）。而 rect 来自 WinGetPos，是「物理像素」——喂给 g.Move 会被
+                    ;   二次放大（实测 1629,238 → 2444,357）。WinMove 与 WinGetPos 同一单位，配套。
+                    WinMove(rect.x, rect.y, rect.w, rect.h, "ahk_id " . ghwnd)
+                } else {
+                    State.ClearHiddenRect()
+                    this._MoveToDefault(g, ghwnd)
+                }
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+
+        g.Show()
+        WinRestore("ahk_id " . ghwnd)
+    }
+
+    ; 与伴生窗口上下堆叠成规整的一列：同宽、左边对齐、上下紧贴。
+    ; 笔记窗口固定在伴生窗口上方，顶边贴工作区顶部，宽度跟着伴生窗口走。
+    ;
+    ; 伴生窗口若已在屏幕下半区（上方能容下笔记窗口）就原地不动；
+    ; 若它贴着屏幕顶部、上方塞不下，就把它**下移**到底边贴工作区底 ——
+    ; 只改位置、尺寸一字不动，腾出上半屏给笔记窗口。
+    ; 两步都不成立（屏幕太矮、两窗叠起来放不下）才返回 false，交回记忆位置处置。
+    ;
+    ; ⚠ 这套算法假定「伙伴在下、笔记在上」。以后接入的窗口若更适合左右并排，
+    ;   改的就是这里 —— 发布方一行不用动（见 README 同名小节）。
+    ; 调用方需已开 DetectHiddenWindows（窗口可能还是 Show("Hide") 状态）。
+    static _StackWithPeer(ghwnd) {
+        pr := this._peerRect
+        if !IsObject(pr)
+            return false
+
+        ; 已经适配过一次 → 格局已定，绝不再按伴生窗口的位置重算。
+        ;   本方法有两条调用路径，这一条把两条都管住：
+        ;     · _PlaceWindow —— Alt+Z 展开笔记时，于是走「记忆位置」= 用户自己的格局；
+        ;     · _AdaptToPeer —— 伴生窗口落位时，那里另有 _docked 守卫，这里是双保险。
+        ;   返回 false 让调用方回落到记忆位置，正是想要的：不动坐标。
+        if this._docked
+            return false
+
+        ; 伴生窗口可能已经被关掉了 —— 那份坐标就没意义了，交回记忆位置 / 默认落点处置
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            alive := WinExist("ahk_id " . pr.hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if !alive
+            return false
+
+        ; 先把窗口尺寸量定型：Show("Hide") 之后控件固有尺寸要等 OnSize 跑完才反映到
+        ; 外框上，这之后设的尺寸才不会被随后的布局盖回去
+        nw := 0, nh := 0
+        if !this._MeasureStable(ghwnd, &nw, &nh)
+            return false
+
+        ; 头一次堆叠时留个底 —— 堆叠会把窗口压矮，收窗口时要照这份原始位置尺寸还原。
+        ; ⚠ 只在「还没有底稿」时留：底稿的语义是**用户自己的窗口格局**。
+        ;   若每次堆叠都重留，就会把上一次堆叠后的压扁尺寸当作新旧稿 ——
+        ;   「堆叠 → Alt+Z 收起 → Alt+Z 展开」一轮下来，实测 711x885 会被写成 744x533，
+        ;   之后终端不在时窗口就再也回不到原来的大小。
+        ;   底稿由 _RememberPosition 在**非堆叠态**隐藏时刷新（见那里的注释）。
+        if !IsObject(this._preStackRect) {
+            try {
+                WinGetPos(&ox, &oy, &ow, &oh, "ahk_id " . ghwnd)
+                this._preStackRect := {x: ox, y: oy, w: ow, h: oh}
+            } catch
+                this._preStackRect := ""
+        }
+
+        tx := pr.x, ty := pr.y, tw := pr.w, th := pr.h
+
+        ; 工作区取伴生窗口所在的**那块**显示器 —— 它可能被放到副屏上
+        monIdx := 1
+        cx := tx + tw // 2, cy := ty + th // 2
+        loop MonitorGetCount() {
+            MonitorGet(A_Index, &mL, &mT, &mR, &mB)
+            if (cx >= mL && cx < mR && cy >= mT && cy < mB) {
+                monIdx := A_Index
+                break
+            }
+        }
+        MonitorGetWorkArea(monIdx, &wkLeft, &wkTop, &wkRight, &wkBottom)
+
+        gap := Config.DockGap, margin := Config.DockMargin
+        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
+        ; （+MinSize450x300 → 本机 150% 缩放下的 675x450）
+        minW := 450 * A_ScreenDPI // 96
+        minH := 300 * A_ScreenDPI // 96
+
+        ; 摆位置一律按「可见边界」算 —— 直接拿 WinGetPos 的矩形去拼，
+        ; 肉眼看会多出上窗那 9px 的不可见底边框（12 的缝看着像 21），显得松散。
+        pFrame := this._InvisibleFrame(pr.hwnd)
+        nFrame := this._InvisibleFrame(ghwnd)
+        peerVisL := tx - pFrame.l, peerVisT := ty - pFrame.t
+        peerVisR := tx + tw - pFrame.r, peerVisB := ty + th - pFrame.b
+
+        ; 笔记窗口的可见目标：左边与伙伴对齐、同宽、顶边贴工作区顶、底边在伙伴上方留 gap
+        noteVisL := peerVisL
+        noteVisW := peerVisR - peerVisL
+        noteVisT := wkTop + margin
+
+        ; 方案一：伴生窗口原地不动，笔记窗口填它上方的空间
+        noteVisB := peerVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
+            this._stacked := true
+            return true
+        }
+
+        ; 方案二：伴生窗口已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
+        ; 尺寸（宽高）原样保留，只挪位置
+        newPeerVisT := (wkBottom - margin) - (peerVisB - peerVisT)
+        noteVisB := newPeerVisT - gap
+        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
+            newPeerY := newPeerVisT + pFrame.t
+            WinMove(tx, newPeerY, , , "ahk_id " . pr.hwnd)   ; 宽高留空 = 保持不变
+            ; 伴生窗口挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
+            this._peerRect := {hwnd: pr.hwnd, x: tx, y: newPeerY, w: tw, h: th}
+            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
+            this._stacked := true
+            return true
+        }
+
+        return false
+    }
+
+    ; 按「可见边界」摆放窗口：传进来的是肉眼看到的矩形，
+    ; 内部补上该窗口的不可见边框偏移再交给 WinMove（后者认的是含边框的矩形）。
+    static _MoveToVisible(hwnd, visL, visT, visW, visH, frame) {
+        rectW := Max(visW + frame.r - frame.l, 1)
+        rectH := Max(visH + frame.b - frame.t, 1)
+        WinMove(visL + frame.l, visT + frame.t, rectW, rectH, "ahk_id " . hwnd)
+    }
+
+    ; 窗口矩形比「可见边界」多出来的那圈不可见调整边框（含 DWM 阴影）。
+    ; 返回 {l, t, r, b} = 各自的「矩形边 − 可见边」，左 / 上通常为负。
+    ; ⚠ 本机（150% 缩放）实测：左 −9、上 0、右 9、下 9；25% 缩放或旧系统上可能不同，
+    ;   所以这里每次都实测，不写死。
+    static _InvisibleFrame(hwnd) {
+        buf := Buffer(16, 0)
+        try
+            DllCall("dwmapi\DwmGetWindowAttribute", "ptr", hwnd, "uint", 9, "ptr", buf, "uint", 16)
+        catch
+            return {l: 0, t: 0, r: 0, b: 0}   ; 拿不到就当作没有不可见边框
+        WinGetPos(&rx, &ry, &rw, &rh, "ahk_id " . hwnd)
+        vx := NumGet(buf, 0, "int"), vy := NumGet(buf, 4, "int")
+        vr := NumGet(buf, 8, "int"), vb := NumGet(buf, 12, "int")
+        return {l: rx - vx, t: ry - vy, r: (rx + rw) - vr, b: (ry + rh) - vb}
+    }
+
+    ; 移到默认落点
+    static _MoveToDefault(g, ghwnd) {
+        w := 0, h := 0
+        if !this._MeasureStable(ghwnd, &w, &h)
+            return
+        rect := this._DefaultRect(w, h)
+        ; 同样用 WinMove（物理像素），只设位置不设尺寸 —— 尺寸交给 AHK 按 DPI 决定
+        WinMove(rect.x, rect.y, , , "ahk_id " . ghwnd)
+    }
+
+    ; 等窗口尺寸稳定下来。Show 之后控件的固有尺寸要等 OnSize 跑完才反映到窗口外框上，
+    ; 连续两次量到同一个值才认为定型。全程窗口不可见，多花几毫秒用户看不见。
+    static _MeasureStable(hwnd, &w, &h) {
+        prevW := -1, prevH := -1, same := 0
+        loop 40 {
+            try
+                WinGetPos(&_, &_, &w, &h, "ahk_id " . hwnd)
+            catch
+                return false
+            if (w > 0 && h > 0 && w = prevW && h = prevH) {
+                if (++same >= 2)
+                    return true
+            } else {
+                same := 0
+            }
+            prevW := w, prevH := h
+            Sleep 5
+        }
+        return (w > 0 && h > 0)
+    }
+
+    ; 默认落点坐标：贴主屏工作区右上角 —— 右边距 Config.PlaceRight、顶边距 Config.PlaceTop。
+    ;
+    ; ⚠ 尺寸必须按窗口的「实际」值算 —— A_ScreenWidth 是物理像素，而窗口实际宽含 DPI
+    ;   放大后的控件与边框（本机约 711），远大于 450 这样的逻辑值。
+    ; ⚠ 用 MonitorGetWorkArea 而非 A_ScreenWidth / A_ScreenHeight：后者是全屏尺寸，
+    ;   多屏时也只反映主屏。
+    static _DefaultRect(winW, winH) {
+        MonitorGetWorkArea(MonitorGetPrimary(), &wkLeft, &wkTop, &wkRight, &wkBottom)
+        posX := wkRight - winW - Config.PlaceRight
+        posY := wkTop + Config.PlaceTop
+        ; 窗口比工作区还大（或边距过大）时兜底，免得落到负坐标、跑到屏幕外
+        if (posX < wkLeft + 10)
+            posX := wkLeft + 10
+        if (posY < wkTop + 10)
+            posY := wkTop + 10
+        if (posY + winH > wkBottom)
+            posY := wkBottom - winH - 10
+        return {x: posX, y: posY}
+    }
+
+    ; ═══ 光标与重绘 ═══
+
+    ; 还原光标：隐藏前记录的位置优先，没有记录就落到正文末尾
+    static _RestoreCaret(hwnd) {
+        if State.HasCaret() {
+            caret := State.GetCaret()
+            totalLen := SendMessage(0x000E, 0, 0, hwnd)
+            EditorService.SetSel(hwnd, Min(caret.min, totalLen), Min(caret.max, totalLen))
+        } else {
+            EditorService.MoveCaretToEnd(hwnd)
+        }
+    }
+
+    ; WM_SETREDRAW：批量改动期间关掉重绘，避免中间态闪烁
+    static _SuspendRedraw(hwnd) => SendMessage(0x000B, 0, 0, hwnd)
+    static _ResumeRedraw(hwnd) => SendMessage(0x000B, 1, 0, hwnd)
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  ② 输入与编辑
+; ═══════════════════════════════════════════════════════════════════════════
+
+class PasteFeature {
+    static PastePlain() {
+        hwnd := State.GetEd()
+        txt := ClipboardService.GetText()
+        if (txt = "")
+            return
+        EditorService.InsertText(hwnd, txt)
+        EventBus.Emit("Paste.Plain")
+    }
+}
+
+
+class LineEditFeature {
+    static DeleteLine() => EditorService.DeleteCurrentLine(State.GetEd())
+    static DuplicateLine() => EditorService.DuplicateCurrentLine(State.GetEd())
+    static MoveUp() => EditorService.MoveLineUp(State.GetEd())
+    static MoveDown() => EditorService.MoveLineDown(State.GetEd())
+    static Indent() {
+        EditorService.DoIndent(State.GetEd())
+        EventBus.Emit("Line.Indented")
+    }
+    static Outdent() {
+        EditorService.DoOutdent(State.GetEd())
+        EventBus.Emit("Line.Outdented")
+    }
+}
+
+
+class UndoFeature {
+    static Undo() => EditorService.Undo(State.GetEd())
+    static Redo() => EditorService.Redo(State.GetEd())
+}
+
+
+; ─── 参考实现：Alt+C 呼出终端 ───
+; 本 Feature 是「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的示范用法。
+; 要接入别的外部窗口（资源管理器 / Obsidian / 浏览器…），照这四步抄即可：
+;   ① 确定能起来之后，先广播 Peer.Preparing —— 让笔记窗口退场
+;   ② 启动外部程序（⚠ 别传 Run 的 "Hide"，理由见 _LaunchPowerShell）
+;   ③ 轮询到它的窗口后 WinShow / WinActivate，再用 _BroadcastRect 广播 Peer.Placed
+;   ④ 任何一步失败（Run 抛错、等满超时）都要广播 Peer.Failed，把笔记窗口还回来
+; 逐条说明与必须守住的点见 README「开发指南 → 添加呼出外部窗口的功能」。
+class PowerShellFeature {
+    static _initialized := false
+    static _powershellPath := A_WinDir . "\System32\WindowsPowerShell\v1.0\powershell.exe"
+    static _windowTitle := "SevenNote PowerShell"
+
+    static Init() {
+        if (this._initialized)
+            return
+        Hotkey("!c", (*) => this.Toggle(), "On")
+        this._initialized := true
+    }
+
+    static Toggle() {
+        hwnd := this._FindPowerShellHwnd()
+        if (hwnd = 0) {
+            this._LaunchPowerShell()
+            return
+        }
+
+        ; ⚠ 必须同时看「可见」：WinHide 之后 GetForegroundWindow 仍指着那个隐藏窗口
+        ;   （本机实测 1.2s 后依然如此），只看 WinActive 会判定成「在前台 → 再藏一次」，
+        ;   于是按了没反应、再也呼不出来。DeepSeekFeature.Toggle 是同一处。
+        if (this._IsVisible(hwnd) && WinActive("ahk_id " . hwnd)) {
+            WinHide("ahk_id " . hwnd)
+            return
+        }
+
+        this._ShowAndFocus(hwnd)
+    }
+
+    ; 窗口此刻是否真的在屏幕上（WinHide 过 = false）。
+    ; ⚠ 别用 IsIconic 组合来判断这里的「在显示」—— 那是判断最小化的写法：
+    ;   本窗口只会被 WinHide 藏起来，不会被最小化，看 IsWindowVisible 一个就够。
+    static _IsVisible(hwnd) => !!DllCall("IsWindowVisible", "ptr", hwnd, "int")
+
+    static _FindPowerShellHwnd() {
+        detectHidden := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            ids := WinGetList(this._windowTitle)
+            return ids.Length ? ids[1] : 0
+        } finally {
+            DetectHiddenWindows(detectHidden = "On")
+        }
+    }
+
+    static _ShowAndFocus(hwnd) {
+        ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。理由详见
+        ; WindowFeature._CollapseForPeer。重复发是无害的：窗口已经收起时那次调用会跳过。
+        ; ⚠ 这条广播管的是笔记窗口，不是终端：终端的露面时机由它自己的宿主掌握
+        ;   （为什么不能靠 Run 的 "Hide" 去藏它，见 _LaunchPowerShell）。
+        EventBus.Emit("Peer.Preparing")
+
+        WinShow("ahk_id " . hwnd)
+        ; ⚠ WinShow 之后必须再 WinRestore：窗口被 WinHide 藏起来后，宿主可能把自己
+        ;   标记成「最小化」，而 WinShow 不解除最小化，用户看到的就是「窗口没回来」。
+        ;   浏览器（Chromium）实测必现，终端留着这行也无害 —— 兜底就该一直有。
+        WinRestore("ahk_id " . hwnd)
+        WinActivate("ahk_id " . hwnd)
+        try {
+            WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
+        }
+        this._PlaceLikeDeepSeek(hwnd)
+
+        ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
+        this._BroadcastRect(hwnd)
+
+        ; 广播是同步的（EventBus 直接循环调用 handler），所以上一行返回时笔记窗口已经
+        ; 露面了 —— 而 Show() 末尾会激活窗口自身，把前台从刚呼出的终端手里夺走。
+        ; 按 Alt+C 是要用终端，这里还回去。
+        WinActivate("ahk_id " . hwnd)
+    }
+
+    ; 摆到「和 DeepSeek 窗口同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
+    ; 底边贴工作区底。「可摆性闸」与落点算式都在 PeerLayoutService 里 ——
+    ; 终端与 DeepSeek 共用同一份，不必再两处同步。
+    ;
+    ; 为什么需要这一步：终端的落点由 Windows Terminal 的 initialPosition 决定，
+    ; 那份值是用户当年按「有任务栏」设的。本机实测 —— 终端 1803,540（底边 1560，
+    ; 离工作区底 40px），而 DeepSeek 按公式落在 1801,580（底边贴 1600，任务栏已
+    ; 改为自动隐藏），两个伙伴高度不齐、堆叠观感不一致。对齐后两者落在同一处。
+    ;
+    ; ⚠ 宽度也一起对齐（理由见方法内注释）：只挪位置的话，终端 profile 的 744 与
+    ;   DeepSeek 的 770 都按右缘摆，左缘就差 26px、堆叠处露出一条底色。高度仍归 profile。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static _PlaceLikeDeepSeek(hwnd) {
+        ; ⚠ 隐藏 / 最小化的窗口一律不碰 —— 闸的实现与实测账见 PeerLayoutService.IsPlaceable。
+        if !PeerLayoutService.IsPlaceable(hwnd)
+            return
+        WinGetPos(, , &w, &h, "ahk_id " . hwnd)
+        if (w <= 0 || h <= 0)
+            return
+
+        ; 宽度改用与 DeepSeek / 笔记窗口**同一个**目标宽，不再用终端自己的宽。
+        ; ⚠ 实测（本机）：终端 profile 是 744x1020，DeepSeek 目标是 772x1020；两边都按
+        ;   「右缘贴屏幕」摆，于是右缘齐（2545）、**左缘差 26px**（终端可见 1810..2536 /
+        ;   DeepSeek 可见 1784..2538），堆叠处左边露出一条底色 —— 看起来就是「终端比
+        ;   其他两个窄一点、缺口在左边」。宽度统一后左 / 右 / 底三条边全齐。
+        ;   只改宽，高度仍归 Windows Terminal 的 profile。
+        tw := PeerLayoutService.TargetW()
+        rect := PeerLayoutService.CornerRect(tw, h)
+        WinMove(rect.x, rect.y, tw, , "ahk_id " . hwnd)
+    }
+
+    ; 广播伴生窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; 读矩形的细节（隐藏态要开 DetectHiddenWindows）见 PeerLayoutService.RectOf。
+    static _BroadcastRect(hwnd) {
+        rect := PeerLayoutService.RectOf(hwnd)
+        if !IsObject(rect)
+            return
+        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
+    }
+
+    ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖
+    ; 若目标目录不存在（如无 D 盘），依次回退到用户主目录、A_MyDocuments，避免启动失败
+    ; 注：AHK v2 没有 A_UserProfile 内置变量，用户主目录需取自 USERPROFILE 环境变量
+    static _StartDir() {
+        dir := ConfigService.Read("Paths", "PowerShellStartDir")
+        if (dir = "")
+            dir := "D:\"
+        if !DirExist(dir)
+            dir := EnvGet("USERPROFILE")
+        if !DirExist(dir)
+            dir := A_MyDocuments
+        return dir
+    }
+
+    static _LaunchPowerShell() {
+        if !FileExist(this._powershellPath) {
+            MsgBox("未检测到 Windows PowerShell，无法使用 Alt+C 启动。", "SevenNote", "Icon!")
+            return
+        }
+
+        ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
+        EventBus.Emit("Peer.Preparing")
+
+        try {
+            command := "$Host.UI.RawUI.WindowTitle = '" . this._windowTitle . "'"
+            ; ⚠ Run 的第三个参数只能留空，绝不能传 "Hide"。
+            ;
+            ; 本机 HKCU:\Console\%%Startup 里 DelegateTerminal = {00000000}「让 Windows 决定」，
+            ; 实际落到 Windows Terminal：正常启动时 conhost 会把控制台交接给它，于是终端是
+            ; 你配好的那个 —— Windows PowerShell profile、星空背景图、One Half Dark。
+            ; 但 **隐藏着启动，这次交接就不会发生**，终端退回由 conhost 自己承载，顶着注册表
+            ; 默认值出现：WindowSize = 120x50（实测 1488x1256）、conhost 的级联落点、
+            ; 配色变成 powershell.exe 子键里的 ColorTable05 = #012456 经典蓝。
+            ; 症状就是「终端背景失灵、位置大小不对」。
+            ;
+            ; 实测（AHK 探针，同样两条命令各启动一次、取窗口家族差集）：
+            ;   Run(cmd, dir)          → CASCADIA_HOSTING_WINDOW_CLASS（Windows Terminal）
+            ;   Run(cmd, dir, "Hide")  → ConsoleWindowClass（conhost）
+            ;
+            ; 代价：终端会带着「Windows PowerShell」旧标题先露一脸，等 PowerShell 进程把标题
+            ; 设好、我们再轮询到它才归位。这一步的观感只能由 Windows Terminal 自己承载 ——
+            ; 藏窗口绕过它，等于把整台终端换掉。
+            Run('"' . this._powershellPath . '" -NoLogo -NoExit -Command "' . command . '"', this._StartDir())
+        } catch as err {
+            MsgBox("启动 PowerShell 失败：`n" . err.Message, "SevenNote", "Icon!")
+            EventBus.Emit("Peer.Failed")
+            return
+        }
+
+        ; 轮询要密：终端进程起来约 0.7s，每一档的等待都会叠进「按了没反应」的那段空白。
+        deadline := A_TickCount + 15000
+        while (A_TickCount < deadline) {
+            hwnd := this._FindPowerShellHwnd()
+            if (hwnd != 0) {
+                this._ShowAndFocus(hwnd)
+                return
+            }
+            Sleep(20)
+        }
+
+        hwnd := this._FindPowerShellHwnd()
+        if (hwnd != 0) {
+            this._ShowAndFocus(hwnd)
+        } else {
+            MsgBox("PowerShell 已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+            EventBus.Emit("Peer.Failed")
+        }
+    }
+}
+
+; ─── Alt+X 呼出 DeepSeek 网页端 ───
+; 「伴生窗口适配」契约（Peer.Preparing / Peer.Placed / Peer.Failed）的第二个使用者 ——
+; 与 PowerShellFeature 同一套玩法，只把「终端」换成浏览器窗口。
+; 三条广播的语义、时序、失败兜底完全一致；接入步骤见 README「开发指南」。
+;
+; 有三处与终端不同，值得记下：
+;   ① **窗口怎么认**：终端能靠标题（"SevenNote PowerShell"）认，浏览器不能 ——
+;      本机日常 Edge 里也开着 DeepSeek 网页，标题一样含 "DeepSeek"，靠标题一认就错。
+;      这里改用「专用 profile → 独立进程树」的办法：窗口按 PID 认。
+;   ② **尺寸与位置要自己给**：终端由 Windows Terminal 的 profile 决定落点（本机 744x1020），
+;      浏览器却每次都落在 Chromium 的默认点。这里按目标尺寸摆到「和终端同一处」——
+;      右侧贴工作区右缘、底边贴工作区底，于是两种伙伴产出的堆叠效果一模一样。
+;   ③ **换了窗口模式就得退掉老实例**：Chromium 单实例复用会让「最先那次启动」的窗口
+;      类型一直沿用到该进程结束 —— 老实例还活着时，改了命令行也照旧开出旧模式窗口。
+;      详见 _RetireLegacyInstance() 与 _FindBrowserHwnd() 开头的模式校验。
+class DeepSeekFeature {
+    static _initialized := false
+    static _url := "https://chat.deepseek.com/"
+
+    ; 专用浏览器 profile —— 与用户日常浏览器**完全隔离**。两条理由：
+    ;   ① 不往用户的收藏夹 / 历史 / 扩展里掺东西；
+    ;   ② 独立 user-data-dir 会让 Chromium 起一条独立进程树，窗口才能被唯一定位。
+    ; ⚠ 代价：首次要用它登录一次 DeepSeek，之后 profile 会记住。
+    static _profileDir := Config.AppDataDir . "\_deepseek-profile"
+    ; PID 落盘，好在「笔记程序重启」后认回已有窗口 —— 内存缓存随进程丢，文件不丢。
+    static _pidFile := Config.AppDataDir . "\_deepseek.pid"
+
+    ; 本文件启动过的实例属于哪种窗口 —— 也要落盘，理由见 _RetireLegacyInstance()：
+    ; Chromium 单实例复用会让老进程继续提供它那种窗口，换了命令行也白换。
+    static _windowMode := "window"
+    static _modeFile := Config.AppDataDir . "\_deepseek.mode"
+
+    static _hwnd := 0   ; 进程内缓存，省掉每次读文件
+
+    static Init() {
+        if (this._initialized)
+            return
+        Hotkey("!x", (*) => this.Toggle(), "On")
+        this._initialized := true
+    }
+
+    static Toggle() {
+        hwnd := this._FindBrowserHwnd()
+        if (hwnd = 0) {
+            this._Launch()
+            return
+        }
+
+        ; ⚠ 必须同时看「可见」：WinHide 之后 GetForegroundWindow 仍指着那个隐藏窗口
+        ;   （本机实测 1.2s 后依然如此），只看 WinActive 会判定成「在前台 → 再藏一次」，
+        ;   于是按了没反应、再也呼不出来。
+        if (this._IsVisible(hwnd) && WinActive("ahk_id " . hwnd)) {
+            WinHide("ahk_id " . hwnd)
+            return
+        }
+
+        this._ShowAndFocus(hwnd)
+    }
+
+    ; 窗口此刻是否真的在屏幕上（WinHide 过 = false）。
+    ; ⚠ 别用 IsIconic 组合来判断这里的「在显示」—— 那是判断最小化的写法：
+    ;   本窗口只会被 WinHide 藏起来，不会被最小化，看 IsWindowVisible 一个就够。
+    static _IsVisible(hwnd) => !!DllCall("IsWindowVisible", "ptr", hwnd, "int")
+
+    ; 认回自己的窗口，两级兜底：进程内缓存 → PID 文件 → 没有（那就重新拉起）
+    static _FindBrowserHwnd() {
+        ; ⚠ 模式校验必须放在最前：老版本（--app 时代）留下的实例还活着时，认回它只会
+        ;   得到应用窗口（无标签栏）。宁可当成「没有窗口」，让 Toggle() 转去 _Launch()
+        ;   把老实例退掉、按新模式重开。
+        if (this._ReadMode() != this._windowMode)
+            return 0
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if (this._hwnd && WinExist("ahk_id " . this._hwnd)
+                && WinGetClass("ahk_id " . this._hwnd) = "Chrome_WidgetWin_1")
+                return this._hwnd
+            this._hwnd := 0
+
+            pid := this._ReadPid()
+            if (pid > 0) {
+                hwnd := this._TopWindowOf(pid, true)
+                if hwnd {
+                    this._hwnd := hwnd
+                    return hwnd
+                }
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        return 0
+    }
+
+    ; 取某进程「属于我们的那扇窗」。
+    ; Chromium 一个实例会带一串窗口：Chrome_WidgetWin_0 的辅助窗、IME、
+    ; Base_PowerMessageWindow…（本机实测一个实例 5 个），界面本身是 Chrome_WidgetWin_1。
+    ;
+    ; ⚠ 不能只看 class + 可见：`fallback` 那一支是必须的。窗口被 WinHide 藏着时它
+    ;   依然是我们自己那扇窗 —— 重启程序后靠 pid 文件认回隐藏窗口就是此场景；
+    ;   若要求可见，会认不回、于是又拉起一个新窗口，越按越多。
+    ; ⚠ 可见性只用来「挑」：一个进程可能同时有多个 Chrome_WidgetWin_1（本机实测同一个
+    ;   实例里两个），优先拿可见的那个，都没可见才退回第一个。
+    static _TopWindowOf(pid, relax := false) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        fallback := 0        ; 第一扇「不可见」的候选（认回被藏起来的窗口用）
+        visibleAny := 0      ; 第一扇「可见」的候选（尺寸对不上时的退路）
+        tw := PeerLayoutService.TargetW(), th := PeerLayoutService.TargetH()
+        try {
+            for h in WinGetList("ahk_exe " . this._ExeName()) {
+                if (WinGetPID("ahk_id " . h) != pid)
+                    continue
+                if (WinGetClass("ahk_id " . h) != "Chrome_WidgetWin_1")
+                    continue
+                if !DllCall("IsWindowVisible", "ptr", h, "int") {
+                    if !fallback
+                        fallback := h
+                    continue
+                }
+                ; 同一个 profile 可能同时开着好几扇窗（用户在窗口里又开了窗、或 Edge 恢复了
+                ; 上次的窗口 —— 实测第二次带 --new-window 启动后同 PID 下有 3 扇），
+                ; 于是「第一个可见的」未必是我们摆过的那扇，认哪扇全看枚举顺序。
+                ; 我们的窗口由 _CheckSize 反复校正成目标尺寸，用户手开的通常对不上 ——
+                ; 用尺寸把它挑出来。
+                ; ⚠ 尺寸是异步校正的：刚启动那一刻还没摆到位，所以这里只是「优先」，
+                ;   没命中就退回第一个可见窗口，绝不会因为量不准而认不回窗口。
+                WinGetPos(, , &aw, &ah, "ahk_id " . h)
+                if (aw = tw && ah = th)
+                    return h
+                if !visibleAny
+                    visibleAny := h
+            }
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (visibleAny != 0)
+            return visibleAny
+        return relax ? fallback : 0
+    }
+
+    static _ReadPid() {
+        try {
+            v := Trim(FileRead(this._pidFile, "UTF-8"))
+            return IsNumber(v) ? Integer(v) : 0
+        } catch {
+            return 0
+        }
+    }
+
+    static _WritePid(pid) {
+        try {
+            FileDelete(this._pidFile)
+        } catch {
+        }
+        try {
+            FileAppend(pid, this._pidFile, "UTF-8")
+        } catch {
+        }
+    }
+
+    static _ReadMode() {
+        try
+            return Trim(FileRead(this._modeFile, "UTF-8"))
+        catch
+            return ""
+    }
+
+    static _WriteMode(mode) {
+        try {
+            FileDelete(this._modeFile)
+        } catch {
+        }
+        try {
+            FileAppend(mode, this._modeFile, "UTF-8")
+        } catch {
+        }
+    }
+
+    ; 退掉「窗口模式不对」的残留实例，让本次 --new-window 真正生效。
+    ;
+    ; 背景：Chromium 是**单实例**的 —— 只要那个 profile 进程还活着，后到的命令行就只被
+    ; 当成「在已有实例里开个地址」，窗口类型仍由**最先那次启动**决定。实测从 --app 时代
+    ; 升级上来后，那个进程一直活着（用户只是关了窗口、没退进程），于是改了命令行也照旧
+    ; 开出应用窗口 —— 认窗逻辑再对，窗口类型还是错的。
+    ;
+    ; 判据用落盘的 _modeFile：写的是 "window" 就说明实例是本版启动的，直接放行；文件
+    ; 缺失或内容不符 = 老版本留下的实例，退掉重开。所以这是**升级路径上的一次性清理**，
+    ; 正常运行时一次都不会动手。
+    static _RetireLegacyInstance() {
+        if (this._ReadMode() = this._windowMode)
+            return
+        pids := this._ProfilePids()
+        if (pids.Length) {
+            ; 先礼后兵：先对有窗口的那个发 WM_CLOSE，让 Chromium 正常收尾（会话与标签都保住）。
+            pid := this._ReadPid()
+            if (pid && ProcessExist(pid)) {
+                hwnd := this._TopWindowOf(pid, true)
+                if (hwnd)
+                    try WinClose("ahk_id " . hwnd)
+            }
+            deadline := A_TickCount + 1200
+            while (A_TickCount < deadline && this._AnyAlive(pids))
+                Sleep(60)
+            for p in pids {
+                if (ProcessExist(p))
+                    try ProcessClose(p)
+            }
+            ; 等它们把 profile 的锁放掉，否则紧接着那次启动会被判成「已有实例」又并进去。
+            Sleep(300)
+        }
+        this._WriteMode(this._windowMode)
+    }
+
+    ; 占用专用 profile 的全部活进程。
+    ;
+    ; ⚠ 不能只信 _deepseek.pid：它可能落后（上次没认回窗口就没写）或指向已退出的进程（PID
+    ;   还可能被复用给别人），那样都会漏掉真正占着 profile 的那个实例 —— 它一活着，本次
+    ;   启动就注定被并进去、窗口模式照旧。所以再按命令行里的 profile 路径全库筛一遍。
+    ;   WMI 拿不到（异常 / 被策略挡住）时退回「只认 pid 文件那一个」，功能不因此失效。
+    static _ProfilePids() {
+        out := []
+        seen := Map()
+        pid := this._ReadPid()
+        ; ⚠ 校验进程名：PID 会被复用，光看「存在」可能杀到不相干的程序。
+        if (pid && ProcessExist(pid) && ProcessGetName(pid) = this._ExeName()) {
+            seen[pid] := true
+            out.Push(pid)
+        }
+        try {
+            wmi := ComObjGet("winmgmts:")
+            q := "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='"
+                . this._ExeName() . "'"
+            for proc in wmi.ExecQuery(q) {
+                cmd := proc.CommandLine
+                if (IsObject(cmd) || cmd = "")       ; 跨权限的进程读不到命令行，跳过
+                    continue
+                if !InStr(cmd, this._profileDir)     ; 认 profile 路径，不认进程名
+                    continue
+                p := proc.ProcessId + 0
+                if seen.Has(p)
+                    continue
+                seen[p] := true
+                out.Push(p)
+            }
+        } catch {
+        }
+        return out
+    }
+
+    static _AnyAlive(pids) {
+        for p in pids {
+            if (ProcessExist(p))
+                return true
+        }
+        return false
+    }
+
+    static _Launch() {
+        exe := this._BrowserPath()
+        if (exe = "") {
+            MsgBox("未找到可用的 Chromium 系浏览器（Edge / Chrome）。`n"
+                . "可在 _config.ini 的 [Paths] BrowserPath 指定浏览器路径。"
+                , "SevenNote", "Icon!")
+            return
+        }
+
+        ; 确定要启动了，才让笔记窗口退场 —— 上面那条早退分支不能白收一次。
+        EventBus.Emit("Peer.Preparing")
+
+        ; ⚠ 升级路径上的一次性清理：老实例（--app 时代的进程）还活着就先退掉它，
+        ;   否则本次 --new-window 会被 Chromium 的单实例复用吃掉，照旧开出应用窗口。
+        this._RetireLegacyInstance()
+
+        ; 启动前先记下现有的同族 PID，之后「新出现的那个」就是我们的 ——
+        ; 专用 profile 保证了它必定是条新进程树，不会并进用户自己的浏览器里。
+        before := this._PidSnapshot()
+
+        try {
+            ; ⚠ --window-size 收的是**逻辑像素**（DIP），而 WinMove / WinGetPos 认物理像素。
+            ;   本机 150% 缩放（A_ScreenDPI = 144）下传 513x680，实际得到 772x1020 —— 正合目标。
+            ;   换个缩放比例就得跟着变，所以按 A_ScreenDPI 反算，别写死。
+            ; ⚠ 宽度再减 2：Edge 把内容区尺寸套到窗口外框时会替自己补两像素调整边框 ——
+            ;   本机实测请求 770（物理）时外框落在 772，而终端是 770，两者左右边缘就差这
+            ;   2px。请求值先扣掉它，外框才与终端严格等宽（高度实测不差，不用减）。
+            ;   真机上若换版本后仍差，以 WinGetPos 量到的**外框**为准调这个常量 ——
+            ;   别去猜那圈边框算几像素（随系统版本与缩放而变）。
+            w := (PeerLayoutService.TargetW() - 2) * 96 // A_ScreenDPI
+            h := PeerLayoutService.TargetH() * 96 // A_ScreenDPI
+            ; --new-window：开一扇**普通浏览器窗口**（有标签栏与完整工具栏），窗口内可直接浏览网页。
+            ;       早先走 --app=<url> 开「应用窗口」求桌面应用观感，实测不划算 —— Edge 155 起
+            ;       app 窗口照样自带地址栏（UIA 查到 view_1017「地址和搜索栏」），却没有标签栏：
+            ;       既不像应用，也算不上好用的浏览器。改普通窗口后能自己开新标签 / 前进后退。
+            ;       ⚠ 认窗逻辑不受影响：仍是「专用 profile → 独立进程树 → 按 PID 认窗」，
+            ;       普通窗口的 class 同样是 Chrome_WidgetWin_1，`_TopWindowOf` 照样认得出。
+            ;       标题归页面管（形如 "DeepSeek - Microsoft Edge"），别拿标题找它。
+            ; --user-data-dir：独立 profile（理由见类头）。
+            ; --no-first-run / --no-default-browser-check：跳过首次运行的欢迎页与
+            ;       「是否设为默认浏览器」的询问 —— 新 profile 每次都问，很烦。
+            cmd := '"' . exe . '" --new-window ' . this._url
+                . ' --user-data-dir="' . this._profileDir . '"'
+                . ' --window-size=' . w . ',' . h
+                . ' --no-first-run --no-default-browser-check'
+            Run(cmd)
+        } catch as err {
+            MsgBox("启动浏览器失败：`n" . err.Message, "SevenNote", "Icon!")
+            EventBus.Emit("Peer.Failed")
+            return
+        }
+
+        ; 浏览器冷启动比终端快（本机实测起进程 ~0.1s、窗口到位 ~0.9s），但仍要轮询：
+        ; 抢在窗口出现前 WinShow 会报「窗口不存在」。
+        deadline := A_TickCount + 15000
+        relaxAt := A_TickCount + 3000      ; 3 秒后仍没找到，就连「还没显示」的窗口也算（放宽）
+        ; 上一轮认过的 profile 进程。Chromium 是**单实例**的：若它还活着（用户只关了窗口、
+        ; 没退进程 —— 普通窗口模式下这是常态），这次启动根本不会产生新进程，
+        ; `_NewPidsSince` 永远为空，只认新 PID 就会一路超时弹「找不到窗口」。
+        knownPid := this._ReadPid()
+        while (A_TickCount < deadline) {
+            relax := A_TickCount >= relaxAt
+            for pid in this._NewPidsSince(before) {
+                hwnd := this._TopWindowOf(pid, relax)
+                if (hwnd != 0) {
+                    this._WritePid(pid)
+                    this._hwnd := hwnd
+                    this._ShowAndFocus(hwnd)
+                    return
+                }
+            }
+            ; 老进程仍在 → 它多半只是新开了扇窗（--new-window 保证了这一点），按老 PID 认。
+            ; ⚠ 只在「认回」这一支放宽：平时要求窗口可见，免得把别处残留的隐藏窗当成目标。
+            if (knownPid && ProcessExist(knownPid)) {
+                hwnd := this._TopWindowOf(knownPid, relax)
+                if (hwnd != 0) {
+                    this._hwnd := hwnd
+                    this._ShowAndFocus(hwnd)
+                    return
+                }
+            }
+            Sleep(20)
+        }
+
+        MsgBox("浏览器已启动，但未能找到它的窗口。", "SevenNote", "Icon!")
+        EventBus.Emit("Peer.Failed")
+    }
+
+    ; 当前同族进程的 PID 集合（含只有隐藏窗口的宿主进程）
+    static _PidSnapshot() {
+        s := Map()
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            for h in WinGetList("ahk_exe " . this._ExeName())
+                try s[WinGetPID("ahk_id " . h)] := true
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        return s
+    }
+
+    ; 启动后「新出现、且已经有窗口」的全部 pid。
+    ;
+    ; ⚠ 返回**全集**而不是「第一个」，这是本功能的关键：用户自己的浏览器一直在跑，
+    ;   随时会冒出新的渲染进程（它们没有 Chrome_WidgetWin_1 窗，永远匹配不上）。
+    ;   只返回第一个的话，一旦它排在真正那个前面，就会整段超时卡死到「找不到窗口」——
+    ;   本机实测：新进程 22072 挡住真正的 23064，连卡 8 秒。全集逐个过就没有这个问题。
+    static _NewPidsSince(before) {
+        out := []
+        for pid, _ in this._PidSnapshot() {
+            if !before.Has(pid)
+                out.Push(pid)
+        }
+        return out
+    }
+
+    static _ShowAndFocus(hwnd) {
+        ; 让笔记窗口先退场 —— 它接下来要换位置换尺寸，这一整段不该被看见。
+        ; 理由详见 WindowFeature._CollapseForPeer。重复发是无害的：已收起时那次会跳过。
+        ; ⚠ 这条广播管的是笔记窗口，不是浏览器：浏览器的露面时机由它自己的宿主掌握。
+        EventBus.Emit("Peer.Preparing")
+        WinShow("ahk_id " . hwnd)
+        ; ⚠ WinShow 之后必须再 WinRestore：Chromium 的窗口被 WinHide 藏起来后会把自己
+        ;   标记成「最小化」—— 本机实测再按 Alt+X 呼出时 iconic=1、rect 停在
+        ;   -32000,-32000 237x39 的停放位，而 WinShow 不解除最小化，于是「窗口没回来」。
+        WinRestore("ahk_id " . hwnd)
+        WinActivate("ahk_id " . hwnd)
+        try {
+            WinSetAlwaysOnTop("On", "ahk_id " . hwnd)
+        }
+        ; 浏览器自己不记位置，每次都在 Chromium 的默认点，所以摆到「和终端同一处」。
+        this._PlaceLikeTerminal(hwnd)
+        ; 把实际落点广播出去，由笔记窗口（WindowFeature）据此避让 —— 谁被动谁适配。
+        this._BroadcastRect(hwnd)
+
+        ; 广播是同步的（EventBus 直接循环调用 handler），所以上一行返回时笔记窗口已经
+        ; 露面了 —— 而 Show() 末尾会激活窗口自身，把前台从刚呼出的浏览器手里夺走。
+        ; 按 Alt+X 是要用 DeepSeek，这里还回去。
+        WinActivate("ahk_id " . hwnd)
+    }
+
+    ; 摆到「和 PowerShell 终端同一处」：右侧贴工作区右缘（离缘 Config.PlaceRight）、
+    ; 底边贴工作区底。「可摆性闸」与落点算式都在 PeerLayoutService 里。
+    ; ⚠ 全程 WinMove（物理像素），别混用 Gui.Move（它收逻辑单位、还会再乘一次 DPI）。
+    static _PlaceLikeTerminal(hwnd) {
+        this._PlaceTarget(hwnd)
+        this._WatchSize(hwnd, 0)
+    }
+
+    ; 按目标尺寸摆到「和终端同一处」（右侧贴工作区右缘、底边贴工作区底）。
+    ; 终端那边只挪位置、尺寸归 Windows Terminal 的 profile，这边位置尺寸一起定。
+    static _PlaceTarget(hwnd) {
+        ; ⚠ 隐藏 / 最小化的窗口一律不摆 —— 本函数有两个调用来源，其中 _CheckSize 是
+        ;   **异步定时器**（350 / 950 / 1550 / 2150ms），等它跑起来时用户很可能已经
+        ;   连按一次 Alt+X 把窗口藏了。闸的实现与实测账见 PeerLayoutService.IsPlaceable。
+        if !PeerLayoutService.IsPlaceable(hwnd)
+            return
+        w := PeerLayoutService.TargetW(), h := PeerLayoutService.TargetH()
+        rect := PeerLayoutService.CornerRect(w, h)
+        WinMove(rect.x, rect.y, w, h, "ahk_id " . hwnd)
+    }
+
+    ; ─── 尺寸复核：Edge 会在窗口露面之后重新套用它自己的 --window-size ───
+    ; ⚠ `--window-size` 说的是**内容区**，Edge 套到窗口外框上还要再补一圈调整边框 ——
+    ;   本机实测请求 770 的外框最后落在 768，而终端恰是 770x1020：两个伙伴左右边缘
+    ;   错开两个像素，就是「终端和 DeepSeek 没对齐」。
+    ;   实测（probe：WinMove 到 770 后每 500ms 量一次）证明它**不是**持续校正 ——
+    ;   稳定窗口上 770 一直保持。它会重新套用，是在窗口被 show/restore **之后**；
+    ;   而那个时刻晚于第一次 350ms 复核，只核一次必然漏掉。故在 350 / 950 / 1550 /
+    ;   2150ms 四处各核一次，量到与目标不符就按目标重摆。单次开销只是一次 WinGetPos。
+    ;   ⚠ 不去猜那圈边框有几像素（随系统版本与缩放变），也不跟 Edge 抢时序 ——
+    ;     只事后核对，以实际外框为准。
+    static _WatchSize(hwnd, round) {
+        if (round > 3)
+            return
+        delay := (round = 0) ? 350 : 600
+        SetTimer(() => this._CheckSize(hwnd, round), -delay)
+    }
+
+    static _CheckSize(hwnd, round) {
+        detectOld := A_DetectHiddenWindows
+        DetectHiddenWindows(true)
+        try {
+            if !WinExist("ahk_id " . hwnd)
+                return
+            ; 窗口已被用户藏起来（连按两次 Alt+X）= 用户不想看见它，别再管它的尺寸：
+            ; 直接返回，也不再排下一轮复核 —— 否则会反复去重摆一个看不见的窗口，
+            ; 而 WinMove 对隐藏窗口会抛 "Target window not found"（实测卡死脚本）。
+            if !DllCall("IsWindowVisible", "ptr", hwnd, "int")
+                return
+            ; 最小化的窗口量不出尺寸（读数是停放位的垃圾值），别据此重摆
+            if DllCall("IsIconic", "ptr", hwnd, "int")
+                return
+            WinGetPos(, , &aw, &ah, "ahk_id " . hwnd)
+        } finally {
+            DetectHiddenWindows(detectOld)
+        }
+        if (aw != PeerLayoutService.TargetW() || ah != PeerLayoutService.TargetH())
+            this._PlaceTarget(hwnd)
+        this._WatchSize(hwnd, round + 1)
+    }
+
+    ; 广播伙伴窗口此刻的实际位置与尺寸，供笔记窗口让位（Peer.Placed 契约）。
+    ; 读矩形的细节见 PeerLayoutService.RectOf。
+    static _BroadcastRect(hwnd) {
+        rect := PeerLayoutService.RectOf(hwnd)
+        if !IsObject(rect)
+            return
+        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
+    }
+
+    ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，
+    ; 命中率最高）。只要是 Chromium 系（支持 --new-window / --user-data-dir）都能用。
+    static _BrowserPath() {
+        p := ConfigService.Read("Paths", "BrowserPath")
+        if (p != "" && FileExist(p))
+            return p
+        for candidate in [
+            A_ProgramFiles . "\Microsoft\Edge\Application\msedge.exe",
+            EnvGet("ProgramFiles(x86)") . "\Microsoft\Edge\Application\msedge.exe",
+            A_ProgramFiles . "\Google\Chrome\Application\chrome.exe",
+            EnvGet("ProgramFiles(x86)") . "\Google\Chrome\Application\chrome.exe",
+            EnvGet("LOCALAPPDATA") . "\Google\Chrome\Application\chrome.exe",
+        ] {
+            if FileExist(candidate)
+                return candidate
+        }
+        return ""
+    }
+
+    ; 进程名（WinGetList 的 ahk_exe 参数用）—— 跟着上面选中的浏览器走，
+    ; 免得用户把 BrowserPath 改成 Chrome 后这里还在找 msedge.exe。
+    static _ExeName() {
+        p := this._BrowserPath()
+        if (p = "")
+            return "msedge.exe"
+        SplitPath(p, &name)
+        return name
+    }
+}
+
+
+
+class CapsLockFeature {
+    static _enabled := false
+    static _loading := false
+
+    static Enable() {
+        if this._enabled
+            return
+        Hotkey("CapsLock", (*) => 0, "On")
+        Hotkey("CapsLock & h", (*) => Send("{Left}"), "On")
+        Hotkey("CapsLock & j", (*) => Send("{Down}"), "On")
+        Hotkey("CapsLock & k", (*) => Send("{Up}"), "On")
+        Hotkey("CapsLock & l", (*) => Send("{Right}"), "On")
+        this._enabled := true
+        if !this._loading
+            this.SaveToConfig()
+    }
+
+    static Disable() {
+        if !this._enabled
+            return
+        Hotkey("CapsLock", "Off")
+        Hotkey("CapsLock & h", "Off")
+        Hotkey("CapsLock & j", "Off")
+        Hotkey("CapsLock & k", "Off")
+        Hotkey("CapsLock & l", "Off")
+        this._enabled := false
+        if !this._loading
+            this.SaveToConfig()
+    }
+
+    static Toggle() {
+        if this._enabled {
+            this.Disable()
+            EventBus.Emit("CapsLock.Toggled"
+                , {msg: "✗ 键盘映射已关闭", state: false})
+        } else {
+            this.Enable()
+            EventBus.Emit("CapsLock.Toggled"
+                , {msg: "✓ 键盘映射已开启", state: true})
+        }
+    }
+
+    static SaveToConfig() {
+        ConfigService.Write("Input", "CapsLockMap", this._enabled ? 1 : 0)
+    }
+
+    static LoadFromConfig() {
+        this._loading := true
+        v := ConfigService.ReadInt("Input", "CapsLockMap", 0)
+        if (v = 1)
+            this.Enable()
+        else
+            this.Disable()
+        this._loading := false
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  ③ 保存与持久化
+; ═══════════════════════════════════════════════════════════════════════════
+
+class LoadFeature {
+    static Load() {
+        date := FormatTime(, "yyyy-MM-dd")
+        State.SetDate(date)
+        hwnd := State.GetEd()
+        rtfPath := NoteStoreService.FindRtf(date)
+        if (rtfPath = "") {
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(date))
+            return
+        }
+        EditorService.LoadRTFFromFile(hwnd, rtfPath)
+    }
+}
+
+
+class SaveFeature {
+    static Init() {
+        EventBus.On("Window.BeforeHide", (*) => SaveFeature.Save())
+        ; 别的 Feature 需要「先把当前这篇落盘」时发这个事件 —— Feature 之间不互相调用
+        EventBus.On("Save.Requested", (*) => SaveFeature.Save())
+    }
+
+    static Save() {
+        Critical(1)
+        try {
+            date := State.GetDate()
+            if (date = "")
+                date := FormatTime(, "yyyy-MM-dd")
+            hwnd := State.GetEd()
+
+            ; 空笔记不落盘（含删除已有文件）
+            if EditorService.IsEmptyNote(hwnd, date) {
+                rtfPath := NoteStoreService.FindRtf(date)
+                mdPath := NoteStoreService.FindMd(date)
+                if (rtfPath != "" && FileExist(rtfPath))
+                    try FileDelete(rtfPath)
+                if (mdPath != "" && FileExist(mdPath))
+                    try FileDelete(mdPath)
+                Critical(0)
+                return
+            }
+
+            ; 先查后存（保留带标签的文件名）
+            rtfPath := NoteStoreService.FindRtf(date)
+            if (rtfPath = "")
+                rtfPath := NoteStoreService.DefaultRtfPath(date)
+
+            mdPath := NoteStoreService.FindMd(date)
+            if (mdPath = "")
+                mdPath := NoteStoreService.DefaultMdPath(date)
+
+            tempRtf := NoteStoreService.TempDir() . "\pandoc-src.rtf"
+            NoteStoreService.EnsureDir(NoteStoreService.TempDir())
+
+            ; 主 RTF（936 GBK）
+            ok := EditorService.SaveRTFToFile(hwnd, rtfPath, 936)
+            if !ok {
+                NoteStoreService.WriteFile(mdPath
+                    , EditorService.GetText(hwnd), "UTF-8")
+                EventBus.Emit("Error.Occurred", {msg: "保存失败：RTF 落盘失败"})
+                Critical(0)
+                return
+            }
+
+            ; Pandoc 转换（v1.9：IsAvailable 已加大小检查）
+            if PandocService.IsAvailable() {
+                EditorService.SaveRTFToFile(hwnd, tempRtf, 65001)
+                PandocService.Convert(tempRtf, mdPath, date)
+                if FileExist(tempRtf)
+                    try FileDelete(tempRtf)
+            } else {
+                NoteStoreService.WriteFile(mdPath
+                    , EditorService.GetText(hwnd), "UTF-8")
+            }
+            EventBus.Emit("Save.Completed", {time: FormatTime(, "HH:mm")})
+        } catch as e {
+            EventBus.Emit("Error.Occurred", {msg: "保存失败：" . e.Message})
+        }
+        Critical(0)
+    }
+}
+
+
+class AutoSaveFeature {
+    static Init(intervalMs := 120000) {
+        SetTimer(() => AutoSaveFeature.Tick(), intervalMs)
+    }
+    ; ⚠ 最小化窗口的 IsWindowVisible 仍是 1（见 README「六个必须守住的点」）——
+    ;   只看它就成了「窗口缩在任务栏里也每 2 分钟存一次盘」，故必须再排掉 IsIconic。
+    static Tick() {
+        g := State.GetGui()
+        if !IsObject(g)
+            return
+        hwnd := g.Hwnd
+        if DllCall("IsIconic", "ptr", hwnd, "int")
+            return
+        if DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            EventBus.Emit("Save.Requested")
+    }
+}
+
+
+; ⚠ 时间戳**一律手动**（v2.4 起）：只在用户按下 Ctrl+T 时插入，程序任何时候都不自作主张。
+;   原先的两条自动路径已删除 ——
+;     · 启动时 CheckAndAppend()：无戳就塞一个；
+;     · 切日期时同一函数：距上一戳 ≥ Config.TimestampInterval（60 分钟）再补一个。
+;   它们会在用户只想随手记两笔时也往笔记里加时间戳，还得靠「保存前剥掉空戳」来兜底。
+;   现在连带 StripIfEmpty 一起去掉：用户手动加的戳就是他想要的，程序不擅自删。
+;   想恢复自动：在组合根按需调 TimestampFeature.Append()，或把 CheckAndAppend 加回来。
+class TimestampFeature {
+    static Append() {
+        hwnd := State.GetEd()
+        EditorService.AppendTimestamp(hwnd)
+        EventBus.Emit("Timestamp.Appended")
+    }
+
+    static Separator() {
+        hwnd := State.GetEd()
+        EditorService.InsertSeparator(hwnd)
+        EventBus.Emit("Separator.Inserted")
+    }
+
+    static Heading() {
+        hwnd := State.GetEd()
+        EditorService.InsertHeading(hwnd)
+        EventBus.Emit("Heading.Inserted")
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  ④ 查看与浏览
+; ═══════════════════════════════════════════════════════════════════════════
+
+class SearchFeature {
+    static BAR_BG := "E8D8B8"
+    static EDIT_BG := "FFF8E7"
+    static EDIT_TEXT := "3D2B1F"
+    static BAR_DIM := "9C8060"
+    static BAR_W := 220
+
+    static _barBg := ""
+    static _icon := ""
+    static _edit := ""
+    static _count := ""
+    static _stat := ""
+    static _themeLabel := ""
+    static _edCtrl := ""
+
+    static _visible := false
+    static _lastKeyword := ""
+    ; 正文长度 —— 缓存的第二把锁（见 _DoSearch）：关键字没变但正文变了，旧偏移同样作废
+    static _lastLen := -1
+    static _matches := []
+    static _current := 0
+
+    static Init(barBg, icon, edit, count, statCtrl, themeLabelCtrl, edCtrl) {
+        this._barBg := barBg
+        this._icon := icon
+        this._edit := edit
+        this._count := count
+        this._stat := statCtrl
+        this._themeLabel := themeLabelCtrl
+        this._edCtrl := edCtrl
+        this._SetVisible(false)
+        ; 搜索条配色跟着主题走：否则「星空」底下会横插一块浅米黄
+        this._ApplyColors()
+        EventBus.On("Theme.Changed", (*) => this._ApplyColors())
+        ; 换日期 = 换了一篇正文，照旧正文算出来的匹配偏移全部作废
+        EventBus.On("Date.Changed", (*) => this._ResetMatches())
+    }
+
+    ; 丢掉匹配缓存：关键字一起忘掉，逼下一次搜索重算。
+    ; ⚠ 不清会出事 —— 关键字没变就复用 _matches 里的旧字符偏移，
+    ;   而正文可能已经换了（切日期 / 手动编辑），SetSel 会选到错误位置。
+    static _ResetMatches() {
+        this._lastKeyword := ""
+        this._lastLen := -1
+        this._matches := []
+        this._current := 0
+    }
+
+    static IsVisible() => this._visible
+
+    static Show() {
+        if this._visible
+            return
+        ; 每次打开都丢掉上次的缓存：搜索条关着的时候正文是能改的
+        this._ResetMatches()
+        this._visible := true
+        State.SetSearchVisible(true)
+        this._SetVisible(true)
+
+        g := State.GetGui()
+        if g {
+            WinGetClientPos(&cx, &cy, &w, &h, "ahk_id " . g.Hwnd)
+            try this._edCtrl.Move(8, 72, w - 16, h - 110)
+        }
+
+        hwndEd := this._edCtrl.Hwnd
+        minBuf := Buffer(4, 0)
+        maxBuf := Buffer(4, 0)
+        DllCall("SendMessage"
+            , "ptr", hwndEd
+            , "uint", 0x00B0
+            , "ptr", minBuf.Ptr
+            , "ptr", maxBuf.Ptr)
+        curMax := NumGet(maxBuf, 0, "uint")
+        DllCall("SendMessage"
+            , "ptr", hwndEd
+            , "uint", 0x00B1
+            , "ptr", curMax
+            , "ptr", curMax)
+
+        this._edit.Focus()
+        DllCall("SendMessage"
+            , "ptr", this._edit.Hwnd
+            , "uint", 0x00B1
+            , "ptr", 0
+            , "ptr", 0x7FFFFFFF)
+    }
+
+    static Hide() {
+        if !this._visible
+            return
+        this._visible := false
+        State.SetSearchVisible(false)
+        this._SetVisible(false)
+
+        g := State.GetGui()
+        if g {
+            WinGetClientPos(&cx, &cy, &w, &h, "ahk_id " . g.Hwnd)
+            try this._edCtrl.Move(8, 32, w - 16, h - 70)
+        }
+
+        hwndEd := this._edCtrl.Hwnd
+        minBuf := Buffer(4, 0)
+        maxBuf := Buffer(4, 0)
+        DllCall("SendMessage"
+            , "ptr", hwndEd
+            , "uint", 0x00B0
+            , "ptr", minBuf.Ptr
+            , "ptr", maxBuf.Ptr)
+        savedMax := NumGet(maxBuf, 0, "uint")
+        DllCall("SetFocus", "ptr", hwndEd)
+        DllCall("SendMessage"
+            , "ptr", hwndEd
+            , "uint", 0x00B1
+            , "ptr", savedMax
+            , "ptr", savedMax)
+    }
+
+    static Toggle() {
+        if this._visible
+            this.Hide()
+        else
+            this.Show()
+    }
+
+    static _SetVisible(v) {
+        try this._barBg.Visible := v
+        try this._icon.Visible := v
+        try this._edit.Visible := v
+        try this._count.Visible := v
+    }
+
+    ; ─── 配色：跟着当前主题走 ───
+    ; 搜索条底色要比编辑区深一档才分得出来（深色主题下方向相反），所以统一用
+    ; 「主题编辑区底色 + 25% 次级文字色」混出来，浅色 / 深色两边都自然。
+    static _ApplyColors() {
+        t := ThemeService.Themes[ThemeService.GetCurrent()]
+        if !IsObject(t)
+            return
+        barBg := this._Mix(t.edBg, t.dim, 25)
+        for ctrl in [this._barBg, this._icon, this._count]
+            try ctrl.Opt("Background" . barBg)
+        try this._icon.Opt("c" . t.dim)
+        try this._count.Opt("c" . t.dim)
+        try this._edit.Opt("Background" . t.edBg . " c" . t.text)
+    }
+
+    ; 两个十六进制 RGB 之间线性插值，pct = 第二个色的百分比（0-100）
+    static _Mix(hexA, hexB, pct) {
+        out := ""
+        loop 3 {
+            i := (A_Index - 1) * 2
+            a := Integer("0x" . SubStr(hexA, i + 1, 2))
+            b := Integer("0x" . SubStr(hexB, i + 1, 2))
+            out .= Format("{:02X}", Round(a + (b - a) * pct / 100))
+        }
+        return out
+    }
+
+    static Layout(winWidth, winHeight) {
+        try this._barBg.Move(8, 32, this.BAR_W, 32)
+        try this._icon.Move(12, 38, 22, 20)
+        try this._edit.Move(36, 36, 130, 24)
+        try this._count.Move(170, 39, 44, 20)
+    }
+
+    static Next() => this._DoSearch("down")
+    static Prev() => this._DoSearch("up")
+
+    static _DoSearch(direction) {
+        hwndEd := State.GetEd()
+        kw := this._edit.Value
+        if (kw = "") {
+            this._ResetMatches()
+            this._count.Value := ""
+            return
+        }
+
+        ; 缓存复用条件：关键字没变**且**正文长度没变。
+        ; ⚠ 搜索条开着时编辑器热键被 #HotIf 挡掉，但鼠标点进编辑区照样能打字 ——
+        ;   那时关键字不变而正文已变，复用旧偏移会让下面 SetSel 选到错误位置。
+        ;   用「正文长度」当脏标记：字数一变长度必变，代价一次 WM_GETTEXTLENGTH（O(1)）。
+        ;   已知残留：等长替换（改掉一个字符而不改字数）测不出来，属罕见边缘。
+        lenNow := EditorService.GetLength(hwndEd)
+        if (kw != this._lastKeyword || lenNow != this._lastLen) {
+            this._lastKeyword := kw
+            this._lastLen := lenNow
+            this._matches := []
+            pos := 0
+            while (true) {
+                r := EditorService.FindTextEx(hwndEd, kw, pos, "down")
+                if (r = -1)
+                    break
+                this._matches.Push(r)
+                pos := r.end
+            }
+            this._current := 0
+        }
+
+        if (this._matches.Length = 0) {
+            this._count.Value := "未找到"
+            return
+        }
+
+        if (direction = "down") {
+            this._current++
+            if (this._current > this._matches.Length)
+                this._current := 1
+        } else {
+            this._current--
+            if (this._current < 1)
+                this._current := this._matches.Length
+        }
+
+        m := this._matches[this._current]
+
+        DllCall("SetFocus", "ptr", hwndEd)
+        DllCall("SendMessage"
+            , "ptr", hwndEd
+            , "uint", 0x00B1
+            , "ptr", m.start
+            , "ptr", m.end)
+
+        lineIdx := SendMessage(0x00C9, m.start, 0, hwndEd)
+        EditorService.ScrollToLineFixed(hwndEd, lineIdx)
+
+        ; 焦点还给搜索框 —— 延迟 300ms 是因为刚把焦点交给编辑区选词，抢太早会丢选中。
+        ; ⚠ 走守卫：这 300ms 内用户可能已经 Esc 关掉搜索条、或收起整个窗口，
+        ;   那时直接 Focus() 会抛异常，而 SetTimer 回调没有外层 try（弹框停摆）。
+        SetTimer(() => this._RefocusSearchBox(), -300)
+
+        this._count.Value := this._current . "/" . this._matches.Length
+    }
+
+    ; 把焦点还给搜索框。搜索条已隐藏或尚未初始化就不动 ——
+    ; 免得把焦点塞给一个看不见的控件（那会把焦点赶到别处去）。
+    static _RefocusSearchBox() {
+        if !this._visible || !this._edit
+            return
+        try this._edit.Focus()
+    }
+}
+
+
+class StatFeature {
+    static _lastLen := -1
+    static Init(intervalMs := 500) {
+        SetTimer(() => StatFeature.Tick(), intervalMs)
+    }
+    ; ⚠ 500ms 一次的常驻计时器：窗口收起 / 最小化时不必刷新字数 —— 隐藏态照跑
+    ;   SendMessage 读长度是纯白耗。守卫与 AutoSaveFeature.Tick 同一套：
+    ;   最小化窗口的 IsWindowVisible 仍是 1，必须再排掉 IsIconic。
+    static Tick() {
+        stat := State.GetStat()
+        if !stat
+            return
+        hwnd := State.GetEd()
+        if !hwnd
+            return
+        if !DllCall("IsWindowVisible", "ptr", hwnd, "int")
+            return
+        if DllCall("IsIconic", "ptr", hwnd, "int")
+            return
+        len := EditorService.GetLength(hwnd)
+        if (len != this._lastLen) {
+            ; 内容变短时 RichEdit 只重算 SCROLLINFO、不重算行布局也不重绘 ——
+            ; 表现为画面停在删除前，得拖一下滚动条才闪回。
+            ; ⚠ 这里是 500ms 一次的兜底：删完最多等半秒画面才跟手，肉眼「慢半拍」。
+            ;   想更快得换触发方式，但 EN_CHANGE 在本项目的 RichEdit50W 上实测掩码
+            ;   设不上（EM_SETEVENTMASK 读回恒为 0x0，WM_COMMAND 一次都不来），
+            ;   50ms 轮询那一版在真机上出过问题，暂留在 %TEMP% 备份里不启用。
+            ; 首次调用（_lastLen = -1）不触发。
+            if (this._lastLen >= 0 && len < this._lastLen)
+                EditorService.SyncScrollAfterShrink(hwnd)
+            this._lastLen := len
+            stat.Value := len . " 字"
+        }
+    }
+}
+
+
+class CaretFeature {
+    static Init() {
+        EventBus.On("Window.BeforeHide", (*) => CaretFeature.Save())
+        EventBus.On("Window.Shown", (*) => CaretFeature.Restore())
+    }
+    static Save() {
+        sel := EditorService.GetSel(State.GetEd())
+        State.SetCaret(sel.min, sel.max)
+    }
+    static Restore() {
+        hwnd := State.GetEd()
+        totalLen := SendMessage(0x000E, 0, 0, hwnd)
+        if !State.HasCaret() {
+            EditorService.MoveCaretToEnd(hwnd)
+            return
+        }
+        caret := State.GetCaret()
+        selMin := Min(caret.min, totalLen)
+        selMax := Min(caret.max, totalLen)
+        if (selMin < 0)
+            selMin := 0
+        if (selMax < 0)
+            selMax := 0
+        EditorService.SetSel(hwnd, selMin, selMax)
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  ⑤ 组织与管理
+; ═══════════════════════════════════════════════════════════════════════════
+
+class DateSwitchFeature {
+    static Switch(offset) {
+        EventBus.Emit("Save.Requested")   ; 切走之前先把当前这篇落盘
+
+        curDate := State.GetDate()
+        if (curDate = "")
+            return false
+
+        ymd := StrReplace(curDate, "-", "")
+        target := DateAdd(ymd, offset, "Days")
+        targetStr := FormatTime(target, "yyyy-MM-dd")
+
+        State.SetDate(targetStr)
+        State.ResetCaret()
+
+        hwnd := State.GetEd()
+        rtfPath := NoteStoreService.FindRtf(targetStr)
+        if (rtfPath = "") {
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(targetStr))
+        } else {
+            EditorService.LoadRTFFromFile(hwnd, rtfPath)
+        }
+        EditorService.EmptyUndo(hwnd)
+        EventBus.Emit("Date.Switched", {date: targetStr})
+        return true
+    }
+}
+
+
+class DateJumpFeature {
+    ; 别的 Feature（今日）要跳日期时发这个事件 —— Feature 之间不互相调用
+    static Init() {
+        EventBus.On("Date.JumpRequested", (d) => this.JumpTo(d.date))
+    }
+
+    static ShowDialog() {
+        winTitle := Config.AppName . " · 搜索跳转"
+        if WinExist(winTitle . " ahk_class AutoHotkeyGUI") {
+            WinActivate(winTitle . " ahk_class AutoHotkeyGUI")
+            return
+        }
+
+        dlg := Gui("+Resize +AlwaysOnTop", winTitle)
+        dlg.SetFont("s11", "Microsoft YaHei")
+        dlg.BackColor := "FFF8E7"
+
+        dlg.AddText("x14 y16 w60", "搜索：")
+        searchEdit := dlg.AddEdit("x72 y12 w480 h26")
+        searchEdit.SetFont("s11", "Microsoft YaHei")
+
+        dlg.AddText("x14 y46 w560 c808080"
+            , "支持模糊搜索：日期（2026-09）或标签（机器学习），空格分隔多条件")
+
+        lv := dlg.AddListView("x14 y74 w538 h360", ["日期", "标签"])
+        lv.ModifyCol(1, 130)
+        lv.ModifyCol(2, 400)
+        lv.SetFont("s10", "Microsoft YaHei")
+
+        allItems := NoteStoreService.ListAllTags()
+
+        ApplyFilter(keyword) {
+            lv.Delete()
+            if (keyword = "") {
+                for item in allItems
+                    lv.Add(, item.date, item.tag)
+                return
+            }
+            words := StrSplit(keyword, " ")
+            for item in allItems {
+                matched := true
+                for w in words {
+                    w := Trim(w)
+                    if (w = "")
+                        continue
+                    if !(InStr(item.date, w) || InStr(item.tag, w)) {
+                        matched := false
+                        break
+                    }
+                }
+                if matched
+                    lv.Add(, item.date, item.tag)
+            }
+        }
+
+        searchEdit.OnEvent("Change", (*) => ApplyFilter(Trim(searchEdit.Value)))
+
+        JumpToSelected(*) {
+            row := lv.GetNext()
+            if (row = 0)
+                return
+            dateStr := lv.GetText(row, 1)
+            if (dateStr = "")
+                return
+            dlg.Destroy()
+            DateJumpFeature.JumpTo(dateStr)
+        }
+
+        lv.OnEvent("DoubleClick", JumpToSelected)
+
+        btnClose := dlg.AddButton("x472 y444 w80", "关闭")
+        btnClose.OnEvent("Click", (*) => dlg.Destroy())
+
+        HotIfWinActive(winTitle)
+        Hotkey("Enter", (*) => JumpToSelected(), "On")
+        Hotkey("NumpadEnter", (*) => JumpToSelected(), "On")
+        Hotkey("Escape", (*) => dlg.Destroy(), "On")
+        HotIf()
+        dlg.OnEvent("Close", (*) => (
+            HotIfWinActive(winTitle),
+            Hotkey("Enter", "Off"),
+            Hotkey("NumpadEnter", "Off"),
+            Hotkey("Escape", "Off"),
+            HotIf(),
+            dlg.Destroy()
+        ))
+
+        ApplyFilter("")
+        dlg.Show("w560 h485")
+        searchEdit.Focus()
+    }
+
+    static JumpTo(dateStr) {
+        EventBus.Emit("Save.Requested")   ; 跳走之前先把当前这篇落盘
+        State.SetDate(dateStr)
+        State.ResetCaret()
+        hwnd := State.GetEd()
+
+        rtfPath := NoteStoreService.FindRtf(dateStr)
+        if (rtfPath != "") {
+            EditorService.LoadRTFFromFile(hwnd, rtfPath)
+        } else {
+            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(dateStr))
+        }
+        EditorService.EmptyUndo(hwnd)
+        EventBus.Emit("Date.Switched", {date: dateStr})
+    }
+}
+
+
+class TitleFeature {
+    static ShowDialog() {
+        date := State.GetDate()
+        if (date = "")
+            return
+
+        rtfPath := NoteStoreService.FindRtf(date)
+        currentTag := (rtfPath != "")
+            ? NoteStoreService.TagFromFileName(rtfPath) : ""
+
+        dlg := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "日期标签")
+        dlg.SetFont("s11", "Microsoft YaHei")
+        dlg.BackColor := "FFF8E7"
+        dlg.AddText("x14 y12 w340", "为 " . date . " 设置标签：")
+        edit := dlg.AddEdit("x14 y38 w340 h26", currentTag)
+        edit.SetFont("s11", "Microsoft YaHei")
+        btnOk := dlg.AddButton("Default x14 y76 w100", "确定")
+        btnClear := dlg.AddButton("x122 y76 w100", "清除")
+        btnCancel := dlg.AddButton("x230 y76 w100", "取消")
+        dlg.AddText("x14 y112 w340 c808080"
+            , "示例：2026-09-19-机器学习`n标签会写进文件名，黑曜石里一眼可见")
+
+        OnSubmit(*) {
+            newTag := NoteStoreService.SanitizeTag(edit.Value)
+            dlg.Destroy()
+            TitleFeature._Apply(date, currentTag, newTag)
+        }
+
+        OnClear(*) {
+            dlg.Destroy()
+            if (currentTag != "")
+                TitleFeature._Apply(date, currentTag, "")
+        }
+
+        btnOk.OnEvent("Click", OnSubmit)
+        btnClear.OnEvent("Click", OnClear)
+        btnCancel.OnEvent("Click", (*) => dlg.Destroy())
+        dlg.OnEvent("Escape", (*) => dlg.Destroy())
+        dlg.OnEvent("Close", (*) => dlg.Destroy())
+
+        edit.Focus()
+        dlg.Show("w380 h150")
+    }
+
+    static _Apply(date, oldTag, newTag) {
+        if (oldTag = newTag)
+            return
+        EventBus.Emit("Save.Requested")
+        if (newTag != "" && NoteStoreService.FindRtf(date) = "") {
+            EventBus.Emit("Error.Occurred"
+                , {msg: "空笔记无法设标签，请先写内容"})
+            return
+        }
+        if NoteStoreService.RenameWithTag(date, oldTag, newTag) {
+            EventBus.Emit("Title.Changed"
+                , {date: date, tag: newTag})
+        } else {
+            MsgBox("重命名失败，请检查文件是否被其他程序占用"
+                , "错误", 48)
+        }
+    }
+}
+
+
+class GoTodayFeature {
+    static Go() {
+        today := FormatTime(, "yyyy-MM-dd")
+        if (State.GetDate() = today) {
+            EventBus.Emit("Error.Occurred", {msg: "已经是今天"})
+            return
+        }
+        EventBus.Emit("Date.JumpRequested", {date: today})
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  横切 · 美观
+; ═══════════════════════════════════════════════════════════════════════════
+
+class ThemeFeature {
+    static Next() => ThemeService.Next()
+    static LoadFromConfig() => ThemeService.LoadFromConfig()
+}
+
+
+class FontFeature {
+    static NextFont() => FontService.NextFont()
+    static BiggerSize() => FontService.BiggerSize()
+    static SmallerSize() => FontService.SmallerSize()
+    static LoadFromConfig() => FontService.LoadFromConfig()
+}
+
+
+; ─── BackdropFeature：带背景图的主题（星空）───
+; 背景图不是「全局贴一张」，而是主题自带的属性：ThemeService.Themes 里带 bg 字段的
+; 主题（目前只有「星空」）才铺图，切到别的主题自动撤掉、回到纯底色。
+; 文字浮在图上、图铺满整个编辑区（终端式，非相框式）。
+class BackdropFeature {
+    static _lastW := 0
+    static _lastH := 0
+    static _applied := false  ; 当前是否已铺图（启动期窗口尺寸是 0，此时为 false）
+    static _bgPath := ""      ; 当前主题生效的背景图路径（空 = 该主题没有背景图）
+    static _bgAlpha := 60     ; 当前生效的遮罩不透明度（0-100）
+
+    static _pending := false  ; 已排入一次延迟铺图（防抖合并中）
+    static _doneX := 0        ; 上一次真正铺图用的矩形：同尺寸的 WM_SIZE 直接跳过
+    static _doneY := 0
+    static _doneW := 0
+    static _doneH := 0
+
+    ; ⚠ 必须与组合根 OnSize 里 ed.Move 的矩形完全一致，否则图层会与编辑区错位
+    static _Rect(winW, winH) {
+        if State.GetSearchVisible()
+            return {x: 8, y: 72, w: winW - 16, h: winH - 110}
+        return {x: 8, y: 32, w: winW - 16, h: winH - 70}
+    }
+
+    static Init(g) {
+        BackdropService.Attach(g)
+        ; 换主题 = 换背景图：带 bg 的主题铺图，其余撤图。没有开关 —— 想关就切主题，
+        ; 这也正是「往 Themes 里加一行就是一套新主题」的原设计。
+        EventBus.On("Theme.Changed", (*) => this.Refresh())
+    }
+
+    ; 按当前主题刷新「图路径 + 遮罩色 + 不透明度」缓存 —— 图只认主题自带的 bg / bgAlpha。
+    ; ⚠ 原先还有一对全局覆盖键（[Appearance] BackdropImage / BackdropOpacity），已删：
+    ;   它是「全局覆盖」，一旦写上会盖掉**所有**带 bg 的主题（多套图主题并存时没法定制
+    ;   各自的浓淡）；换图 / 调压暗的正确做法就是改主题自己的 bg / bgAlpha，重烘走
+    ;   tools\rebake-backdrop.ps1。
+    static _Sync() {
+        t := ThemeService.Themes[ThemeService.GetCurrent()]
+        hasBg := (IsObject(t) && t.HasProp("bg"))
+
+        this._bgPath := hasBg ? t.bg : ""
+        BackdropService.SetImage(this._bgPath)
+
+        ; 没图的主题给 60：那是「图缺失时铺底色」用的遮罩不透明度
+        this._bgAlpha := hasBg ? t.bgAlpha : 60
+
+        ; 缩放模式：主题写了 bgFit 就按它来（竖版人物图得用 contain，否则上下会被裁掉），
+        ; 没写的（含「星空」等老主题）一律 cover —— 铺图行为分毫不变。
+        BackdropService.SetFit(hasBg && t.HasProp("bgFit") ? t.bgFit : "cover")
+
+        ; 遮罩色取主题编辑区底色，图的色调就跟着主题走（图缺失时它就是那块纯底色）
+        BackdropService.SetMask(hasBg ? t.edBg : "", this._bgAlpha)
+    }
+
+    static Refresh() {
+        this._Sync()
+        this._Apply()
+    }
+
+    ; 窗口尺寸变化：记下尺寸，已铺图则按新尺寸重铺
+    static Layout(winW, winH) {
+        this._lastW := winW
+        this._lastH := winH
+        ; 启动时窗口尚未 Show，尺寸仍是 0，此时不铺；首次拿到有效尺寸后补一次，
+        ; 否则图会一直不出来。
+        if !this._applied {
+            if (this._bgPath != "" && BackdropService.HasImage())
+                this._Apply()
+            return
+        }
+        ; ⚠ 拉伸窗口时 WM_SIZE 每秒触发几十次，而每次都重做整张合成 —— 2400 宽的图
+        ;   逐级对折 + HALFTONE 缩放本机要几十毫秒，绘制队列被塞满，编辑区文字跟着
+        ;   反复重画，看上去就是「文字时隐时无」。这里改成防抖：先记下尺寸，停手
+        ;   80ms 后才铺一次；拖动过程中背景停在上一帧，不再与文字抢绘制。
+        this._ScheduleRender()
+    }
+
+    ; 把 80ms 内的连续尺寸变化合并成一次铺图（拖窗口时每秒几十次 WM_SIZE 只干一次活）
+    static _ScheduleRender() {
+        if this._pending
+            return
+        this._pending := true
+        SetTimer(() => this._RenderNow(), -80)
+    }
+
+    ; 真正铺图。矩形与上次相同就不重做合成（同尺寸的 WM_SIZE 是空转）。
+    ; force = true 用于换主题 —— 那时尺寸可能没变，但图换了，必须重铺。
+    static _RenderNow(force := false) {
+        this._pending := false
+        rect := this._Rect(this._lastW, this._lastH)
+        if (!force && (rect.x = this._doneX) && (rect.y = this._doneY)
+            && (rect.w = this._doneW) && (rect.h = this._doneH))
+            return
+        if BackdropService.Render(rect.x, rect.y, rect.w, rect.h) {
+            this._doneX := rect.x, this._doneY := rect.y
+            this._doneW := rect.w, this._doneH := rect.h
+            ; 位图刚换过，而编辑区是 WS_EX_TRANSPARENT（自己不画背景），面上留着的
+            ; 还是上一帧的文字 —— 让它重画一次，免得拉伸后出现「文字缺一块」。
+            ; 不带 UPDATENOW：走正常消息队列，别在拖动时同步阻塞。
+            try DllCall("RedrawWindow", "ptr", State.GetEd(), "ptr", 0, "ptr", 0
+                , "uint", 0x0001 | 0x0004)      ; INVALIDATE | ERASE
+        }
+    }
+
+    ; 按 _bgPath 决定铺图还是撤图：主题没带 bg、图片不存在、窗口还没尺寸 —— 三种都走撤图。
+    static _Apply() {
+        hwndEd := State.GetEd()
+        if !hwndEd
+            return
+        useIt := this._applied := (this._bgPath != "" && BackdropService.HasImage()
+            && this._lastW > 1 && this._lastH > 1)
+
+        if useIt {
+            BackdropService.SetVisible(true)
+            this._RenderNow(true)          ; 换主题 / 首次铺图：立即铺，不走 80ms 防抖
+            ; 图铺好之后再开透明，避免出现「编辑区已不画背景、图还没画」的空窗
+            this._SetEdTransparent(hwndEd, true)   ; WS_EX_TRANSPARENT
+        } else {
+            ; 先恢复不透明再撤图，顺序反过来会闪一下白底
+            this._SetEdTransparent(hwndEd, false)
+            BackdropService.SetVisible(false)
+            ; 撤图后清掉尺寸记忆，同尺寸再切回图主题时才会真的重铺
+            this._doneW := 0, this._doneH := 0
+        }
+
+        try DllCall("RedrawWindow", "ptr", hwndEd, "ptr", 0, "ptr", 0
+            , "uint", 0x0001 | 0x0004 | 0x0100)   ; INVALIDATE | ERASE | UPDATENOW
+    }
+
+    ; ─── 编辑区的「透明」扩展样式（WS_EX_TRANSPARENT = 0x20）开关 ───
+    ; ⚠ 不能用 AHK 的 WinSetExStyle —— 窗口**最小化**时它必抛「(6) 句柄无效。」：
+    ;   实测最小化窗口上 SetWindowLongPtr 把样式**真写进去了**（读回 EXSTYLE 确实变了），
+    ;   却把 ERROR_INVALID_HANDLE 留在 LastError，而 AHK 据「返回 0（旧样式为 0）+ LastError≠0」
+    ;   判成失败。!t 又是全局热键（不在 #HotIf 内），窗口最小化着照样能切主题 ——
+    ;   于是「最小化状态下从无图主题切到带图主题」就是一次崩溃：模态错误框一弹、脚本停摆。
+    ;   改走 DllCall 直接写，**只认读回的样式、不看 LastError**，最小化下照设不误。
+    ;   顺带也不再需要 DetectHiddenWindows(true)：这条路不经过 AHK 的窗口查找，不会把
+    ;   全局可见性语义永久改成 true（原来那行只开不还原，是另一处隐患）。
+    static _SetEdTransparent(hwndEd, on) {
+        ; 32 位没有 SetWindowLongPtr，退回 SetWindowLong（本机要求 64 位运行，这里只为不抛错）
+        get := (A_PtrSize = 8) ? "GetWindowLongPtr" : "GetWindowLong"
+        set := (A_PtrSize = 8) ? "SetWindowLongPtr" : "SetWindowLong"
+        ex := DllCall(get, "ptr", hwndEd, "int", -20, "ptr")   ; GWL_EXSTYLE
+        want := on ? (ex | 0x20) : (ex & ~0x20)
+        if (want = ex)
+            return
+        DllCall(set, "ptr", hwndEd, "int", -20, "ptr", want, "ptr")
+    }
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  组合根 —— 装配 + 启动
+; ═══════════════════════════════════════════════════════════════════════════
+
+; ═══ 全局异常兜底 ═══
+; AHK v2 对未捕获异常默认是**弹模态框**：框一弹脚本就停摆（热键全无反应、框还挂在
+; 屏幕上），只能手动杀进程 —— 项目在 v2 迁移期踩过三次（见 .clinerules/03）。
+; 这里改成「写日志 + 继续跑」：单个 Feature 出错不该拖垮整个程序。
+; 注册点放在这里（而不是文件更早处）是因为 LogError 要先建日志目录
+; （开发版项目根 .logs\、编译版 %AppData%\SevenNote-Dev\），
+; 而其中的 AppData 目录就在下面几行才建。
+OnError(OnScriptError)
+
+; AHK 的异常回调。返回 **1** = 已处理，不弹默认错误框（返回 0 就会弹）。
+; ⚠ 回调自身绝不能抛异常 —— 会递归回到这里，所以全程 try，见 LogError。
+OnScriptError(err, mode) {
+    stack := err.HasProp("Stack") ? err.Stack : ""
+    LogError(mode . "  " . err.Message
+        . "`n      文件  " . err.File . "   行  " . err.Line
+        . (Trim(stack) != ""
+            ? "`n      调用栈：`n      " . StrReplace(Trim(stack, "`n"), "`n", "`n      ")
+            : ""))
+    return 1
+}
+
+; 追加一条到日志（落点见 Config.LogPath：开发版 .logs\_error.log，
+; 编译版 %AppData%\SevenNote-Dev\_error.log）。
+; 超 512 KB 就轮转（删掉重来）—— 日志只用来事后定位，不归档。
+LogError(msg) {
+    entry := "── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n" . msg . "`r`n`r`n"
+    try {
+        logPath := Config.LogPath
+        DirCreate(Config.LogDir)      ; 启动极早期出错时，这个目录可能还没建
+        if (FileExist(logPath) && FileGetSize(logPath) > 524288)
+            FileDelete(logPath)
+        FileAppend(entry, logPath, "UTF-8")
+    } catch {
+        ; 项目目录只读 / 被占用时退回 AppData —— 日志丢一次就白查了
+        try {
+            fallbackDir := A_AppData . "\SevenNote-Dev"
+            DirCreate(fallbackDir)
+            FileAppend(entry, fallbackDir . "\_error.log", "UTF-8")
+        }
+    }
+}
+
+; ═══ 确保 AppData 目录存在 ═══
+DirCreate(Config.AppDataDir)
+
+; ═══ 打包 pandoc.exe（v1.9 修复）═══
+; 【关键修复】
+;   · FileInstall 必须一行，不能折行（否则 Ahk2Exe 可能打包空文件）
+;   · 第二参数用展开的表达式，不用类属性
+;   · 释放前先删旧文件（避免 0KB 坏文件阻塞后续释放）
+;   · 只在文件不存在或 < 1MB 时才释放
+; ⚠ 编译前把下面的源路径改成你本机 pandoc.exe 的实际路径
+; ⚠ 编译时务必确认源文件是 100+ MB 的 x86_64 版 pandoc
+if !FileExist(A_AppData . "\SevenNote\pandoc.exe") || FileGetSize(A_AppData . "\SevenNote\pandoc.exe") < 1048576 {
+    try FileDelete(A_AppData . "\SevenNote\pandoc.exe")
+    FileInstall "C:\Users\Seven\AppData\Local\Pandoc\pandoc.exe", A_AppData . "\SevenNote\pandoc.exe", 1
+}
+
+; ═══ 加载 RichEdit 控件库 ═══
+DllCall("LoadLibrary", "str", "msftedit.dll", "ptr")
+
+; ═══ 配置服务初始化 ═══
+ConfigService.Init(Config.ConfigPath)
+ConfigService.SetDefault("Appearance", "ThemeIndex", "1")
+; 主题表「结构版本」：主题表精简 / 重排过就 +1，ThemeService._MigrateIndex 据此只跑一次下标迁移
+ConfigService.SetDefault("Appearance", "ThemeSchema", "1")
+ConfigService.SetDefault("Appearance", "FontIndex", "1")
+ConfigService.SetDefault("Appearance", "FontSizeIndex", "2")
+; 背景图不再有全局键：图与浓淡都写在主题自己的 bg / bgAlpha 上（见 ThemeService.Themes）
+ConfigService.SetDefault("Input", "CapsLockMap", "0")
+ConfigService.SetDefault("Paths", "Vault", "")
+
+; ═══ 首次运行：引导用户选择笔记目录 ═══
+EnsureVaultConfigured()
+
+; ═══ 确保笔记目录存在 ═══
+DirCreate(Config.GetVault())
+
+; ─── 创建主窗口 ───
+g := Gui(, Config.AppName)
+; +E0x02000000 = WS_EX_COMPOSITED：整个窗口走「离屏双缓冲」重绘。
+; 编辑区（RichEdit）自己不带双缓冲，滚动时它会先把客户区擦一遍再画文字，那一帧的空档
+; 就是「上下滑动时略微频闪」的来源。开了合成重绘，父子控件的绘制顺序由系统统一保证，
+; 滚动不再闪（代价是重绘走离屏缓冲，拖动窗口时 CPU 略高，肉眼无感）。
+g.Opt("+AlwaysOnTop +Resize +MinSize450x300 +E0x02000000")
+g.SetFont("s14", "楷体")
+g.BackColor := "FFF8E7"
+
+; ─── 顶部控件：字数 + 标签 + 主题标签 ───
+stat := g.AddText("x8 y8 w60 h20 Left", "0 字")
+stat.SetFont("s10 c9CA3AF", "楷体")
+
+tagCtrl := g.AddText("x72 y8 w190 h20 Left cA89880", "")
+tagCtrl.SetFont("s10", "楷体")
+
+themeLabel := g.AddText("x266 y8 w176 h20 Right", "")
+themeLabel.SetFont("s10 c3D2B1F", "楷体")
+
+; ─── RichEdit 编辑区 ───
+ed := g.AddCustom("ClassRichEdit50W x8 y32 w434 h440 +0x201004")
+SendMessage(0x0443, 0, 0xE7F8FF, ed.Hwnd)
+ed.SetFont("s14 c3D2B1F", "楷体")
+SendMessage(0x0453, 100, 0, ed.Hwnd)
+
+; ─── 搜索条控件（初始隐藏）───
+searchBarBg := g.AddText("x8 y32 w220 h32 Background" . SearchFeature.BAR_BG, "")
+searchBarBg.SetFont("s1", "楷体")
+searchBarBg.Visible := false
+
+searchIcon := g.AddText("x12 y38 w22 h20 Background" . SearchFeature.BAR_BG . " c" . SearchFeature.BAR_DIM, "🔍")
+searchIcon.SetFont("s11", "楷体")
+searchIcon.Visible := false
+
+searchEdit := g.AddEdit("x36 y36 w130 h24 Background" . SearchFeature.EDIT_BG . " c" . SearchFeature.EDIT_TEXT, "")
+searchEdit.SetFont("s12", "楷体")
+searchEdit.Visible := false
+
+searchCount := g.AddText("x170 y39 w44 h20 Background" . SearchFeature.BAR_BG . " c" . SearchFeature.BAR_DIM . " Left", "")
+searchCount.SetFont("s10", "楷体")
+searchCount.Visible := false
+
+; ─── 底部控件：日期 + 提示 ───
+dateCtrl := g.AddText("x8 y520 w180 h22 Left cA89880", "")
+dateCtrl.SetFont("s10", "楷体")
+
+msgCtrl := g.AddText("x162 y520 w280 h22 Right cA89880", "")
+msgCtrl.SetFont("s10", "楷体")
+
+; ─── 注册到 State ───
+State.SetGui(g)
+State.SetEd(ed.Hwnd)
+State.SetStat(stat)
+State.SetDateCtrl(dateCtrl)
+State.SetMsgCtrl(msgCtrl)
+State.SetThemeLabel(themeLabel)
+State.SetTagCtrl(tagCtrl)
+
+; ─── 窗口事件 ───
+g.OnEvent("Close", (*) => (g.Hide(), true))
+g.OnEvent("Size", OnSize)
+
+OnSize(guiObj, MinMax, Width, Height) {
+    ; 最小化时 Width/Height 是图标尺寸（实测约 158x26），
+    ; 控件按它算会得到负尺寸，直接跳过
+    if (MinMax = -1)
+        return
+    try stat.Move(8, 8, 60, 20)
+    try tagCtrl.Move(72, 8, 190, 20)
+    try themeLabel.Move(Width - 184, 8, 176, 20)
+    SearchFeature.Layout(Width, Height)
+    if SearchFeature.IsVisible() {
+        try ed.Move(8, 72, Width - 16, Height - 110)
+    } else {
+        try ed.Move(8, 32, Width - 16, Height - 70)
+    }
+    try dateCtrl.Move(8, Height - 30, 180, 22)
+    try msgCtrl.Move(Width - 288, Height - 30, 280, 22)
+    ; 背景图跟着编辑区一起缩放（未开启时内部直接返回，无额外开销）
+    BackdropFeature.Layout(Width, Height)
+}
+
+; ═══ 挂载 Feature ═══
+; 最先挂 —— 它订阅「外部窗口（PowerShell / DeepSeek）要出现了」，
+; 得赶在第一次 Alt+C / Alt+X 之前注册好
+WindowFeature.Init()
+StatusBar.Init(dateCtrl, tagCtrl, msgCtrl)
+SearchFeature.Init(searchBarBg, searchIcon, searchEdit, searchCount, stat, themeLabel, ed)
+AutoSaveFeature.Init(Config.AutoSaveInterval)
+SaveFeature.Init()
+CaretFeature.Init()
+StatFeature.Init(Config.StatInterval)
+PowerShellFeature.Init()
+DeepSeekFeature.Init()
+DateJumpFeature.Init()
+BackdropFeature.Init(g)
+
+; ═══ 热键（数据驱动：注册与帮助共用同一张表）═══
+; 每条热键只在 HotkeyTable() 里定义一次 —— 同一份数据既喂给「注册」，
+; 也喂给「Alt+H 帮助窗口」，改热键不必再去 ShowHelp 里手工同步文本。
+HotkeyRouter.RegisterAll(HotkeyTable())
+
+; ═══ 启动 ═══
+LoadFeature.Load()
+StatusBar.RefreshTag()
+
+ThemeFeature.LoadFromConfig()
+FontFeature.LoadFromConfig()
+CapsLockFeature.LoadFromConfig()
+; 背景图不必在这里初始化：ThemeService.Apply 会 Emit "Theme.Changed"，
+; 而 BackdropFeature 在 Init 时就挂上了这个事件 —— 启动与换主题都自动重铺。
+
+ShowStartupTip()
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  首次运行引导
+; ═══════════════════════════════════════════════════════════════════════════
+
+EnsureVaultConfigured() {
+    vault := ConfigService.Read("Paths", "Vault")
+    if (vault != "" && DirExist(vault))
+        return
+
+    defaultPath := A_MyDocuments . "\SevenNote"
+    if (vault != "")
+        defaultPath := vault
+
+    selected := DirSelect(defaultPath, 0
+        , Config.AppName . " 首次运行`n`n请选择笔记存储目录：")
+    if (selected = "")
+        selected := defaultPath
+
+    DirCreate(selected)
+    Config.SetVault(selected)
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  启动提示
+; ═══════════════════════════════════════════════════════════════════════════
+
+ShowStartupTip() {
+    tip := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "提示")
+    tip.SetFont("s14", "楷体")
+    tip.BackColor := "E4E9EE"
+    tip.AddText("x20 y20 w200 Center c3D5166", Config.AppName . " 已启动！Alt+Z 呼出")
+    tipY := A_ScreenHeight * 0.65
+    tip.Show("w240 h80 y" . tipY)
+    ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，
+    ;   而 SetTimer 回调没有外层 try，异常即弹模态框（见 .clinerules/03）。
+    SetTimer(() => DestroyTipWindow(tip), -1500)
+}
+
+; 关掉启动提示。已经关过就算了 —— 这正是 try 的用途。
+DestroyTipWindow(tip) {
+    try tip.Destroy()
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  热键表（注册 + 帮助的唯一数据源）
+; ═══════════════════════════════════════════════════════════════════════════
+; 每条热键只在这里定义一次：HotkeyRouter 用它注册，BuildHotkeyHelpText()
+; 用它渲染 Alt+H 帮助 —— 改一条热键不必再去 ShowHelp 里手工同步那行文本。
+;   ctx   : 注册上下文 —— "global" 全局 / "editor" 编辑器内 / "search" 搜索栏显示时
+;   key   : AHK 热键字符串（$ 前缀 = 走钩子，照原样保留）；
+;           留空表示该热键由 Feature 自己注册，本表只负责帮助文本
+;   fn    : 触发时调用的回调（key 为空时不必写）
+;   group : 帮助窗口里的分组（纯语义分类，与 ctx 无关）
+;   line  : 帮助窗口里的那一行（含前导空格，逐字符照抄旧文本）
+;   note  : 该行之后追加的说明行（可省略）
+HotkeyTable() {
+    return [
+        ; ── 【窗口】──
+        {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z            呼出 / 隐藏"
+            , fn: (*) => WindowFeature.Toggle()},
+        {ctx: "global", key: "!+z", group: "窗口", line: "   Alt+Shift+Z      保存并退出"
+            , fn: (*) => (SaveFeature.Save(), ExitApp())},
+        {ctx: "global", key: "!h", group: "窗口", line: "   Alt+H            显示本帮助"
+            , fn: (*) => ShowHelp()},
+
+        ; ── 【外观】──
+        {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）"
+            , fn: (*) => ThemeFeature.Next()},
+        {ctx: "global", key: "!+t", group: "外观", line: "   Shift+Alt+T      切换字体"
+            , fn: (*) => FontFeature.NextFont()},
+        {ctx: "global", key: "!=", group: "外观", line: "   Alt+=            调大字号"
+            , fn: (*) => FontFeature.BiggerSize()},
+        {ctx: "global", key: "!-", group: "外观", line: "   Alt+-            调小字号"
+            , note: "                      （外观设置自动保存）"
+            , fn: (*) => FontFeature.SmallerSize()},
+
+        ; ── 【输入增强】──
+        {ctx: "global", key: "!+c", group: "输入增强", line: "   Alt+Shift+C      切换 CapsLock 键盘映射"
+            , note: "                      （开启后 CapsLock+H/J/K/L = 方向键）"
+            , fn: (*) => CapsLockFeature.Toggle()},
+        ; 下面两条由 Feature 自己注册（外部窗口存在时才挂），本表只提供帮助文本：
+        ;   Alt+C → PowerShellFeature（Init 里 Hotkey("!c")）
+        ;   Alt+X → DeepSeekFeature   （Init 里 Hotkey("!x")）
+        {ctx: "", key: "", group: "输入增强", line: "   Alt+C            唤出 / 隐藏 PowerShell（笔记自动让位）"},
+        {ctx: "", key: "", group: "输入增强", line: "   Alt+X            呼出 / 隐藏 DeepSeek 网页（笔记自动让位）"},
+
+        ; ── 【搜索】──
+        {ctx: "editor", key: "$^f", group: "搜索", line: "   Ctrl+F           打开搜索栏"
+            , fn: (*) => SearchFeature.Show()},
+        {ctx: "search", key: "Enter", group: "搜索", line: "   Enter            下一个匹配"
+            , fn: (*) => SearchFeature.Next()},
+        {ctx: "search", key: "+Enter", group: "搜索", line: "   Shift+Enter      上一个匹配"
+            , fn: (*) => SearchFeature.Prev()},
+        {ctx: "search", key: "Esc", group: "搜索", line: "   Esc              关闭搜索栏"
+            , fn: (*) => SearchFeature.Hide()},
+
+        ; ── 【保存】──
+        {ctx: "editor", key: "$^s", group: "保存", line: "   Ctrl+S           手动保存"
+            , fn: (*) => SaveFeature.Save()},
+
+        ; ── 【日期与标签】──
+        {ctx: "global", key: "!Up", group: "日期与标签", line: "   Alt+↑            前一天"
+            , fn: (*) => DateSwitchFeature.Switch(-1)},
+        {ctx: "global", key: "!Down", group: "日期与标签", line: "   Alt+↓            后一天"
+            , fn: (*) => DateSwitchFeature.Switch(1)},
+        {ctx: "global", key: "!Home", group: "日期与标签", line: "   Alt+Home         回到今天"
+            , fn: (*) => GoTodayFeature.Go()},
+        {ctx: "editor", key: "$^g", group: "日期与标签", line: "   Ctrl+G           搜索跳转（日期 / 标签）"
+            , fn: (*) => DateJumpFeature.ShowDialog()},
+        {ctx: "editor", key: "$^+t", group: "日期与标签", line: "   Ctrl+Shift+T     为当前日期设置标签"
+            , fn: (*) => TitleFeature.ShowDialog()},
+        ; ── 【编辑】──
+        {ctx: "editor", key: "$^z", group: "编辑", line: "   Ctrl+Z           撤销"
+            , fn: (*) => UndoFeature.Undo()},
+        {ctx: "editor", key: "$^+z", group: "编辑", line: "   Ctrl+Shift+Z     重做"
+            , fn: (*) => UndoFeature.Redo()},
+        {ctx: "editor", key: "$^y", group: "编辑", line: "   Ctrl+Y           删除当前行"
+            , fn: (*) => LineEditFeature.DeleteLine()},
+        {ctx: "editor", key: "$^d", group: "编辑", line: "   Ctrl+D           复制当前行到下方"
+            , fn: (*) => LineEditFeature.DuplicateLine()},
+        {ctx: "editor", key: "$^+Up", group: "编辑", line: "   Ctrl+Shift+↑     上移当前行"
+            , fn: (*) => LineEditFeature.MoveUp()},
+        {ctx: "editor", key: "$^+Down", group: "编辑", line: "   Ctrl+Shift+↓     下移当前行"
+            , fn: (*) => LineEditFeature.MoveDown()},
+        {ctx: "editor", key: "Tab", group: "编辑", line: "   Tab              增加缩进（4 空格）"
+            , fn: (*) => LineEditFeature.Indent()},
+        {ctx: "editor", key: "+Tab", group: "编辑", line: "   Shift+Tab        减少缩进"
+            , fn: (*) => LineEditFeature.Outdent()},
+        {ctx: "editor", key: "$^+v", group: "编辑", line: "   Ctrl+Shift+V     粘贴为纯文本"
+            , fn: (*) => PasteFeature.PastePlain()},
+
+        ; ── 【分段】──
+        {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
+            , fn: (*) => TimestampFeature.Append()},
+        {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入分隔线"
+            , fn: (*) => TimestampFeature.Separator()},
+        {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
+            , fn: (*) => TimestampFeature.Heading()}
+    ]
+}
+
+; 注册由 WorkBench/HotkeyRouter.ahk 负责（Phase 1 起；本文件只保留热键表）。
+
+; 帮助窗口正文 —— 按【组】走，组内按表序；组间空行，结尾附版本与笔记目录。
+BuildHotkeyHelpText() {
+    table := HotkeyTable()
+    text := ""
+    for g in ["窗口", "外观", "输入增强", "搜索", "保存", "日期与标签", "编辑", "分段"] {
+        text .= "【" . g . "】`n"
+        for hk in table {
+            if (hk.group != g)
+                continue
+            text .= hk.line . "`n"
+            if hk.HasProp("note")
+                text .= hk.note . "`n"
+        }
+        text .= "`n"
+    }
+    return text
+        . "—————————————————————————`n"
+        . "   " . Config.AppName . " v" . Config.Version . "`n"
+        . "   当前笔记目录：`n"
+        . "   " . Config.GetVault() . "`n"
+        . "   按 ESC 或点关闭按钮关闭"
+}
+
+
+; ═══════════════════════════════════════════════════════════════════════════
+;  帮助窗口（Alt+H）
+; ═══════════════════════════════════════════════════════════════════════════
+
+ShowHelp() {
+    if WinExist(Config.AppName . " · 快捷键 ahk_class AutoHotkeyGUI") {
+        WinActivate(Config.AppName . " · 快捷键 ahk_class AutoHotkeyGUI")
+        return
+    }
+
+    help := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop"
+        , Config.AppName . " · 快捷键")
+    help.SetFont("s11", "楷体")
+    help.BackColor := "FFF8E7"
+
+    text := BuildHotkeyHelpText()
+
+    help.AddText("x20 y15 w400", text)
+    help.Show("w440 h920")
+
+    HotIfWinActive(Config.AppName . " · 快捷键")
+    Hotkey("Esc", (*) => help.Destroy())
+    HotIf()
+}

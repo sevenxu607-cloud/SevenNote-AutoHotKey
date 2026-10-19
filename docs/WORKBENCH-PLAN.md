@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 1 进行中
+> 状态：设计定稿，Phase 2 已完成（待人工验收）
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -154,7 +154,7 @@ class SevenNoteModule {
 
 已完成：
 
-- 4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本原位置改为 `#Include`（当前 4209 行）；
+- 4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本原位置改为 `#Include`（Phase 1 时 4209 行）；
 - 新增 `ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` 占位 / `Coordinator` 占位；
 - `HotkeyRouter.RegisterAll(HotkeyTable())` 接管组合根热键注册，逻辑与原 `RegisterHotkeys()` 逐行一致；
 - 语法检查（WorkBench 全部文件）与沙箱启动（`#SingleInstance Off`，
@@ -162,19 +162,29 @@ class SevenNoteModule {
 
 待做：
 
-- 人工验收：启动、`Alt+Z`、`Alt+H`、全部热键、保存 / 主题与改造前一致；
-- Phase 2 起把 `ctx` 表达式改由 `SevenNoteModule.GetContexts()` 提供，
-  Router 不再直接引用 `SearchFeature`。
+- 人工验收：启动、`Alt+Z`、`Alt+H`、全部热键、保存 / 主题与改造前一致（与 Phase 2 一并做）。
 
-### Phase 2 · SevenNote 模块化
+### Phase 2 · SevenNote 模块化（已完成，待人工验收）
 
-- 搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`；
-- `SevenNoteModule.Init()` 接管 GUI 创建段（当前 4108–4188）；
+已完成：
+
+- 7 个 Service 搬入 `modules/SevenNote/Services/`；`StatusBar` 与 18 个 Feature 搬入
+  `modules/SevenNote/`，主脚本原位改为 `#Include`（当前 1363 行）；
+- `SevenNoteModule.Init()` 接管 GUI 创建、`OnSize`、Feature 挂载；`Start()` 负责启动恢复；
 - `OnSize` 改为经 `State.GetXxx()` / `GuiCtrlFromHwnd(State.GetEd())` 取控件；
   `search*` 由 `SearchFeature.Layout()` 管理；
-- `GetHotkeys()` / `GetContexts()` 提供 Note 热键与 `editor` / `search` 上下文；
-- 验收：笔记全部功能 + 主题 / 背景图 / 搜索 / 日期 / 标签 / 图片 / 自动保存；
-  窗口拉伸时文字不闪。
+- `HotkeyRouter.RegisterAll(table, SevenNoteModule.GetContexts())`；
+  Router 不再直接引用 `SearchFeature`；
+- `legacy/SevenNote.v2.4.3.ahk` 保留拆分前完整快照（用户要求保留源码），不参与运行；
+- 验证：沙箱完整 `Init()` + `Show()`、stderr 为空、`_error.log` 无新增；
+  `.ahk` 无 BOM 且全 CRLF。
+
+待做：
+
+- 人工验收（需关闭现有实例）：笔记全部功能 + 主题 / 背景图 / 搜索 / 日期 / 标签 /
+  图片 / 自动保存；窗口拉伸时文字不闪；
+- `GetHotkeys()` 暂缓：热键表仍由组合根 `HotkeyTable()` 持有（跨平台 / Launcher /
+  KeysInput 三组），待 Phase 5 的 `WorkBenchUI` 聚合时再拆。
 
 ### Phase 3 · Launcher 模块化
 
