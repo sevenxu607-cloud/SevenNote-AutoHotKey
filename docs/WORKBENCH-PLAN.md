@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 0 进行中
+> 状态：设计定稿，Phase 1 进行中
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -140,23 +140,26 @@ class SevenNoteModule {
 
 ## 5. 改造阶段
 
-### Phase 0 · 地基（进行中）
+### Phase 0 · 地基（已完成）
 
 已完成：
 
 - 命名定稿：`SevenWork` / `SevenWork.ahk` / `WorkBench/` / `SevenNote` / `Launcher` / `KeysInput`；
 - 删除 `tests/`（提交 `c864226`），端到端测试待重构后按模块接口重建；
 - 修正 `.clinerules/04` 关于 auto-execute 的错误表述；
-- 四个探针通过：auto-execute 边界、静态方法 `this`、`#Include` 顺序、`Module.Init()` 生命周期。
-
-待做：
-
-- [ ] 本文档入库；
-- [ ] Phase 1 骨架的 `#Include` 清单与文件命名定稿。
+- 四个探针通过：auto-execute 边界、静态方法 `this`、`#Include` 顺序、`Module.Init()` 生命周期；
+- 本文档入库；Phase 1 的 `#Include` 清单与文件命名已定稿。
 
 ### Phase 1 · 平台骨架（行为不变）
 
-- 新建 `WorkBench/Kernel/`，搬 `Config` / `ConfigService` / `EventBus` / `State`；
+已完成：
+
+- 4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本原位置改为 `#Include`（当前 4228 行）；
+- 语法检查（Kernel 单独 + 主脚本 `#Include` 路径）与沙箱启动（`#SingleInstance Off`，
+  `ShowStartupTip()` → `ExitApp()`）均通过：stderr 为空、`_error.log` 无新增。
+
+待做：
+
 - 新增 `ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` 占位 / `Coordinator` 占位；
 - 主脚本只保留 `#Include` + 装配；`HotkeyRouter` 先包住现有 `HotkeyTable()`，
   **注册结果与 HEAD 完全一致**；

@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `c864226`，工作区有 Phase 0 文档改动
-- **最近一次改动**：落 `docs/WORKBENCH-PLAN.md`（三张归属表 + Phase 0–6），修正 `.clinerules/04` 的 auto-execute 表述
-- **正在处理**：Phase 0 收尾（探针已过，准备 Phase 1 平台骨架）
-- **下一步**：提交 Phase 0 → Phase 1：新建 `WorkBench/Kernel/` 并搬 4 个 Kernel 类，保持注册结果与 HEAD 一致
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `23a7266`，工作区有 Phase 1a 代码改动
+- **最近一次改动**：Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include` 装配
+- **正在处理**：Phase 1 平台骨架（Router / Registry / UI / Coordinator 占位）
+- **下一步**：`HotkeyRouter` 包住现有 `HotkeyTable()`，注册结果与 HEAD 对齐
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -23,7 +23,8 @@
 - [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
 - [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
-- [ ] Phase 1：新建 `WorkBench/Kernel/`，搬 4 个 Kernel 类，`HotkeyRouter` 先包住现有热键表
+- [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
+- [ ] Phase 1b：`ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 占位，Router 包住热键表
 - [ ] Phase 2–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
@@ -45,6 +46,30 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 22:10　Phase 1a：Kernel 搬出主文件
+
+**我说**（原话）
+> 继续
+
+**意图**
+开始 Phase 1，先把 4 个 Kernel 类从单文件搬进 `WorkBench/Kernel/`，保持行为不变。
+
+**决定 / 过程**
+- 按原行范围机械切出 `Config` / `ConfigService` / `EventBus` / `State`，主脚本原位置只留 4 条 `#Include`；
+- 清理搬出文件里的 `tests` 过时注释；主脚本架构注释标明 Kernel 实现位置；
+- 验证：Kernel 单独 include + 主脚本 include 路径两轮语法检查均 `exit=0`、stderr 空；
+  再用 `#SingleInstance Off` 的临时副本把 `ShowStartupTip()` 换成 `ExitApp()` 跑完整组合根，
+  stderr 空、`_error.log` 无新增。
+
+**代价 / 风险**
+- 未用真机启动主脚本（当前有实例在运行，`#SingleInstance Force` 会杀掉它），热键与界面仍需人工验收；
+- 主脚本行号整体前移约 210 行，后续文档里的行号锚点要重算；
+- `ModuleRegistry` / `HotkeyRouter` / `WorkBenchUI` / `Coordinator` 仍未建。
+
+**待办**
+- [ ] Phase 1b：`HotkeyRouter` 包住 `HotkeyTable()`，注册结果与 HEAD 一致
+- [ ] 人工验收 `Alt+Z` / `Alt+H` / 保存 / 主题
 
 ### 2026-10-19 21:10　Phase 0 探针与三张表落纸
 
