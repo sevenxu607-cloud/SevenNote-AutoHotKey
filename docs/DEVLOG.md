@@ -11,7 +11,7 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 已提交
-- **最近一次改动**：Phase 5：`WorkBenchUI` 统一帮助，平台 / 模块热键各归其位
+- **最近一次改动**：运行代码统一收纳到 `src/`，根目录只留极简启动器
 - **正在处理**：Phase 2 / 3a / 3b / 4 / 5 人工验收（需关闭现有实例）
 - **下一步**：Phase 5b：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
 - **已知未解决**：
@@ -32,6 +32,7 @@
 - [x] Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，`Alt+Shift+C` 与动态 HJKL 归模块
 - [x] Phase 5：`WorkBenchUI` 统一帮助，`HotkeyRouter.RegisterAll()` 聚合平台 + 模块热键
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
+- [x] 运行代码统一收进 `src/`，根 `SevenNote.ahk` 只做启动器
 - [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
 - [ ] Phase 5 人工验收：`Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
@@ -56,6 +57,35 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 21:43　把运行代码统一收进 src/
+
+**我说**（原话）
+> 能将现在项目代码统一在一个文件夹收纳吗
+
+**意图**
+把散在根目录 / `WorkBench/` / `modules/` 的运行代码收进同一个源码目录，根目录只留双击入口。
+
+**决定 / 过程**
+- 选 `src/` + 根启动器：`SevenNote.ahk`、`WorkBench/`、`modules/` 全部 `git mv` 进 `src/`；
+- 根 `SevenNote.ahk` 改成 9 行启动器，只 `#Include src\SevenNote.ahk`。这样 `A_ScriptDir`
+  仍是项目根，正常启动的 `.logs\`、文档与工具路径都不变；
+- `src/SevenNote.ahk` 里的 `#Include` 保持 `WorkBench\...` / `modules\...` 相对路径
+  （AHK 按当前文件所在目录解析；临时探针已确认嵌套 include 可用）；
+- 同步更新 README、`PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION`、`WORKBENCH-PLAN`
+  目录说明、`legacy/README`、`.clinerules` 路径与 `.vscode` 的 `maxScanDepth`。
+
+**代价 / 风险**
+- 根目录仍有一个 `SevenNote.ahk`（启动器），不是「根目录完全无代码」；
+- 直接运行 `src/SevenNote.ahk` 或把探针放在 `src/` 时，开发版日志落 `src/.logs/`；
+  正常双击根启动器仍落项目根 `.logs/`，两种入口不要混看日志；
+- 历史 DEVLOG / WORKBENCH-PLAN 旧路径不改写，只在计划顶部加目录现状说明。
+
+**待办**
+- [x] 启动器 + `src/` 结构启动验证（stderr 空）
+- [x] `Alt+Z` 呼出、`Alt+H` 打开 / `Esc` 关闭
+- [ ] 编译流程用新入口再跑一次（右键 `SevenNote.ahk` Compile Script）
+- [ ] 人工验收上下文热键与 `Alt+Shift+Z`
 
 ### 2026-10-19 21:29　Phase 5：WorkBenchUI 统一帮助
 

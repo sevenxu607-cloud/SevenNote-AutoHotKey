@@ -8,17 +8,18 @@
 
 `.gitattributes` 规定 `*.ahk` 用 **CRLF**、`*.md` 用 **LF**，源码 **UTF-8 无 BOM**。
 但有些编辑器 / 工具在整文件写回时会**把 CRLF 统一成 LF** —— 实测一次改动就把
-`SevenNote.ahk` 全转成裸 LF（4352 行），`git diff` 整文件变色、`CRLF=0`。
+`src\SevenNote.ahk` 全转成裸 LF（4352 行），`git diff` 整文件变色、`CRLF=0`。
 
 ```powershell
-$src='d:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
+$src='d:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\src\SevenNote.ahk'
 $b=[System.IO.File]::ReadAllBytes($src)
 'BOM=' + (($b[0] -eq 0xEF) -and ($b[1] -eq 0xBB))
 $t=[System.IO.File]::ReadAllText($src,[System.Text.Encoding]::UTF8)
 'CRLF=' + ([regex]::Matches($t,"`r`n").Count) + '  bareLF=' + ([regex]::Matches($t,"(?<!`r)`n").Count)
 ```
 
-期望 `BOM=False`、`bareLF=0`。若 `CRLF=0`（全裸 LF），这样转回来（保持无 BOM）：
+期望 `BOM=False`、`bareLF=0`。根启动器 `SevenNote.ahk` 也要同样过一遍。
+若 `CRLF=0`（全裸 LF），这样转回来（保持无 BOM）：
 
 ```powershell
 $t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
@@ -37,7 +38,7 @@ $t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$src = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
+$src = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\src\SevenNote.ahk'
 $L   = Get-Content -LiteralPath $src -Encoding UTF8
 $tmp = "$env:TEMP\SevenNoteDev\_syn_check.ahk"
 New-Item -ItemType Directory -Force -Path (Split-Path $tmp) | Out-Null
@@ -46,12 +47,12 @@ Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()')
 "退出码 = $LASTEXITCODE"     # 0 = 通过
 ```
 
-**实测基准**：`SevenNote.ahk` 退出码 `0`；故意写坏的赋值语句退出码 `2`，
+**实测基准**：`src\SevenNote.ahk` 退出码 `0`；故意写坏的赋值语句退出码 `2`，
 并打印 `(3) : Invalid assignment`。
 
 > ⚠ **但它有盲区，别只靠它。** 实测踩到：往 `ThemeService.Themes` 数组追加主题时漏了元素间
 > 的逗号，这个预检**退出码照样是 `0`**，而真机启动立刻报
-> `SevenNote.ahk (946) : ==> Unexpected "{"`。
+> `src\SevenNote.ahk (946) : ==> Unexpected "{"`。
 >
 > 原因：`ExitApp()` 在第 2 行，AHK v2 **并非**「加载时完整解析整个文件」——
 > auto-execute 段跑到 `ExitApp()` 就退出了，**后面那些 class 定义根本没被解析**。
@@ -63,7 +64,7 @@ Set-Content -LiteralPath $tmp -Value (@('#Requires AutoHotkey v2.0','ExitApp()')
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$script = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'
+$script = 'd:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\SevenNote.ahk'   # 根启动器；会 #Include src\SevenNote.ahk
 $se = "$env:TEMP\SevenNoteDev\_run_err.txt"
 Remove-Item $se -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $exe -ArgumentList @('/ErrorStdOut', "`"$script`"") `
@@ -140,6 +141,7 @@ ExitApp()
 具体写法（那行顶格独占一行，且在 auto-execute 段内）：
 
 ```powershell
+# $src 指向 src\SevenNote.ahk，$dir 指向 src\ —— 探针必须与 #Include 同目录
 $t   = [System.IO.File]::ReadAllText($src, [System.Text.Encoding]::UTF8)
 $drv = 'ShowStartupTip()' + "`r`n" + 'LogError("PROBE ...")' + "`r`n" + 'ExitApp()'
 $t2  = [regex]::Replace($t, '(?m)^ShowStartupTip\(\)\r?$', $drv, 1)   # 恰好 1 处
@@ -147,9 +149,11 @@ if ($t2 -eq $t) { throw 'anchor not found' }
 [System.IO.File]::WriteAllText("$dir\_probe.ahk", $t2, [System.Text.UTF8Encoding]::new($false))
 ```
 
-⚠ 探针文件此时**放在项目根**（不是 `%TEMP%`）：验证 `Config.LogDir` 这类按 `A_ScriptDir`
-落盘的路径时必须让 `A_ScriptDir` 指向项目根。**验证完立刻删掉**，别留在仓库里
-（会进 `git status`，也会被 AHK++ 扫到）。
+⚠ 探针文件此时**放在 `src\`**（不是项目根，也不是 `%TEMP%`）：它要和
+`src\SevenNote.ahk` 的相对 `#Include` 同目录。直接跑 `src\SevenNote.ahk` / 探针时
+`A_ScriptDir` 是 `src\`，开发版日志落 **`src\.logs\`**（正常用根启动器时仍落项目根 `.logs\`）。
+**验证完立刻删掉** `src\_probe.ahk` 与 `src\.logs\`，别留在仓库里（会进 `git status`，
+也会被 AHK++ 扫到）。
 
 ⚠ **跑之前先 `Stop-Process` 掉已在运行的实例** —— 否则两个实例抢同一批热键，
 后起的那个注册失败、可能弹出模态框把结论搅浑。
@@ -244,12 +248,12 @@ for ($i = 1; $i -le 40; $i++) {
 ⚠ **`git show` 之类外部命令的输出别再经 PowerShell 管道**：`git show HEAD:x.ahk | Set-Content out.ahk`
 看着正常，实际 `powershell.exe`（5.1）会按系统 ANSI（本机 GBK）解码子进程吐出的 UTF-8 字节 ——
 中文变乱码，而且 **GBK 的双字节解码还会吃掉紧跟其后的 ASCII 字符**（引号 / 括号），把类体边界
-一起破坏。实测导出 HEAD 版 `SevenNote.ahk` 后启动，AHK 报
+一起破坏。实测导出 HEAD 版 `src\SevenNote.ahk` 后启动，AHK 报
 `(278) : ==> Not a valid method, class or property definition. Specifically: SendMessage(0x00B1, 0, 0,hwnd)`
 —— 看着像源码坏了，其实是被**解码**坏的。要字节级搬运就走 cmd 重定向：
 
 ```powershell
-cmd /c "git -C <repo> show HEAD:SevenNote.ahk > <temp>\_old.ahk"
+cmd /c "git -C <repo> show HEAD:src/SevenNote.ahk > <temp>\_old.ahk"
 ```
 
 `powershell.exe`（5.1）**按系统 ANSI（本机 GBK）读取无 BOM 的 `.ps1`**。用 UTF-8 无 BOM

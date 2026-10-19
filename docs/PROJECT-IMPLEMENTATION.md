@@ -2,7 +2,7 @@
 
 > **用途**：回答「到底用了什么技术、实现了什么」—— 每条都是「技术手段 → 实现效果」。
 > 功能怎么用看 `../README.md`；项目全景看 `PROJECT-OVERVIEW.md`；人的决策看 `DEVLOG.md`。
-> 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `SevenNote.ahk` 为准**，本文只是索引。
+> 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `src/SevenNote.ahk` 为准**，本文只是索引。
 
 ---
 
@@ -177,7 +177,7 @@ msedge.exe --new-window https://chat.deepseek.com/
 **`Alt+Shift+C` → CapsLock 映射**
 
 - `HotkeyRouter.Add("CapsLock", (*) => 0)` 吞掉原功能 + `CapsLock & h/j/k/l` 映射方向键；
-  Phase 4 起由 `modules/KeysInput/Features/CapsLockFeature.ahk` 在开关时动态加 / 卸，
+  Phase 4 起由 `src/modules/KeysInput/Features/CapsLockFeature.ahk` 在开关时动态加 / 卸，
   Feature 内不再直接调 `Hotkey()`。
 
 ---
@@ -277,7 +277,7 @@ class SevenNoteModule {
 
 原 `tests\run_user_journey_demo.ps1` 用「源码内存替换 + 拼接驱动」跑沙箱用户旅程。
 2026-10-19 为工作台化重构删除：单文件锚点在拆模块后必然失配，且临时脚本放在 `%TEMP%`
-时无法解析相对 `#Include`。重构完成后按 `modules/` 的模块接口重建端到端测试。
+时无法解析相对 `#Include`。重构完成后按 `src/modules/` 的模块接口重建端到端测试。
 
 ---
 
@@ -303,7 +303,7 @@ class SevenNoteModule {
 
 ## 维护说明
 
-- 本文**只做索引**，技术事实以 `SevenNote.ahk` 为准；消息号与 API 名随版本可能漂移；
+- 本文**只做索引**，技术事实以 `src/SevenNote.ahk` 为准；消息号与 API 名随版本可能漂移；
 - 改动下列任一模块时顺手更新对应条目：
 
 | 改了什么 | 更新哪条 |

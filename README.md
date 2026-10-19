@@ -189,18 +189,19 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 1. 安装 [AutoHotkey v2](https://www.autohotkey.com/)
 2. 安装 [Pandoc](https://mirrors.lzu.edu.cn/)（国内镜像，选 `x86_64` 版）
-3. 把整个项目目录放任意位置，双击 `SevenNote.ahk`（它通过 `#Include` 读取 `WorkBench/` 与 `modules/`）
+3. 把整个项目目录放任意位置，双击根目录的 `SevenNote.ahk`（极简启动器，运行代码统一在 `src/`）
 4. 首次运行会弹框让你选笔记目录
 
 仓库里的其它东西：
 
 | 路径 | 用途 |
 | --- | --- |
-| `SevenNote.ahk` | 组合根：装配 + 启动 |
-| `WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 统一帮助 / 伙伴协调 |
-| `modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
-| `modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
-| `modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
+| `SevenNote.ahk` | 根目录启动器：把入口转给 `src\`，并保持 `A_ScriptDir` 指向项目根 |
+| `src\SevenNote.ahk` | 组合根：装配 + 启动 |
+| `src\WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 统一帮助 / 伙伴协调 |
+| `src\modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
+| `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
+| `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
 | `legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `screenshots\` | README 配图 |
@@ -1066,7 +1067,7 @@ Windows Terminal 的 settings.json
      源码运行完全不经过它（改从 `%AppData%\SevenNote\pandoc.exe` 或系统 PATH 里找 pandoc）
    - ⚠ 不改就编译会直接失败：Ahk2Exe 找不到源文件
 3. **编译**：
-   - 右键 `SevenNote.ahk` → Compile Script
+   - 右键根目录的 `SevenNote.ahk` → Compile Script
    - **Base File 必须选 `Unicode 64-bit`**（不要选 32 位 / ARM64）
    - 编译时**看输出有没有 `Embedding: ...pandoc.exe`**
 4. **验证**：编译后的 EXE 应该 **250MB 左右**；右键属性 → 详细信息 → 体系结构 = **x64**

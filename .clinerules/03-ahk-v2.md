@@ -5,7 +5,7 @@
 - 每个脚本首行必须有 `#Requires AutoHotkey v2.0`。
 - 本机解释器（64 位）：`D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe`
   （同值见 `.vscode/settings.json` → `AHK++.v2.file.interpreterPath`）
-- 源码编码：**UTF-8 无 BOM**（`SevenNote.ahk` 实测首字节为 `23 52 65`，即 `#Re`）。
+- 源码编码：**UTF-8 无 BOM**（`src\SevenNote.ahk` 实测首字节为 `23 52 65`，即 `#Re`）。
 - 换行：`.gitattributes` 规定 `*.ahk` 用 **CRLF**、`*.md` 用 **LF**。
 - **必须 64 位**运行/编译：32 位会导致 RichEdit 字符格式异常。
 
@@ -16,7 +16,7 @@
 - 函数调用必须带括号、字符串必须加引号：`MsgBox("hi")`。
 - `#HotIf` 取代 v1 的 `#If`。
 
-## 本项目踩过的坑（README / SevenNote.ahk 头注释原文）
+## 本项目踩过的坑（README / src\SevenNote.ahk 头注释原文）
 
 | 坑 | 说明 |
 | --- | --- |

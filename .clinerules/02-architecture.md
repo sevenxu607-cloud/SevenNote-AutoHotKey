@@ -22,6 +22,18 @@
 依赖方向：Feature → Service → Kernel → OS（严禁反向）
 ```
 
+## 源码目录
+
+运行代码统一收在 **`src/`**：
+
+- 根 `SevenNote.ahk` 只是启动器，`#Include src\SevenNote.ahk`；
+- 组合根在 `src/SevenNote.ahk`，平台层在 `src/WorkBench/`，
+  模块在 `src/modules/<模块名>/`；
+- `src/SevenNote.ahk` 内部的 `#Include WorkBench\...` / `modules\...` 是相对路径，
+  以**该文件所在目录**为基准，别改成从项目根起算。
+- 正常双击根启动器时 `A_ScriptDir` 仍是项目根，开发版 `.logs\` 不变；直接运行
+  `src\SevenNote.ahk`（调试 / 探针）时 `.logs\` 会落到 `src\`，见 `.clinerules/04`。
+
 ## 改动原则
 
 1. **不动 Kernel / Service，只加 Feature。**

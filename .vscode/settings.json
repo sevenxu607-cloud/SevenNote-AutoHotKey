@@ -3,7 +3,7 @@
         "compileBaseFile": "",
         "helpPath": "C:/Program Files/AutoHotkey/v2/AutoHotkey.chm",
         "interpreterPath": "d:\\02-Apps\\AutoHotkey\\v2\\AutoHotkey64.exe",
-        "maxScanDepth": 2,
+        "maxScanDepth": 3,
         "templateSnippetName": "AhkTemplateV2"
     }
 }
