@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；上次提交 `683f128`，工作区有 Phase 2 改动
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 已提交，工作区干净
 - **最近一次改动**：Phase 2：7 Service + `StatusBar` + 18 Feature 搬入 `modules/SevenNote/`，`SevenNoteModule` 接管 GUI / OnSize / 启动
 - **正在处理**：Phase 2 人工验收（需关闭现有实例）
 - **下一步**：Phase 3：Launcher 模块化（`PeerLayoutService` + `PowerShellFeature` + `DeepSeekFeature`）
