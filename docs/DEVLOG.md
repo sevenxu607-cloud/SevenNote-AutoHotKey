@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a 已提交，工作区干净
-- **最近一次改动**：Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由 `LauncherModule.GetHotkeys()` 声明
-- **正在处理**：Phase 2 / 3a 人工验收（需关闭现有实例）
-- **下一步**：Phase 3b：`PeerCoordinator` 接管伙伴窗口布局；之后 Phase 4 KeysInput
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a 已提交，Phase 3b 已实现（待验收 / 提交）
+- **最近一次改动**：Phase 3b：堆叠几何上收到 `PeerCoordinator`，接入 `Launcher.Opened` / `SevenNote.WindowReady`
+- **正在处理**：Phase 2 / 3a / 3b 人工验收（需关闭现有实例）
+- **下一步**：Phase 4 KeysInput；Phase 5 再让 `SevenNote.Move` / `Launcher.Move` 接管窗口
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -28,7 +28,7 @@
 - [ ] Phase 1 / 2 人工验收：`Alt+Z` / `Alt+H` / 保存 / 主题 / 全部上下文热键
 - [x] Phase 2：搬 7 个 Service + `StatusBar` + 18 个 Feature 到 `modules/SevenNote/`
 - [x] Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由模块 `GetHotkeys()`
-- [ ] Phase 3b：`PeerCoordinator` 接管 `Launcher.Opened` / `SevenNote.WindowReady` 的布局
+- [x] Phase 3b：`PeerCoordinator` 接管伙伴窗口堆叠几何，`Launcher.Opened` / `SevenNote.WindowReady` 已接入
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
 - [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
@@ -51,6 +51,32 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 20:55　Phase 3b：堆叠几何上收 PeerCoordinator
+
+**我说**（原话）
+> 继续
+
+**意图**
+推进 Phase 3b：让 `PeerCoordinator` 成为伙伴窗口布局的平台入口，减少 `WindowFeature`
+对具体几何算式的持有，同时保留已验证的 `Peer.*` 行为。
+
+**决定 / 过程**
+- 新增 `WorkBench/WorkBench.ahk`，`Init()` 登记 SevenNote / Launcher 并初始化协调器；
+- 把 `_StackWithPeer` 的方案一 / 方案二、DWM 不可见边框、最小尺寸算式原样搬进
+  `PeerCoordinator.PlanStack()`；`WindowFeature` 只保留 `_docked` / `_stacked` / 底稿状态与窗口应用；
+- Feature 落位后新增 `Launcher.Opened`，笔记 `Show()` 末尾新增 `SevenNote.WindowReady`；
+  真实布局时协调器广播 `SevenNote.Move` / `Launcher.Move`（物理外框）；
+- `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 与让位 / 冻结状态机不动，避免同批改动窗口行为。
+
+**代价 / 风险**
+- `SevenNote.Move` / `Launcher.Move` 目前没有订阅者，Phase 5 才切为执行路径；
+  现阶段旧 `Peer.*` 仍是唯一执行路径，新增事件只做状态记录与契约预演；
+- 仍需人工验收 `Alt+C` / `Alt+X` 全流程；探针只验证几何与事件顺序。
+
+**待办**
+- [ ] 人工验收伙伴窗口呼出 / 隐藏 / 笔记让位 / 重启认回
+- [ ] Phase 4 KeysInput；Phase 5 让 Move 接管窗口
 
 ### 2026-10-19 23:55　Phase 3a：Launcher 三个类搬出主脚本
 

@@ -218,6 +218,12 @@ class WindowFeature {
             try this._ResumeRedraw(hwnd)
         }
         WinActivate("ahk_id " . ghwnd)
+        ; Phase 3b：把「笔记已落位」交给平台协调器记录。放在 Window.Shown 之前，
+        ; 让订阅者拿到的是最终矩形；事件本身不改变窗口行为。
+        rect := this._CurrentRect(ghwnd)
+        if IsObject(rect)
+            EventBus.Emit("SevenNote.WindowReady"
+                , {hwnd: ghwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
         EventBus.Emit("Window.Shown")
     }
 
@@ -370,61 +376,24 @@ class WindowFeature {
                 this._preStackRect := ""
         }
 
-        tx := pr.x, ty := pr.y, tw := pr.w, th := pr.h
+        ; 几何计算已上收到平台层 PeerCoordinator（Phase 3b）：这里只负责
+        ; 状态判断、底稿与把算出来的落点应用到窗口上。
+        plan := PeerCoordinator.PlanStack(ghwnd, pr, true)
+        if !plan.ok
+            return false
 
-        ; 工作区取伴生窗口所在的**那块**显示器 —— 它可能被放到副屏上
-        monIdx := 1
-        cx := tx + tw // 2, cy := ty + th // 2
-        loop MonitorGetCount() {
-            MonitorGet(A_Index, &mL, &mT, &mR, &mB)
-            if (cx >= mL && cx < mR && cy >= mT && cy < mB) {
-                monIdx := A_Index
-                break
-            }
-        }
-        MonitorGetWorkArea(monIdx, &wkLeft, &wkTop, &wkRight, &wkBottom)
-
-        gap := Config.DockGap, margin := Config.DockMargin
-        ; 最小尺寸：Config 里是逻辑单位，乘 DPI 比才是 WinMove 认的物理像素
-        ; （+MinSize450x300 → 本机 150% 缩放下的 675x450）
-        minW := 450 * A_ScreenDPI // 96
-        minH := 300 * A_ScreenDPI // 96
-
-        ; 摆位置一律按「可见边界」算 —— 直接拿 WinGetPos 的矩形去拼，
-        ; 肉眼看会多出上窗那 9px 的不可见底边框（12 的缝看着像 21），显得松散。
-        pFrame := this._InvisibleFrame(pr.hwnd)
-        nFrame := this._InvisibleFrame(ghwnd)
-        peerVisL := tx - pFrame.l, peerVisT := ty - pFrame.t
-        peerVisR := tx + tw - pFrame.r, peerVisB := ty + th - pFrame.b
-
-        ; 笔记窗口的可见目标：左边与伙伴对齐、同宽、顶边贴工作区顶、底边在伙伴上方留 gap
-        noteVisL := peerVisL
-        noteVisW := peerVisR - peerVisL
-        noteVisT := wkTop + margin
-
-        ; 方案一：伴生窗口原地不动，笔记窗口填它上方的空间
-        noteVisB := peerVisT - gap
-        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
-            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
-            this._stacked := true
-            return true
-        }
-
-        ; 方案二：伴生窗口已经顶到屏幕上方了 —— 把它下移到底边贴工作区底，
-        ; 尺寸（宽高）原样保留，只挪位置
-        newPeerVisT := (wkBottom - margin) - (peerVisB - peerVisT)
-        noteVisB := newPeerVisT - gap
-        if (noteVisB - noteVisT >= minH && noteVisW + nFrame.r - nFrame.l >= minW) {
-            newPeerY := newPeerVisT + pFrame.t
-            WinMove(tx, newPeerY, , , "ahk_id " . pr.hwnd)   ; 宽高留空 = 保持不变
+        ; 方案二会把伴生窗口下移 —— 这是唯一一种「伙伴也要动」的情形；
+        ; 宽高留空 = 保持不变。
+        if IsObject(plan.peer) {
+            WinMove(plan.peer.x, plan.peer.y, , , "ahk_id " . pr.hwnd)
             ; 伴生窗口挪动后 rect 变了，同步记一份 —— 下次呼出不必再算
-            this._peerRect := {hwnd: pr.hwnd, x: tx, y: newPeerY, w: tw, h: th}
-            this._MoveToVisible(ghwnd, noteVisL, noteVisT, noteVisW, noteVisB - noteVisT, nFrame)
-            this._stacked := true
-            return true
+            this._peerRect := plan.peerRect
         }
 
-        return false
+        this._MoveToVisible(ghwnd, plan.note.x, plan.note.y
+            , plan.note.w, plan.note.h, plan.note.frame)
+        this._stacked := true
+        return true
     }
 
     ; 按「可见边界」摆放窗口：传进来的是肉眼看到的矩形，
@@ -435,21 +404,8 @@ class WindowFeature {
         WinMove(visL + frame.l, visT + frame.t, rectW, rectH, "ahk_id " . hwnd)
     }
 
-    ; 窗口矩形比「可见边界」多出来的那圈不可见调整边框（含 DWM 阴影）。
-    ; 返回 {l, t, r, b} = 各自的「矩形边 − 可见边」，左 / 上通常为负。
-    ; ⚠ 本机（150% 缩放）实测：左 −9、上 0、右 9、下 9；25% 缩放或旧系统上可能不同，
-    ;   所以这里每次都实测，不写死。
-    static _InvisibleFrame(hwnd) {
-        buf := Buffer(16, 0)
-        try
-            DllCall("dwmapi\DwmGetWindowAttribute", "ptr", hwnd, "uint", 9, "ptr", buf, "uint", 16)
-        catch
-            return {l: 0, t: 0, r: 0, b: 0}   ; 拿不到就当作没有不可见边框
-        WinGetPos(&rx, &ry, &rw, &rh, "ahk_id " . hwnd)
-        vx := NumGet(buf, 0, "int"), vy := NumGet(buf, 4, "int")
-        vr := NumGet(buf, 8, "int"), vb := NumGet(buf, 12, "int")
-        return {l: rx - vx, t: ry - vy, r: (rx + rw) - vr, b: (ry + rh) - vb}
-    }
+    ; 几何实现已上收到 PeerCoordinator；保留这个名字给历史调用与探针。
+    static _InvisibleFrame(hwnd) => PeerCoordinator._InvisibleFrame(hwnd)
 
     ; 移到默认落点
     static _MoveToDefault(g, ghwnd) {

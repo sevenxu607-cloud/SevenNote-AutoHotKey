@@ -3,7 +3,7 @@
 ;  ModuleRegistry —— 模块登记与查找（Phase 1 占位）
 ; ═══════════════════════════════════════════════════════════════════════════
 ; 模块是类对象，约定带 static Id / Name / Init() / GetHotkeys() / GetContexts()。
-; Phase 2 起由组合根在 WorkBench.Init() 里登记；当前尚未调用，先留接口。
+; Phase 3b 起由 WorkBench.Init() 在启动时登记；后续模块照同一方式接入。
 
 class ModuleRegistry {
     static modules := Map()

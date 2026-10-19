@@ -115,6 +115,7 @@ Persistent()
 #Include WorkBench\HotkeyRouter.ahk
 #Include WorkBench\WorkBenchUI.ahk
 #Include WorkBench\Coordinator\PeerCoordinator.ahk
+#Include WorkBench\WorkBench.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  SERVICE 服务层
@@ -400,6 +401,10 @@ EnsureVaultConfigured()
 
 ; ═══ 确保笔记目录存在 ═══
 DirCreate(Config.GetVault())
+
+; ═══ 工作台装配（Phase 3b：模块登记 + PeerCoordinator 订阅）═══
+; 必须在模块 Init() 之前：订阅要赶在第一次 Alt+C / Alt+X 之前就位。
+WorkBench.Init()
 
 ; ═══ 笔记模块（Phase 2：GUI 与 Feature 挂载已搬入 modules/SevenNote）═══
 SevenNoteModule.Init()

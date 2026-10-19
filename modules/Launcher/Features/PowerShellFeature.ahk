@@ -122,7 +122,11 @@ class PowerShellFeature {
         rect := PeerLayoutService.RectOf(hwnd)
         if !IsObject(rect)
             return
-        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
+        data := {kind: "powershell", hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h}
+        ; Phase 3b：模块级「已打开」交给平台协调器记录 / 计算；
+        ; 旧的 Peer.Placed 仍保留给 WindowFeature 的已验证状态机。
+        EventBus.Emit("Launcher.Opened", data)
+        EventBus.Emit("Peer.Placed", data)
     }
 
     ; 启动目录：默认 D 盘根目录，可在 _config.ini 的 [Paths] PowerShellStartDir 覆盖

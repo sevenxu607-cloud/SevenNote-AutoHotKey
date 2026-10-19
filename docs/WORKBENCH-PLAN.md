@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 2 已完成（待人工验收），Phase 3a 已完成（待人工验收）
+> 状态：设计定稿，Phase 2 / 3a / 3b 已完成（待人工验收）
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -21,6 +21,7 @@
 SevenWork/
 ├── SevenWork.ahk              # 组合根：只装配 + 注册模块
 ├── WorkBench/
+│   ├── WorkBench.ahk          # 平台组合根：登记模块 + 初始化协调器
 │   ├── Kernel/                # Config / ConfigService / EventBus / State
 │   ├── ModuleRegistry.ahk
 │   ├── HotkeyRouter.ahk
@@ -169,7 +170,7 @@ class SevenNoteModule {
 已完成：
 
 - 7 个 Service 搬入 `modules/SevenNote/Services/`；`StatusBar` 与 18 个 Feature 搬入
-  `modules/SevenNote/`，主脚本原位改为 `#Include`（Phase 2 完成时 1363 行；Phase 3a 后 614 行）；
+  `modules/SevenNote/`，主脚本原位改为 `#Include`（Phase 2 完成时 1363 行；Phase 3b 后约 620 行）；
 - `SevenNoteModule.Init()` 接管 GUI 创建、`OnSize`、Feature 挂载；`Start()` 负责启动恢复；
 - `OnSize` 改为经 `State.GetXxx()` / `GuiCtrlFromHwnd(State.GetEd())` 取控件；
   `search*` 由 `SearchFeature.Layout()` 管理；
@@ -187,7 +188,7 @@ class SevenNoteModule {
   `HotkeyTable()` 持有；Launcher 已在 Phase 3a 改用 `GetHotkeys()`，其余待 Phase 5 的
   `WorkBenchUI` 聚合时再拆。
 
-### Phase 3 · Launcher 模块化（3a 已完成，3b 待做）
+### Phase 3 · Launcher 模块化（3a / 3b 已完成，待人工验收）
 
 已完成（3a）：
 
@@ -200,13 +201,24 @@ class SevenNoteModule {
   `LauncherModule.GetHotkeys()`，仍由 `HotkeyRouter` 统一注册，帮助文本同源；
 - `SevenNoteModule.Init()` 不再调用 Launcher 的 Feature。
 
-待做（3b）：
+已完成（3b）：
 
-- 抽 `WorkBench/Coordinator/PeerCoordinator.ahk`：订阅 `Launcher.Opened` /
-  `SevenNote.WindowReady`，算完布局发 `SevenNote.Move` / `Launcher.Move`；
-- 当前仍沿用已验证的 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 契约，
-  `WindowFeature` 的让位 / 堆叠逻辑不动，以免在模块拆分同批改动窗口行为；
-- 验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口。
+- 新增 `WorkBench/WorkBench.ahk`：`Init()` 登记 SevenNote / Launcher 两个模块，
+  并初始化 `PeerCoordinator`；
+- 堆叠算式（方案一 / 方案二、DWM 不可见边框、最小尺寸）从
+  `WindowFeature._StackWithPeer()` 上收到 `PeerCoordinator.PlanStack()`；
+  `WindowFeature` 只保留 `_docked` / `_stacked` / 底稿状态与窗口应用；
+- `PowerShellFeature` / `DeepSeekFeature` 落位后广播 `Launcher.Opened`；
+  `WindowFeature.Show()` 末尾广播 `SevenNote.WindowReady`，协调器记录双方最近落位；
+- 真实布局时由协调器广播 `SevenNote.Move` / `Launcher.Move`（载荷为物理外框）；
+- 旧 `Peer.Preparing` / `Peer.Placed` / `Peer.Failed` 与让位 / 冻结状态机保持原样；
+  Move 事件暂不接管窗口，避免在模块拆分同批改动已验证行为。
+
+待做：
+
+- 人工验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口；
+- Phase 5：让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`，
+  再移除 `Peer.*` 桥接。
 
 ### Phase 4 · KeysInput 模块化
 

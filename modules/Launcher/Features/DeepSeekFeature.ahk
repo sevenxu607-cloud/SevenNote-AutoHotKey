@@ -470,7 +470,11 @@ class DeepSeekFeature {
         rect := PeerLayoutService.RectOf(hwnd)
         if !IsObject(rect)
             return
-        EventBus.Emit("Peer.Placed", {hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h})
+        data := {kind: "deepseek", hwnd: hwnd, x: rect.x, y: rect.y, w: rect.w, h: rect.h}
+        ; Phase 3b：模块级「已打开」交给平台协调器记录 / 计算；
+        ; 旧的 Peer.Placed 仍保留给 WindowFeature 的已验证状态机。
+        EventBus.Emit("Launcher.Opened", data)
+        EventBus.Emit("Peer.Placed", data)
     }
 
     ; 浏览器：优先 _config.ini 指定；否则按 Edge → Chrome 顺序探测（Windows 自带 Edge，
