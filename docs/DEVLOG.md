@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 已提交，Phase 3a 改动待提交
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a 已提交，工作区干净
 - **最近一次改动**：Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由 `LauncherModule.GetHotkeys()` 声明
 - **正在处理**：Phase 2 / 3a 人工验收（需关闭现有实例）
 - **下一步**：Phase 3b：`PeerCoordinator` 接管伙伴窗口布局；之后 Phase 4 KeysInput
