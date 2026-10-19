@@ -22,4 +22,20 @@ class WorkBench {
         PeerCoordinator.Init()
         WorkBenchUI.Init()
     }
+
+    ; ─── 平台级热键：帮助 + 保存退出 ───
+    ; Alt+H 由平台负责显示帮助；Alt+Shift+Z 只广播 Save.Requested，
+    ; 真正落盘仍由 SevenNote 的 SaveFeature 订阅处理 —— 平台不直接调用模块内部 Feature。
+    static GetHotkeys() {
+        return [
+            {ctx: "global", key: "!h", group: "平台", line: "   Alt+H            显示本帮助"
+                , fn: (*) => WorkBenchUI.ShowHelp()},
+            {ctx: "global", key: "!+z", group: "平台", line: "   Alt+Shift+Z      保存并退出"
+                , fn: (*) => (EventBus.Emit("Save.Requested"), ExitApp())}
+        ]
+    }
+
+    static GetMetadata() {
+        return {name: "平台", desc: "工作台", order: 0, hotkeys: this.GetHotkeys()}
+    }
 }

@@ -10,10 +10,10 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 已提交，工作区干净
-- **最近一次改动**：Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，动态热键统一走 `HotkeyRouter`
-- **正在处理**：Phase 2 / 3a / 3b / 4 人工验收（需关闭现有实例）
-- **下一步**：Phase 5：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
+- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 已提交
+- **最近一次改动**：Phase 5：`WorkBenchUI` 统一帮助，平台 / 模块热键各归其位
+- **正在处理**：Phase 2 / 3a / 3b / 4 / 5 人工验收（需关闭现有实例）
+- **下一步**：Phase 5b：让 `SevenNote.Move` / `Launcher.Move` 接管窗口
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -30,9 +30,12 @@
 - [x] Phase 3a：Launcher 三个类搬入 `modules/Launcher/`，`Alt+C` / `Alt+X` 改由模块 `GetHotkeys()`
 - [x] Phase 3b：`PeerCoordinator` 接管伙伴窗口堆叠几何，`Launcher.Opened` / `SevenNote.WindowReady` 已接入
 - [x] Phase 4：`CapsLockFeature` 搬入 `modules/KeysInput/`，`Alt+Shift+C` 与动态 HJKL 归模块
+- [x] Phase 5：`WorkBenchUI` 统一帮助，`HotkeyRouter.RegisterAll()` 聚合平台 + 模块热键
 - [x] 保留拆分前源码快照 `legacy/SevenNote.v2.4.3.ahk`（只作对照）
 - [ ] Phase 3–6 按 `docs/WORKBENCH-PLAN.md` 推进；E2E 待模块接口稳定后重建
 - [ ] Phase 4 人工验收：`Alt+Shift+C`、`CapsLock+H/J/K/L`、关层后无残留
+- [ ] Phase 5 人工验收：`Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
+- [ ] Phase 5b：Move 事件接管窗口，再移除 `Peer.*` 桥接
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
@@ -53,6 +56,39 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-19 21:29　Phase 5：WorkBenchUI 统一帮助
+
+**我说**（原话）
+> 继续
+
+**意图**
+按 `WORKBENCH-PLAN.md` 继续推进：把帮助窗口从组合根搬进 `WorkBenchUI`，让平台 / 模块热键各归其位，
+为后续新增模块自动出现在帮助里铺路。
+
+**决定 / 过程**
+- `ShowHelp()` / `BuildHotkeyHelpText()` 搬入 `WorkBenchUI`；平台热键 `Alt+H` / `Alt+Shift+Z`
+  归 `WorkBench.GetHotkeys()`，帮助里单独一组 `【平台】`；
+- SevenNote 的 27 条热键搬入 `SevenNoteModule.GetHotkeys()`；Launcher / KeysInput 补
+  `GetMetadata()`，`order` 保持 CapsLock → Alt+C / Alt+X；
+- `HotkeyRouter.RegisterAll()` 改为无参，聚合平台 + 各模块 `GetHotkeys()` 与 `GetContexts()`；
+  同 `ctx + key` 去重，模块误声明平台热键时平台优先；
+- 帮助窗口 `Esc` 由 `WorkBenchUI` 自注册 / 注销；标题栏关闭与 Esc 两条路径都清理；
+- 验证：stderr 空、`Alt+Z` 可呼出；帮助 9 组 / 32 条；
+  `platform=2 seven=27 launcher=2 keys=1 saveHandlers=1`；
+  `Alt+H` 打开、Esc 关闭、标题栏关闭后重开正常；
+- 首轮用了 v2.0 不存在的 `Array.Sort`，触发一次异常；改成插入排序后复测通过
+  （`_error.log` 保留两条测试期记录，不是当前运行错误）。
+
+**代价 / 风险**
+- 上下文热键与 `Alt+Shift+Z` 保存退出仍需人工按键验收；
+- 帮助 `Esc` 是 UI 自注册的上下文热键，`Send` 只能验证全局热键；
+- 计划里 Phase 5 原本还包含 Move 事件接管，已拆成 Phase 5b，未在本轮改动窗口行为。
+
+**待办**
+- [ ] 人工验收 `Alt+H` / `Alt+Z` / `Alt+Shift+Z`、帮助 `Esc` 与标题栏关闭
+- [ ] Phase 5b：Move 事件接管窗口
+- [ ] Phase 6：改名
 
 ### 2026-10-19 21:09　Phase 4：KeysInput 模块化
 

@@ -120,6 +120,90 @@ class SevenNoteModule {
         ; 而 BackdropFeature 在 Init 时就挂上了这个事件 —— 启动与换主题都自动重铺。
     }
 
+    ; ─── 笔记模块的热键（Phase 5：从组合根搬入）───
+    ; 平台热键（Alt+H / Alt+Shift+Z）不在这里，见 WorkBench.GetHotkeys()。
+    static GetHotkeys() {
+        return [
+            ; ── 【窗口】──
+            {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z            呼出 / 隐藏"
+                , fn: (*) => WindowFeature.Toggle()},
+
+            ; ── 【外观】──
+            {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）"
+                , fn: (*) => ThemeFeature.Next()},
+            {ctx: "global", key: "!+t", group: "外观", line: "   Shift+Alt+T      切换字体"
+                , fn: (*) => FontFeature.NextFont()},
+            {ctx: "global", key: "!=", group: "外观", line: "   Alt+=            调大字号"
+                , fn: (*) => FontFeature.BiggerSize()},
+            {ctx: "global", key: "!-", group: "外观", line: "   Alt+-            调小字号"
+                , note: "                      （外观设置自动保存）"
+                , fn: (*) => FontFeature.SmallerSize()},
+
+            ; ── 【输入增强】──
+            ; Alt+Shift+C 由 KeysInputModule.GetHotkeys() 提供；
+            ; Alt+C / Alt+X 由 LauncherModule.GetHotkeys() 提供。
+
+            ; ── 【搜索】──
+            {ctx: "editor", key: "$^f", group: "搜索", line: "   Ctrl+F           打开搜索栏"
+                , fn: (*) => SearchFeature.Show()},
+            {ctx: "search", key: "Enter", group: "搜索", line: "   Enter            下一个匹配"
+                , fn: (*) => SearchFeature.Next()},
+            {ctx: "search", key: "+Enter", group: "搜索", line: "   Shift+Enter      上一个匹配"
+                , fn: (*) => SearchFeature.Prev()},
+            {ctx: "search", key: "Esc", group: "搜索", line: "   Esc              关闭搜索栏"
+                , fn: (*) => SearchFeature.Hide()},
+
+            ; ── 【保存】──
+            {ctx: "editor", key: "$^s", group: "保存", line: "   Ctrl+S           手动保存"
+                , fn: (*) => SaveFeature.Save()},
+
+            ; ── 【日期与标签】──
+            {ctx: "global", key: "!Up", group: "日期与标签", line: "   Alt+↑            前一天"
+                , fn: (*) => DateSwitchFeature.Switch(-1)},
+            {ctx: "global", key: "!Down", group: "日期与标签", line: "   Alt+↓            后一天"
+                , fn: (*) => DateSwitchFeature.Switch(1)},
+            {ctx: "global", key: "!Home", group: "日期与标签", line: "   Alt+Home         回到今天"
+                , fn: (*) => GoTodayFeature.Go()},
+            {ctx: "editor", key: "$^g", group: "日期与标签", line: "   Ctrl+G           搜索跳转（日期 / 标签）"
+                , fn: (*) => DateJumpFeature.ShowDialog()},
+            {ctx: "editor", key: "$^+t", group: "日期与标签", line: "   Ctrl+Shift+T     为当前日期设置标签"
+                , fn: (*) => TitleFeature.ShowDialog()},
+
+            ; ── 【编辑】──
+            {ctx: "editor", key: "$^z", group: "编辑", line: "   Ctrl+Z           撤销"
+                , fn: (*) => UndoFeature.Undo()},
+            {ctx: "editor", key: "$^+z", group: "编辑", line: "   Ctrl+Shift+Z     重做"
+                , fn: (*) => UndoFeature.Redo()},
+            {ctx: "editor", key: "$^y", group: "编辑", line: "   Ctrl+Y           删除当前行"
+                , fn: (*) => LineEditFeature.DeleteLine()},
+            {ctx: "editor", key: "$^d", group: "编辑", line: "   Ctrl+D           复制当前行到下方"
+                , fn: (*) => LineEditFeature.DuplicateLine()},
+            {ctx: "editor", key: "$^+Up", group: "编辑", line: "   Ctrl+Shift+↑     上移当前行"
+                , fn: (*) => LineEditFeature.MoveUp()},
+            {ctx: "editor", key: "$^+Down", group: "编辑", line: "   Ctrl+Shift+↓     下移当前行"
+                , fn: (*) => LineEditFeature.MoveDown()},
+            {ctx: "editor", key: "Tab", group: "编辑", line: "   Tab              增加缩进（4 空格）"
+                , fn: (*) => LineEditFeature.Indent()},
+            {ctx: "editor", key: "+Tab", group: "编辑", line: "   Shift+Tab        减少缩进"
+                , fn: (*) => LineEditFeature.Outdent()},
+            {ctx: "editor", key: "$^+v", group: "编辑", line: "   Ctrl+Shift+V     粘贴为纯文本"
+                , fn: (*) => PasteFeature.PastePlain()},
+
+            ; ── 【分段】──
+            {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
+                , fn: (*) => TimestampFeature.Append()},
+            {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入分隔线"
+                , fn: (*) => TimestampFeature.Separator()},
+            {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
+                , fn: (*) => TimestampFeature.Heading()}
+        ]
+    }
+
+    static GetMetadata() {
+        return {name: this.Name, desc: "笔记编辑与检索", order: 10
+            , hotkeys: this.GetHotkeys()}
+    }
+
     ; 笔记模块负责 editor / search 两个上下文；Router 不再引用模块内部类
     static GetContexts() {
         return {

@@ -32,7 +32,8 @@
 ## 加新功能的标准步骤
 
 1. 在 FEATURE 层新增一个 class
-2. 在组合根注册热键
+2. 在所属模块的 `GetHotkeys()` 里加热键（平台级热键归 `WorkBench.GetHotkeys()`；
+   `HotkeyRouter` 注册与 `Alt+H` 帮助共用这份数据）
 3. 通过 `EventBus.Emit` 通知结果
 
 参考实现（README「开发指南」原文）：
@@ -50,7 +51,8 @@ class ExportFeature {
 }
 ```
 
-组合根加一行即可：`!e::ExportFeature.ExportHtml()` —— 不需要改任何其他 Feature。
+在模块的 `GetHotkeys()` 里加一行即可（`{ctx, key, group, line, fn}`）—— 不需要改任何其他
+Feature，也不需要改组合根或帮助函数。
 
 ## 加新主题
 

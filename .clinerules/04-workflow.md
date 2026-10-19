@@ -133,7 +133,7 @@ ExitApp()
 ```
 
 真正结束 auto-execute 的是**热键 / 热字符串 / `#HotIf` 指令**。
-但主脚本末尾是 `ShowHelp() {` 这类函数定义，历史上追加在它之后的驱动曾整段不执行
+但主脚本末尾是 `ShowStartupTip()` / `DestroyTipWindow()` 这类函数定义，历史上追加在它之后的驱动曾整段不执行
 （`exit=0`、stderr 为空、日志两边都没有）；原因未完全定位，**别拿它赌**。
 用正则插在 `ShowStartupTip()` 调用行之后，是实测可靠的做法。
 

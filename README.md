@@ -197,7 +197,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | 路径 | 用途 |
 | --- | --- |
 | `SevenNote.ahk` | 组合根：装配 + 启动 |
-| `WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 帮助 / 伙伴协调 |
+| `WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 统一帮助 / 伙伴协调 |
 | `modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
 | `modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
@@ -446,7 +446,8 @@ Pandoc 不可用，走了降级路径。
 
 **步骤**：
 1. 在 FEATURE 层加一个类
-2. 在 `HotkeyTable()` 里加一行（注册与 `Alt+H` 帮助共用这份数据 —— 写一次，两处同时生效）
+2. 把热键加到所属模块的 `GetHotkeys()`（平台热键归 `WorkBench.GetHotkeys()`；
+   注册与 `Alt+H` 帮助共用这份数据 —— 写一次，两处同时生效）
 3. 通过 `EventBus.Emit` 通知结果
 
 **示例**：加"导出 HTML"
@@ -464,18 +465,19 @@ class ExportFeature {
 }
 ```
 
-在 `HotkeyTable()` 里加一行：
+在所属模块的 `GetHotkeys()` 里加一行（例如 SevenNote 的 `Ctrl+E` 导出）：
 
 ```ahk
-{ctx: "global", key: "!e", group: "保存", line: "   Alt+E            导出 HTML"
+{ctx: "editor", key: "$^e", group: "保存", line: "   Ctrl+E           导出 HTML"
     , fn: (*) => ExportFeature.ExportHtml()},
 ```
 
-`group` 取 `BuildHotkeyHelpText()` 里那 8 个组名之一（窗口 / 外观 / 输入增强 / 搜索 /
-保存 / 日期与标签 / 编辑 / 分段）；真要开新组，得在那个函数的组名数组里也加一项
-—— 数组顺序就是帮助窗口里的显示顺序。
+`group` 取 `WorkBenchUI._GroupOrder` 里的组名之一（平台 / 窗口 / 外观 / 输入增强 /
+搜索 / 保存 / 日期与标签 / 编辑 / 分段）。新组不在表里也没关系，会按首次出现顺序
+自动追加到帮助末尾 —— 不用改显示函数。
 
-**完成**，不需要改任何其他 Feature —— 也不用再去 `ShowHelp()` 里补一行文本。
+**完成**，不需要改任何其他 Feature，也不用再去帮助窗口里补文本：
+`HotkeyRouter` 注册与 `WorkBenchUI` 帮助读的是同一份模块数据。
 
 ### 添加新主题
 

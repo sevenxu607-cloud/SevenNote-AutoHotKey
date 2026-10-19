@@ -23,7 +23,7 @@
 | 7 | 背景图 | GDI 双 DC + `StretchBlt`(HALFTONE) |
 | 8 | 外部程序呼出 | `Run` + WT profile / Edge 命令行 |
 | 9 | 窗口自动让位 | `Peer.*` 事件契约 + `DwmGetWindowAttribute` |
-| 10 | 热键系统 | 数据驱动 `HotkeyTable()` + `HotIf` |
+| 10 | 热键系统 | 平台 / 模块 `GetHotkeys()` 聚合 + `HotIf` |
 | 11 | 配置 / 状态 / 解耦 | Ini + 进程内缓存 + `EventBus` |
 | 12 | 格式出口 | 内嵌 Pandoc `RunWait` |
 | 13 | 稳定性 | `OnError` + 旋转日志 |
@@ -207,18 +207,23 @@ msedge.exe --new-window https://chat.deepseek.com/
 ## 10. 用「数据驱动的热键表」，实现了注册与帮助文档同源
 
 ```ahk
-HotkeyTable() {
-    return [
-        {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z   呼出 / 隐藏"
-            , fn: (*) => WindowFeature.Toggle()},
-        ...
-    ]
+class SevenNoteModule {
+    static GetHotkeys() {
+        return [
+            {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z   呼出 / 隐藏"
+                , fn: (*) => WindowFeature.Toggle()},
+            ...
+        ]
+    }
 }
 ```
 
-- **一份数据，两处使用**：组合根遍历它注册热键；`Alt+H` 帮助窗口遍历它生成文本；
-- 改热键只改一处 —— 这是 `86e76f8`「热键改为表驱动」之后才有的性质；
-- `ctx` 字段决定用哪套 `HotIf` 上下文：`global` / 窗口激活 / 搜索栏可见。
+- **一份数据，两处使用**：`HotkeyRouter.RegisterAll()` 聚合平台 `WorkBench.GetHotkeys()`
+  与各模块 `GetHotkeys()` 注册；`WorkBenchUI.BuildHotkeyHelpText()` 遍历同一份数据生成文本；
+- 改热键只改所属模块（平台级改 `WorkBench.GetHotkeys()`）—— 这是 `86e76f8`「热键改为表驱动」
+  之后、Phase 5 完成「按模块归属」之后才有的性质；
+- `ctx` 字段决定用哪套 `HotIf` 上下文：`global` / 窗口激活 / 搜索栏可见；
+  表达式由各模块 `GetContexts()` 提供，Router 只负责 `HotIf`。
 
 ---
 

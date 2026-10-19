@@ -1,6 +1,6 @@
 # SevenWork 工作台化改造计划
 
-> 状态：设计定稿，Phase 2 / 3a / 3b / 4 已完成（待人工验收）
+> 状态：设计定稿，Phase 2 / 3a / 3b / 4 / 5 已完成（待人工验收）
 > 最后更新：2026-10-19
 > 目标：把单文件 `SevenNote.ahk` 拆成「平台 + 三个同级模块」，平台管生命周期 / 热键路由 / 帮助，
 > 模块各自持有 Service 与 Feature；模块之间零调用，跨模块只走 EventBus。
@@ -59,8 +59,8 @@ SevenWork/
 
 | 现函数 | 去处 |
 | --- | --- |
-| `HotkeyTable()` / `RegisterHotkeys()` | `WorkBench/HotkeyRouter.ahk` |
-| `ShowHelp()` / `BuildHotkeyHelpText()` | `WorkBench/WorkBenchUI.ahk` |
+| `HotkeyTable()` / `RegisterHotkeys()` | Phase 5 已拆：平台 → `WorkBench.GetHotkeys()`，模块 → `Module.GetHotkeys()`；`HotkeyRouter.RegisterAll()` 聚合 |
+| `ShowHelp()` / `BuildHotkeyHelpText()` | `WorkBench/WorkBenchUI.ahk`（Phase 5 已搬） |
 | `ShowStartupTip()` / `EnsureVaultConfigured()` | 平台启动段 |
 | `LogError()` / `OnScriptError()` | `WorkBench/Kernel`（日志兜底） |
 
@@ -78,7 +78,7 @@ SevenWork/
 | 6 | `SevenNoteModule.Init()` | GUI、`State.Set*`、`StatusBar`、18 个 Feature |
 | 7 | `LauncherModule.Init()` | 初始化 PowerShell / DeepSeek Feature；热键由 `GetHotkeys()` 交给 Router |
 | 8 | `KeysInputModule.Init()` | CapsLock 状态 |
-| 9 | `HotkeyRouter.RegisterAll()` | 静态表 + 各模块 `GetHotkeys()` |
+| 9 | `HotkeyRouter.RegisterAll()` | 平台 `WorkBench.GetHotkeys()` + 各模块 `GetHotkeys()` |
 | 10 | `LoadFeature.Load()` + 主题 / 字体 / CapsLock 配置 | 恢复上次状态 |
 | 11 | `ShowStartupTip()` | 启动提示 |
 
@@ -86,7 +86,7 @@ SevenWork/
 再 `StatusBar.Init()`、`SearchFeature.Init()`、其余 Feature；最后 `BackdropFeature.Init(g)`。
 `LauncherModule.Init()` 必须在 `SevenNoteModule.Init()` 之后，确保伙伴窗口出现时笔记窗口已就绪。
 
-> 当前组合根（`SevenNote.ahk` 4090–4220）就是这张表的基线；Phase 2 只搬位置，不改先后。
+> 当前组合根（`SevenNote.ahk` 末尾的装配 + 启动段）就是这张表的基线；Phase 2 只搬位置，不改先后。
 
 ---
 
@@ -96,7 +96,7 @@ SevenWork/
 | --- | --- | --- | --- |
 | `WorkBench` | global | `Alt+H` 平台帮助 | 静态 |
 | `WorkBench` | 帮助窗口 | `Esc` 关闭帮助 | `WorkBenchUI` 自注册 |
-| `WorkBench` | global | `Alt+Shift+Z` 保存并退出 | 静态（协调 `Save` + `ExitApp`） |
+| `WorkBench` | global | `Alt+Shift+Z` 保存并退出 | 静态（广播 `Save.Requested` + `ExitApp`） |
 | `SevenNote` | global | `Alt+Z` 呼出 / 隐藏 | 静态 |
 | `SevenNote` | global | `Alt+T` / `Shift+Alt+T` / `Alt+=` / `Alt+-` | 静态 |
 | `SevenNote` | editor / search | `Ctrl+F`；`Enter` / `Shift+Enter` / `Esc` | 静态 |
@@ -125,7 +125,7 @@ class SevenNoteModule {
     static Init()
     static GetHotkeys()   ; 数组：{ctx, key, group, line, note?, fn}
     static GetContexts()  ; Map: "editor" / "search" → 表达式
-    static GetMetadata()  ; 帮助用：{name, desc, hotkeys}
+    static GetMetadata()  ; 帮助用：{name, desc, order, hotkeys}
     static Shutdown()
 }
 ```
@@ -133,8 +133,8 @@ class SevenNoteModule {
 - AHK 没有接口，`ModuleRegistry` 用 `HasMethod` / `HasProp` 校验必需成员；
 - `GetHotkeys()` 里的 `fn` **必须用 lambda 或 `.Bind(类对象)`** —— 探针实测裸引用
   `Probe.Toggle` 会报 `Missing a required parameter`（`this` 丢失）；
-- `HotkeyRouter` API：`RegisterAll()`、`Add(key, fn, ctx)`、`Remove(key)`、
-  `Refresh(module)`、`Reset()`；
+- `HotkeyRouter` API：`RegisterAll()`（无参，内部聚合平台 + 模块）、
+  `Add(key, fn, ctx)`、`Remove(key)`、`Refresh(module)`、`Reset()`；
 - Router 不 import 任何模块内部类；模块只调 Router 的公开 API。
 
 ---
@@ -184,9 +184,9 @@ class SevenNoteModule {
 
 - 人工验收（需关闭现有实例）：笔记全部功能 + 主题 / 背景图 / 搜索 / 日期 / 标签 /
   图片 / 自动保存；窗口拉伸时文字不闪；
-- `GetHotkeys()` 暂缓（Phase 2 范围）：SevenNote / KeysInput 的热键仍由组合根
-  `HotkeyTable()` 持有；Launcher 已在 Phase 3a 改用 `GetHotkeys()`，其余待 Phase 5 的
-  `WorkBenchUI` 聚合时再拆。
+- `GetHotkeys()` 曾暂缓到 Phase 5：当时 SevenNote 的热键仍在组合根 `HotkeyTable()`，
+  Launcher 在 Phase 3a、KeysInput 在 Phase 4 先改用 `GetHotkeys()`；Phase 5 已把
+  SevenNote 的 27 条热键搬入 `SevenNoteModule.GetHotkeys()`，组合根不再持有热键表。
 
 ### Phase 3 · Launcher 模块化（3a / 3b 已完成，待人工验收）
 
@@ -217,7 +217,7 @@ class SevenNoteModule {
 待做：
 
 - 人工验收：终端 / 浏览器呼出 / 隐藏 / 切换、笔记让位、重启认回窗口；
-- Phase 5：让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`，
+- Phase 5b：让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`，
   再移除 `Peer.*` 桥接。
 
 ### Phase 4 · KeysInput 模块化（已完成，待人工验收）
@@ -242,11 +242,35 @@ class SevenNoteModule {
   ⚠ 计划原先写的「`Esc` 退出」在旧 `CapsLockFeature` 中没有对应热键，本次按原行为
   未新增，需用户确认是否要补；**上下文热键无法用 `Send` 触发**，只能人工按键。
 
-### Phase 5 · WorkBenchUI 统一帮助
+### Phase 5 · WorkBenchUI 统一帮助（已完成，待人工验收）
 
-- `WorkBenchUI` 聚合各模块 `GetMetadata()`，替换 `ShowHelp()` / `BuildHotkeyHelpText()`；
-- `Alt+H` 归平台；帮助窗口 `Esc` 由 UI 自注册 / 注销；
-- 验收：三个模块热键齐全、平台级单独一组、新增模块自动出现、无重复条目。
+已完成：
+
+- `ShowHelp()` / `BuildHotkeyHelpText()` 从主脚本搬入 `WorkBench/WorkBenchUI.ahk`；
+- `WorkBenchUI` 遍历 `ModuleRegistry.All()` 的 `GetMetadata()` 聚合帮助；没有
+  `GetMetadata()` 的模块退回 `GetHotkeys()`，新模块的组名自动追加，不必改显示函数；
+- 平台热键（`Alt+H` / `Alt+Shift+Z`）归 `WorkBench.GetHotkeys()`，帮助里单独一组
+  `【平台】`；`Alt+Shift+Z` 只广播 `Save.Requested`，不直接调用模块内部 Feature；
+- SevenNote 的 27 条热键从组合根搬入 `SevenNoteModule.GetHotkeys()`；Launcher /
+  KeysInput 补 `GetMetadata()`，`order` 保持「CapsLock → Alt+C / Alt+X」的旧顺序；
+- `HotkeyRouter.RegisterAll()` 改为无参：平台 + 各模块 `GetHotkeys()`，上下文从
+  各模块 `GetContexts()` 聚合；同一 `ctx + key` 去重（平台优先）；
+- 帮助窗口 `Esc` 由 `WorkBenchUI` 自注册 / 注销，标题栏关闭与 `Esc` 两条路径都清理；
+- 验证：真机启动 stderr 为空、`Alt+Z` 可呼出；帮助 9 组 / 32 条；
+  探针 `platform=2 seven=27 launcher=2 keys=1 saveHandlers=1`；
+  `Alt+H` 打开、`Esc` 关闭、标题栏关闭后重开均正常。
+
+代价 / 风险：
+
+- 上下文热键与帮助窗口 `Esc` 的完整交互仍须人工按键验收（`Send` 只能覆盖全局热键）；
+- `Alt+Shift+Z` 现在经 `Save.Requested` 间接触发保存，需人工确认「保存并退出」；
+- 本轮没有新增「CapsLock 层 `Esc` 退出」热键，旧行为未变。
+
+### Phase 5b · Move 事件接管窗口（待做）
+
+- 让 `WindowFeature` / Launcher 订阅 `SevenNote.Move` / `Launcher.Move`；
+- 接管窗口执行路径后，再移除 `Peer.*` 桥接；
+- 这一步会改动已验证的窗口行为，单独一轮做，不和帮助重构混批。
 
 ### Phase 6 · 改名（最后做）
 

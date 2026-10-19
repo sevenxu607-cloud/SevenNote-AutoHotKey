@@ -48,7 +48,7 @@ Persistent()
 ;    v1.8    状态栏日期后显示星期（📅 2026-09-20 周日）
 ;    v1.7    assets 统一收纳到 _assets/日期/；切日期 / 跳转 / 启动加载后光标到开头 + 视口到顶
 ;
-;  【用户旅程编号】组合根热键区与各 Feature 头部都用这套编号标注归属 ——
+;  【用户旅程编号】组合根启动区与各模块 GetHotkeys / Feature 头部都用这套编号标注归属 ——
 ;    ① 唤起与关闭    Alt+Z 呼出 / 隐藏
 ;    ② 输入与编辑    粘贴 / 行编辑 / 缩进 / 撤销 / 输入增强
 ;    ③ 保存与持久化  加载 / 保存 / 自动保存 / 时间戳
@@ -63,7 +63,8 @@ Persistent()
 ;     → 表示层 StatusBar → 组合根（装配 + 启动，在文件末尾）
 ;    Kernel 实现在 WorkBench/Kernel/；SevenNote 的 7 个 Service、StatusBar、
 ;    18 个 Feature 与模块生命周期在 modules/SevenNote/。
-;    本文件只保留组合根：首次引导、模块装配、热键表、帮助窗口与启动提示。
+;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册与帮助窗口已分别归
+;    WorkBench/HotkeyRouter.ahk 与 WorkBench/WorkBenchUI.ahk。
 ;
 ;  【依赖方向】Feature → Service → Kernel → OS（严禁反向）
 ;
@@ -368,8 +369,8 @@ LauncherModule.Init()
 ; ═══ 键位模块（Phase 4：CapsLock 层状态，热键由 KeysInputModule.GetHotkeys 提供）═══
 KeysInputModule.Init()
 
-; ═══ 热键（数据驱动：注册与帮助共用同一张表）═══
-HotkeyRouter.RegisterAll(HotkeyTable(), SevenNoteModule.GetContexts())
+; ═══ 热键（Router 聚合平台 + 各模块的 GetHotkeys）═══
+HotkeyRouter.RegisterAll()
 
 ; ═══ 启动 ═══
 SevenNoteModule.Start()
@@ -420,158 +421,4 @@ ShowStartupTip() {
 ; 关掉启动提示。已经关过就算了 —— 这正是 try 的用途。
 DestroyTipWindow(tip) {
     try tip.Destroy()
-}
-
-
-; ═══════════════════════════════════════════════════════════════════════════
-;  热键表（注册 + 帮助的唯一数据源）
-; ═══════════════════════════════════════════════════════════════════════════
-; 每条热键只在这里定义一次：HotkeyRouter 用它注册，BuildHotkeyHelpText()
-; 用它渲染 Alt+H 帮助 —— 改一条热键不必再去 ShowHelp 里手工同步那行文本。
-;   ctx   : 注册上下文 —— "global" 全局 / "editor" 编辑器内 / "search" 搜索栏显示时
-;   key   : AHK 热键字符串（$ 前缀 = 走钩子，照原样保留）；
-;           模块自带的热键由模块 GetHotkeys() 并入本表（如 Launcher 的 Alt+C / Alt+X）
-;   fn    : 触发时调用的回调（key 为空时不必写）
-;   group : 帮助窗口里的分组（纯语义分类，与 ctx 无关）
-;   line  : 帮助窗口里的那一行（含前导空格，逐字符照抄旧文本）
-;   note  : 该行之后追加的说明行（可省略）
-HotkeyTable() {
-    table := [
-        ; ── 【窗口】──
-        {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z            呼出 / 隐藏"
-            , fn: (*) => WindowFeature.Toggle()},
-        {ctx: "global", key: "!+z", group: "窗口", line: "   Alt+Shift+Z      保存并退出"
-            , fn: (*) => (SaveFeature.Save(), ExitApp())},
-        {ctx: "global", key: "!h", group: "窗口", line: "   Alt+H            显示本帮助"
-            , fn: (*) => ShowHelp()},
-
-        ; ── 【外观】──
-        {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）"
-            , fn: (*) => ThemeFeature.Next()},
-        {ctx: "global", key: "!+t", group: "外观", line: "   Shift+Alt+T      切换字体"
-            , fn: (*) => FontFeature.NextFont()},
-        {ctx: "global", key: "!=", group: "外观", line: "   Alt+=            调大字号"
-            , fn: (*) => FontFeature.BiggerSize()},
-        {ctx: "global", key: "!-", group: "外观", line: "   Alt+-            调小字号"
-            , note: "                      （外观设置自动保存）"
-            , fn: (*) => FontFeature.SmallerSize()},
-
-        ; ── 【输入增强】──
-        ; Alt+Shift+C 由 KeysInputModule.GetHotkeys() 并入本表（Phase 4）；
-        ; Alt+C / Alt+X 由 LauncherModule.GetHotkeys() 并入本表（Phase 3）。
-
-        ; ── 【搜索】──
-        {ctx: "editor", key: "$^f", group: "搜索", line: "   Ctrl+F           打开搜索栏"
-            , fn: (*) => SearchFeature.Show()},
-        {ctx: "search", key: "Enter", group: "搜索", line: "   Enter            下一个匹配"
-            , fn: (*) => SearchFeature.Next()},
-        {ctx: "search", key: "+Enter", group: "搜索", line: "   Shift+Enter      上一个匹配"
-            , fn: (*) => SearchFeature.Prev()},
-        {ctx: "search", key: "Esc", group: "搜索", line: "   Esc              关闭搜索栏"
-            , fn: (*) => SearchFeature.Hide()},
-
-        ; ── 【保存】──
-        {ctx: "editor", key: "$^s", group: "保存", line: "   Ctrl+S           手动保存"
-            , fn: (*) => SaveFeature.Save()},
-
-        ; ── 【日期与标签】──
-        {ctx: "global", key: "!Up", group: "日期与标签", line: "   Alt+↑            前一天"
-            , fn: (*) => DateSwitchFeature.Switch(-1)},
-        {ctx: "global", key: "!Down", group: "日期与标签", line: "   Alt+↓            后一天"
-            , fn: (*) => DateSwitchFeature.Switch(1)},
-        {ctx: "global", key: "!Home", group: "日期与标签", line: "   Alt+Home         回到今天"
-            , fn: (*) => GoTodayFeature.Go()},
-        {ctx: "editor", key: "$^g", group: "日期与标签", line: "   Ctrl+G           搜索跳转（日期 / 标签）"
-            , fn: (*) => DateJumpFeature.ShowDialog()},
-        {ctx: "editor", key: "$^+t", group: "日期与标签", line: "   Ctrl+Shift+T     为当前日期设置标签"
-            , fn: (*) => TitleFeature.ShowDialog()},
-        ; ── 【编辑】──
-        {ctx: "editor", key: "$^z", group: "编辑", line: "   Ctrl+Z           撤销"
-            , fn: (*) => UndoFeature.Undo()},
-        {ctx: "editor", key: "$^+z", group: "编辑", line: "   Ctrl+Shift+Z     重做"
-            , fn: (*) => UndoFeature.Redo()},
-        {ctx: "editor", key: "$^y", group: "编辑", line: "   Ctrl+Y           删除当前行"
-            , fn: (*) => LineEditFeature.DeleteLine()},
-        {ctx: "editor", key: "$^d", group: "编辑", line: "   Ctrl+D           复制当前行到下方"
-            , fn: (*) => LineEditFeature.DuplicateLine()},
-        {ctx: "editor", key: "$^+Up", group: "编辑", line: "   Ctrl+Shift+↑     上移当前行"
-            , fn: (*) => LineEditFeature.MoveUp()},
-        {ctx: "editor", key: "$^+Down", group: "编辑", line: "   Ctrl+Shift+↓     下移当前行"
-            , fn: (*) => LineEditFeature.MoveDown()},
-        {ctx: "editor", key: "Tab", group: "编辑", line: "   Tab              增加缩进（4 空格）"
-            , fn: (*) => LineEditFeature.Indent()},
-        {ctx: "editor", key: "+Tab", group: "编辑", line: "   Shift+Tab        减少缩进"
-            , fn: (*) => LineEditFeature.Outdent()},
-        {ctx: "editor", key: "$^+v", group: "编辑", line: "   Ctrl+Shift+V     粘贴为纯文本"
-            , fn: (*) => PasteFeature.PastePlain()},
-
-        ; ── 【分段】──
-        {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
-            , fn: (*) => TimestampFeature.Append()},
-        {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入分隔线"
-            , fn: (*) => TimestampFeature.Separator()},
-        {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
-            , fn: (*) => TimestampFeature.Heading()}
-    ]
-
-    ; 模块自带的热键并入同一张表，HotkeyRouter 负责注册，
-    ; BuildHotkeyHelpText 负责展示 —— 仍是一份数据。
-    ; 顺序按帮助窗口的原顺序：CapsLock（输入增强）→ Alt+C / Alt+X。
-    for hk in KeysInputModule.GetHotkeys()
-        table.Push(hk)
-    for hk in LauncherModule.GetHotkeys()
-        table.Push(hk)
-
-    return table
-}
-
-; 注册由 WorkBench/HotkeyRouter.ahk 负责（Phase 1 起；本文件只保留热键表）。
-
-; 帮助窗口正文 —— 按【组】走，组内按表序；组间空行，结尾附版本与笔记目录。
-BuildHotkeyHelpText() {
-    table := HotkeyTable()
-    text := ""
-    for g in ["窗口", "外观", "输入增强", "搜索", "保存", "日期与标签", "编辑", "分段"] {
-        text .= "【" . g . "】`n"
-        for hk in table {
-            if (hk.group != g)
-                continue
-            text .= hk.line . "`n"
-            if hk.HasProp("note")
-                text .= hk.note . "`n"
-        }
-        text .= "`n"
-    }
-    return text
-        . "—————————————————————————`n"
-        . "   " . Config.AppName . " v" . Config.Version . "`n"
-        . "   当前笔记目录：`n"
-        . "   " . Config.GetVault() . "`n"
-        . "   按 ESC 或点关闭按钮关闭"
-}
-
-
-; ═══════════════════════════════════════════════════════════════════════════
-;  帮助窗口（Alt+H）
-; ═══════════════════════════════════════════════════════════════════════════
-
-ShowHelp() {
-    if WinExist(Config.AppName . " · 快捷键 ahk_class AutoHotkeyGUI") {
-        WinActivate(Config.AppName . " · 快捷键 ahk_class AutoHotkeyGUI")
-        return
-    }
-
-    help := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop"
-        , Config.AppName . " · 快捷键")
-    help.SetFont("s11", "楷体")
-    help.BackColor := "FFF8E7"
-
-    text := BuildHotkeyHelpText()
-
-    help.AddText("x20 y15 w400", text)
-    help.Show("w440 h920")
-
-    HotIfWinActive(Config.AppName . " · 快捷键")
-    Hotkey("Esc", (*) => help.Destroy())
-    HotIf()
 }

@@ -93,8 +93,8 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 依赖方向：Feature → Service → Kernel → OS（严禁反向）
 ```
 
-**加新功能三步**：加一个 Feature 类 → `HotkeyTable()` 加一行（注册与 `Alt+H` 帮助共用同一份数据）
-→ `EventBus.Emit` 通知结果。
+**加新功能三步**：加一个 Feature 类 → 在所属模块的 `GetHotkeys()` 加一行（注册与 `Alt+H`
+帮助共用同一份数据；平台热键归 `WorkBench.GetHotkeys()`）→ `EventBus.Emit` 通知结果。
 
 **三个关键决策**
 1. `EM_STREAMOUT/EM_STREAMIN` 直读直写 RTF（不拿剪贴板当进程内私有通道）

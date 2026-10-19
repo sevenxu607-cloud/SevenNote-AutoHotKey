@@ -16,7 +16,7 @@ class LauncherModule {
         DeepSeekFeature.Init()
     }
 
-    ; 由主脚本的 HotkeyTable() 并入同一张表 —— 注册与 Alt+H 帮助共用一份数据。
+    ; 由 HotkeyRouter / WorkBenchUI 聚合 —— 注册与 Alt+H 帮助共用这一份数据。
     static GetHotkeys() {
         return [
             {ctx: "global", key: "!c", group: "输入增强"
@@ -26,5 +26,11 @@ class LauncherModule {
                 , line: "   Alt+X            呼出 / 隐藏 DeepSeek 网页（笔记自动让位）"
                 , fn: (*) => DeepSeekFeature.Toggle()}
         ]
+    }
+
+    static GetMetadata() {
+        ; order 让帮助里的「输入增强」保持旧顺序：CapsLock 层 → Alt+C / Alt+X。
+        return {name: this.Name, desc: "PowerShell / DeepSeek", order: 30
+            , hotkeys: this.GetHotkeys()}
     }
 }

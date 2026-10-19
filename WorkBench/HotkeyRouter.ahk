@@ -7,16 +7,51 @@
 ; Phase 4 起提供 Add / Remove：模块的层内热键（CapsLock / HJKL）动态加卸。
 
 class HotkeyRouter {
-    static _contexts := ""
+    static _contexts := {}
     static _dynamic := Map()
 
-    static RegisterAll(table, contexts) {
+    ; Phase 5：静态热键不再由组合根拼表 —— 平台取 WorkBench.GetHotkeys()，
+    ; 各模块取 GetHotkeys()，上下文取各模块 GetContexts()，Router 只负责注册。
+    static RegisterAll() {
+        contexts := {}
+        table := []
+
+        for hk in WorkBench.GetHotkeys()
+            table.Push(hk)
+
+        for id, module in ModuleRegistry.All() {
+            if module.HasMethod("GetContexts") {
+                moduleContexts := module.GetContexts()
+                for name in moduleContexts.OwnProps()
+                    contexts.%name% := moduleContexts.%name%
+            }
+            if module.HasMethod("GetHotkeys") {
+                for hk in module.GetHotkeys()
+                    table.Push(hk)
+            }
+        }
+
         this._contexts := contexts
+
+        ; 同一 ctx + key 只注册一次（平台先收集，所以平台热键优先）；
+        ; 模块误把平台热键再声明一遍时，不会在注册阶段悄悄盖掉平台回调。
+        staticTable := []
+        seenKeys := Map()
+        for hk in table {
+            uniq := hk.ctx . "|" . hk.key
+            if seenKeys.Has(uniq) {
+                LogError("热键重复声明，已忽略：" . uniq)
+                continue
+            }
+            seenKeys[uniq] := true
+            staticTable.Push(hk)
+        }
+
         ; 注册顺序 = 全局 → 编辑器内 → 搜索栏（与改造前三个 #HotIf 块的先后一致）。
         ; 全局变体（无上下文）的优先级天然最低，所以「先建全局」不会抢上下文变体的命中。
         for ctxName in ["global", "editor", "search"] {
             this._ApplyContext(ctxName)
-            for hk in table {
+            for hk in staticTable {
                 if (hk.key = "" || hk.ctx != ctxName)
                     continue
                 try
@@ -72,9 +107,15 @@ class HotkeyRouter {
             case "global":
                 HotIf()
             case "editor":
-                HotIf(this._contexts.editor)
+                if IsObject(this._contexts) && this._contexts.HasProp("editor")
+                    HotIf(this._contexts.editor)
+                else
+                    HotIf()
             case "search":
-                HotIf(this._contexts.search)
+                if IsObject(this._contexts) && this._contexts.HasProp("search")
+                    HotIf(this._contexts.search)
+                else
+                    HotIf()
             default:
                 if IsObject(ctx)
                     HotIf(ctx)

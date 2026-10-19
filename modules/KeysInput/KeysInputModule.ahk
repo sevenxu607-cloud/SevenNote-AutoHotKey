@@ -18,7 +18,7 @@ class KeysInputModule {
         CapsLockFeature.LoadFromConfig()
     }
 
-    ; 由主脚本的 HotkeyTable() 并入同一张表 —— 注册与 Alt+H 帮助共用一份数据。
+    ; 由 HotkeyRouter / WorkBenchUI 聚合 —— 注册与 Alt+H 帮助共用这一份数据。
     static GetHotkeys() {
         return [
             {ctx: "global", key: "!+c", group: "输入增强"
@@ -26,5 +26,11 @@ class KeysInputModule {
                 , note: "                      （开启后 CapsLock+H/J/K/L = 方向键）"
                 , fn: (*) => CapsLockFeature.Toggle()}
         ]
+    }
+
+    static GetMetadata() {
+        ; order = 20：帮助的「输入增强」里排在 Launcher（30）之前，保持旧顺序。
+        return {name: this.Name, desc: "CapsLock 层", order: 20
+            , hotkeys: this.GetHotkeys()}
     }
 }
