@@ -64,6 +64,47 @@ class ExplorerProbe {
         return 0
     }
 
+    ; 列出某个资源管理器窗口里**当前选中**的项：数组，每项是绝对路径。
+    ; 文件与文件夹都会返回（`item.Path` 对两者都适用），是否该换目录由调用方判断 ——
+    ; 本能力只负责「问 shell 要真相」，不做存在性与类型校验。
+    ;
+    ; ⚠ 选中项走 `Document.SelectedItems`（`FolderItems` 集合，可直接 for-in）。
+    ;   壳窗口（此电脑 / 快速访问）的 `Document` 是 Null —— 实测 `Name=Windows`、
+    ;   `LocationURL` 为空、`Document` 取出来是 Null —— 这时 for-in 会抛错，外层 try 兜住。
+    ; ⚠ hwnd 统一转整数再比：调用方可能从 WinActive / 字符串配置里拿到 "0x12345"。
+    static SelectedPaths(hwnd) {
+        out := []
+        if !hwnd
+            return out
+        try target := Integer(hwnd)
+        catch
+            return out
+
+        try shell := ComObject("Shell.Application")
+        catch
+            return out
+        try wins := shell.Windows
+        catch
+            return out
+
+        try {
+            for w in wins {
+                h := 0
+                try h := w.HWND
+                if (!h || h != target)
+                    continue
+                try {
+                    for item in w.Document.SelectedItems
+                        out.Push(item.Path)
+                }
+                break
+            }
+        } catch {
+            ; 读到一半出错（壳窗口 / 视图正在切换）：已收上来的照常返回
+        }
+        return out
+    }
+
     ; 这个 hwnd 现在是不是还对应某个资源管理器窗口（COM 侧确认，防残项）。
     static IsExplorerWindow(hwnd) {
         if !hwnd

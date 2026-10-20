@@ -57,7 +57,7 @@ class FolderWindowFeature {
         try Run(path)
         catch as e {
             LogError("打开文件夹失败：" . path . " —— " . e.Message)
-            this._Tip("打开失败：" . path)
+            this.Tip("打开失败：" . path)
             return
         }
 
@@ -109,22 +109,25 @@ class FolderWindowFeature {
     static _ReportUnusable(slot, state) {
         label := FolderSlotService.HotkeyLabel(slot)
         if (state.reason = "missing")
-            this._Tip(label . " 指向的目录不存在：`n" . state.path)
+            this.Tip(label . " 指向的目录不存在：`n" . state.path)
         else
-            this._Tip(label . " 还没设置文件夹 —— 已打开面板，选「文件夹」页")
+            this.Tip(label . " 还没设置文件夹 —— 已打开面板，选「文件夹」页")
         EventBus.Emit("Panel.OpenRequested", {moduleId: "Folders"})
     }
 
     ; 轻量确认：ToolTip 在鼠标旁闪一下。
-    ; ⚠ 与 PromptWindowFeature._Tip 是两份实现、各自持有定时器字段：两条提示若在
-    ;   1.8 秒内先后出现，先弹的那条到点会把后一条一起清掉。只影响观感、不影响功能，
-    ;   真要合并得抽一个公共 ToolTip 能力，本轮不做（避免顺手改 Text 模块）。
-    static _Tip(msg) {
+    ; **公开**：同模块的 ConvertFeature（Alt+M 转 Markdown）也用它 —— 一份实现、一个
+    ; 定时器字段，两条提示就不会互相清掉（各持一个定时器才会：先弹的那条到点会把
+    ; 后一条一起清）。
+    ; ⚠ 仍与 PromptWindowFeature._Tip 是两份实现（跨模块，Text 模块本轮不动）：
+    ;   Text 与 Folders 的提示若在 ms 内先后出现，先弹的会把后一条清掉。只影响观感、
+    ;   不影响功能，真要合并得抽一个公共 ToolTip 能力。
+    static Tip(msg, ms := 1800) {
         try ToolTip(msg)
         this._StopTipTimer()
         timerFn := () => this._ClearTip()
         this._tipTimer := timerFn
-        SetTimer(timerFn, -1800)
+        SetTimer(timerFn, -ms)
     }
 
     static _StopTipTimer() {

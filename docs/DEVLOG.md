@@ -10,16 +10,16 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.7`，分支 `main`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 / 7 已实现
-- **最近一次改动**：**修 `Alt+S` 面板切页残留设置字段**
-  —— `_ClearSpec()` 里 `row.ctrl.Destroy()` 抛「方法不存在」被 `try` 吞掉（**`Gui.Control`
-  没有 `Destroy()`**），切到「文本」页仍挂着「文件夹」的 3 个 `Alt+1/2/3` 输入框与「浏览…」
-  按钮；改用 `_KillCtrl()` → `DllCall("DestroyWindow")`。验收：文件夹 ⇄ 文本 来回切、
-  `Esc` 关窗再开，字段只出现在该出现的页上、保存按钮随之转灰，`_error.log` 为空 ✓
-  （同一轮的前一项：面板格局重排为**侧栏 + 内容区 + 底部操作栏**三块底色）
+- **版本 / 分支**：`2.8`，分支 `main`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 / 7 已实现
+- **最近一次改动**：**`Alt+M` 转出的 md 现在带完整标题层级**（同日追补）
+  —— 源 docx 用的是「二级标题 / 三级标题 / 半括号标题（五级）」这类**自定义样式名**，
+  pandoc 只认 `heading 1..9`，于是 0 个标题、整篇塌成嵌套有序列表。
+  新增能力 `DocxHeadingFix`（`tar.exe` 解包 → 改 `styles.xml` 的 `w:name` → 重打包，
+  **源文件零改动**，失败即退回转原件），`PandocRunner` 补 `--markdown-headings=atx`。
+  实测 23MB 课件 0 → **223** 个标题、144 张图照常抽出、临时目录转完即净 ✓
 - **正在处理**：无
-- **下一步**：人工按键复核 `Alt+1/2/3` 的「开 → 藏 → 回」；面板「文件夹」页「浏览…」是否浮在面板之上；
-  `Alt+S` 里上下键连切五页再回「文件夹」字段是否只渲染一份
+- **下一步**：人工按键验收 `Alt+M`（转一次，确认编辑器大纲能看出一到六级）；
+  此前挂着的 `Alt+1/2/3` 显隐与面板切页复核仍未做
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -32,6 +32,7 @@
 - [x] 笔记模块窗口标题还原为 `SevenNote`（「搜索跳转」对话框同步），平台级文案仍 `SevenWork`
 - [x] 确认删末尾空行后「慢 500ms」是否可接受 → **不可接受**，已改 150ms 巡检（2026-10-20）
 - [ ] 人工验收：长按 `Backspace` 删一整屏空行，画面应小步跟随、不抽搐
+- [x] `Alt+M` 转出的 md 没有标题 → 定位为源文档自定义样式名，新增 `DocxHeadingFix` + `--markdown-headings=atx`（2026-10-21）
 - [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
 - [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
@@ -58,6 +59,10 @@
 - [x] 根目录再收纳：`screenshots/` / `legacy/` 并入 `docs/`；`.gitignore` 清 3 条 `tests/` 死规则
 - [ ] 待定：`docs/DEVLOG.md` 归档（787 行 > 600 阈值）；`README.md` 拆「添加带背景图的主题」到 `docs/THEME-IMAGES.md`
 - [x] 开发版报错日志落项目根 `.logs\`
+- [x] 新增 `Alt+M`：选中文件转 Markdown（能力 `PandocRunner` + `FileConvertService` + `ConvertFeature`）
+- [ ] 人工验收 `Alt+M`：选中 2–3 个 docx 一次转成同名 `.md`；在记事本里按 `Alt+M` 应毫无反应
+- [ ] `Alt+M` 的失败提示偏笼统：退出码只进 `_error.log`，ToolTip 只有「转换失败：pandoc 报错」——
+  若要更具体，得想法拿到 pandoc 的 stderr（本轮实测 `cmd /c` 那条路走不通）
 - [x] 滑条「拖不动」回归修复（加脱节守卫）
 - [x] 回退到「修好但不跟手」的中间版
 - [x] 修模块流水线：加模块只改两处（`#Include` + `Register`），坏模块不带走别人（探针已验）
@@ -91,7 +96,72 @@
 
 （新的在最上面）
 
-### 2026-10-21 00:55　文本页挂着文件夹的字段 —— `Gui.Control` 没有 `Destroy()`
+### 2026-10-21 00:57　`Alt+M` 转出来的 md 没有标题：源文档用的是自定义样式名
+
+**我说**（原话）
+> 这是什么问题，是我操作有误还是可以再优化下，比如是pandoc本身的问题?还是我可以使用代码修复的?
+
+**意图**
+把一份 23MB 的 NLP 课件转成 md 后，编辑器大纲里列的全是正文 —— 要的是「转换能把标题层级一起带过来」。
+
+**决定 / 过程**
+- 先量 AST：`pandoc -t native` 里 `Header` 数 = **0**（20088 行），`custom-style` = **0**，
+  `NLP导论` / `定义` 全是 `OrderedList` 嵌套 → **不是 pandoc 的 bug，源文档里就没有标题**。
+- 翻 `word/styles.xml` 才看清：层级是有的，但 `w:name` 是「二级标题」「三级标题」
+  「半括号标题（五级）」「圆括号标题（六级标题）」这些**自定义名**；pandoc 只认 `heading 1..9`。
+  这份文档内置的 `heading 1/2/3` 一次都没用。
+- 用户选「用代码修复」→ 新增能力 `DocxHeadingFix`：`tar.exe` 解包 → 改 `w:name` →
+  重打包 → 交给 pandoc；**源文件零改动**，任何一步失败退回转原件。
+  `FileConvertService` 只对 `.docx` 走这条路，`PandocRunner` 顺手补 `--markdown-headings=atx`。
+
+**结果**
+0 → **223** 个标题（`#`8 / `##`32 / `###`55 / `####`34 / `#####`53 / `######`41，
+与各样式使用次数逐项相等），144 张图照常抽出且链接相对化，临时目录转完即净。
+
+**代价 / 风险**
+每次 docx 转换多约 0.9 秒（23MB：解包 148ms + 打包 760ms）。判标题靠**样式名**
+（`N级标题` / `（N级` / `标题 N`）—— 名字碰巧像标题、实际不是标题用途的文档会被误抬
+（这类命名在 Word 里基本只用于标题，风险低）。依赖 Win10 1803+ 自带的 `tar.exe`。
+
+**踩坑**
+`tar -C dir .` 打出的条目带 `./` 前缀，pandoc 找不到图片 → `--extract-media` **静默丢图**
+（145 张全丢、退出码仍为 0），必须用 `*`；AHK v2 对象字面量里 `base:` 是设原型的保留键，
+`{src: x, base: "路径"}` 直接抛 `Invalid base.`。
+
+**待办**
+- [ ] 用户真机按 `Alt+M` 转一次，确认编辑器大纲能看出一到六级
+
+### 2026-10-21 02:10　`Alt+M`：资源管理器里选中的文件转 Markdown
+
+**我说**（原话，按本轮会话摘要还原）
+> Add an `Alt+M` hotkey in the Folders module that converts selected Explorer files to
+> Markdown (same directory) via pandoc.
+
+**意图**
+把「拿到一份 docx / 网页 / 表格，想变成能进笔记的文本」从「打开别的工具转一次」压成一次按键。
+落点选 Folders，因为入口本来就是资源管理器 —— 那个窗口不是本项目建的。
+
+**决定 / 过程**
+- 三个取舍由他拍板：**同名 `.md` 已存在就跳过、不覆盖**；**`RunWait` 阻塞**（不引入异步排队）；
+  **热键用 `Alt+M`**（全项目此前未占用）。
+- 不碰 SevenNote 的 `PandocService`（绑着笔记保存链路，且「Feature 之间零调用」不允许）——
+  新增能力层 `Capabilities/Document/PandocRunner.ahk`，`PandocService` 一行未改。
+- 输出 `<源目录>\<主名>.md`；图片抽到 `<主名>_media\` 后**把 pandoc 写的绝对路径改成相对链接**
+  （不改的话 md 一挪走图就断）。
+- 热键挂新 ctx `explorer`（`CabinetWClass` 前台）；`HotkeyRouter` 表驱动，没动 Router。
+
+**代价 / 风险**
+- **拿不到 pandoc 的 stderr 原文**：`cmd /c` 起不来 pandoc（两轮实测退出码 1），改用直接
+  `RunWait`，而重定向只有 shell 支持。失败只记退出码 + 路径，要原文得手工跑一次。
+- 大批量选中会**阻塞**到全部转完（他选的方案），期间热键不响应。
+- `pdf` / `doc` 一律拒绝 —— pandoc 没有这两种输入格式，不假装支持。
+- 探针抓出三个坑并已写进代码注释：`SplitPath` 参数顺序、`Ext` 不带点、`cmd /c` 引号。
+
+**待办**
+- [ ] 人工按键验收：选中 2–3 个 docx 按 `Alt+M`，确认 ToolTip 与同级 md
+- [ ] 人工验收：在记事本里按 `Alt+M` 应毫无反应（上下文热键只能力手工验）
+
+
 
 **我说**（原话）
 > 文本模块不设alt+1 2 3 界面,那是文件夹模块的东西

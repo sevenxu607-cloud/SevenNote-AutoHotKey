@@ -13,7 +13,8 @@
 ; 生命周期（照平台的 Init → RegisterAll → Start 三段式）：
 ;   Init()   读一次槽位，把「哪个槽位没配 / 目录没了」记进日志 —— 只碰配置，不碰窗口
 ;   Start()  无对外可见动作，不实现
-;   GetContexts  不需要：三条热键全是全局的，没有窗口内上下文
+;   GetContexts  只声明一个 explorer 上下文 —— Alt+M（转 Markdown）只在资源管理器
+;                前台生效；三条槽位热键仍是全局的。
 
 class FoldersModule {
     static Id := "Folders"
@@ -40,7 +41,8 @@ class FoldersModule {
     }
 
     ; ═══ 热键 ═══
-    ; 三个槽位各一条。加槽位只需把 FolderSlotService.Count 调大，并在这里补一行 ——
+    ; 三个槽位各一条，外加一条 Alt+M（转 Markdown，走 explorer 上下文）。
+    ; 加槽位只需把 FolderSlotService.Count 调大，并在这里补一行 ——
     ; 帮助窗口与面板都从 GetHotkeys / 服务读，不用再改别处。
     static GetHotkeys() {
         return [
@@ -52,8 +54,26 @@ class FoldersModule {
                 , fn: (*) => FolderWindowFeature.Toggle(2)},
             {ctx: "global", key: "!3", group: "文件夹"
                 , line: "   Alt+3            呼出 / 隐藏槽位 3 的文件夹"
-                , fn: (*) => FolderWindowFeature.Toggle(3)}
+                , fn: (*) => FolderWindowFeature.Toggle(3)},
+            ; 前三条是全局的；这条只在资源管理器前台生效（见 GetContexts）——
+            ; 它的输入是「资源管理器里选中的文件」，在别的程序里按到毫无意义。
+            {ctx: "explorer", key: "!m", group: "文件夹"
+                , line: "   Alt+M            选中的文件转成 Markdown（存到同级目录）"
+                , fn: (*) => ConvertFeature.Run()}
         ]
+    }
+
+    ; ═══ 热键上下文 ═══
+    ; Alt+M 只在**资源管理器前台**生效：它对着「选中的文件」干活，而 Alt+M 在
+    ; Excel / Word 里是有意义的组合键 —— 全局注册会把人家按菜单的那一下抢走。
+    ; 类名取 ExplorerProbe.WindowClass：与那边「先圈定候选窗口、再问 COM 要路径」用
+    ; 同一个常量，将来窗口类若变，只改一处。
+    ; ⚠ 声明了却没人实现的热键会「一条都不注册」并写 _error.log（HotkeyRouter 的行为），
+    ;   所以这里的名字必须与 GetHotkeys() 里的 ctx 一字不差。
+    static GetContexts() {
+        return {
+            explorer: (*) => WinActive("ahk_class " . ExplorerProbe.WindowClass)
+        }
     }
 
     ; ═══ 面板设置声明 ═══
@@ -89,7 +109,7 @@ class FoldersModule {
     ; 帮助窗口（Alt+S）用：order 决定模块在面板里的先后
     ; （平台 0 / 笔记 20 / 外部程序 30 / 文件夹 35 / 文本 40）。
     static GetMetadata() {
-        return {name: this.Name, desc: "文件夹槽位 · Alt+1/2/3", order: 35
+        return {name: this.Name, desc: "文件夹槽位与转 Markdown · Alt+1/2/3 / Alt+M", order: 35
             , hotkeys: this.GetHotkeys()}
     }
 }

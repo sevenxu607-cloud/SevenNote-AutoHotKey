@@ -189,6 +189,26 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
   后者保证「点了到底有没有生效」看得见；
 - ⚠ 属于全系统热键，会占用其它程序的 `Alt+1/2/3`。
 
+### 📄 选中的文件转 Markdown
+
+在资源管理器里选中一个或多个文件，按 `Alt+M`，每个文件在同级目录生成一个同名 `.md`（pandoc 转换）。
+
+- 认得的输入格式跟着 pandoc 走：`docx` / `odt` / `rtf` / `epub` / `html` / `pptx` / `xlsx` / `csv` / `ipynb` 等；
+  ⚠ `pdf` 与老式 `doc` **转不了**（pandoc 根本没有这两种输入格式），会明确提示「先另存为 .docx 再转」；
+- **已存在同名 `.md` 就跳过、不覆盖** —— 那很可能是你自己写的笔记。想重转，删掉旧的再按一次；
+- **标题层级会被保住**，哪怕源文档用的是自定义样式名：pandoc 只认 Word 的
+  `heading 1..9`，而国内课件常自定义「二级标题」「三级标题」「半括号标题（五级）」
+  这类名字 —— 直接转会一个标题都没有，整篇塌成嵌套列表、编辑器大纲是空的。
+  本功能转换前会先复制一份 docx、把那几个样式名规范化成 `heading N` 再转，
+  **源文件一个字都不改**（实测 23MB 课件：0 个标题 → 223 个，逐级对得上）。
+  标题一律写成 ATX（`## 标题`），不用 `====` / `----` 下划线式 —— 后者很多编辑器的大纲不认；
+- 文档里的图片会抽到同级 `<文件名>_media\`，md 里的链接写成**相对路径**，
+  把 md 与这个目录一起搬走 / 发给别人都不会丢图；
+- 只在**资源管理器是前台窗口**时响应 —— `Alt+M` 在 Excel / Word 里有自己的用途，不去抢；
+- 结果是一个 3 秒的 ToolTip：单个文件给具体原因（「已转换：X.md」/「已存在同名 .md，跳过」），
+  多个文件给数量汇总（「已转换 3 个 · 跳过 1 个」）。失败时 ToolTip 只有一句结论，
+  退出码等细节写进 `.logs\_error.log`。
+
 ---
 
 ## 🚀 快速开始
@@ -220,7 +240,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
 | `src\modules\Text\` | 文本模块：提示词库（`Alt+P`）—— 2 个 Feature + `PromptStoreService` + 模块生命周期 |
-| `src\modules\Folders\` | 文件夹模块：`Alt+1/2/3` 三个槽位（不建自己的窗口，只驱动资源管理器） |
+| `src\modules\Folders\` | 文件夹模块：`Alt+1/2/3` 三个槽位（不建自己的窗口，只驱动资源管理器）+ `Alt+M` 选中文件转 Markdown |
 | `docs\legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `docs\screenshots\` | README 配图 |
@@ -251,6 +271,15 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 > ⚠ `Alt+1/2/3` 是**全系统**热键，会占用其它程序的这三个组合。三个槽位默认留空，
 > 第一次按下会直接打开工作台面板并停在「文件夹」页，指着旁边的「浏览…」选一个目录即可。
+
+### 资源管理器内热键（窗口激活时）
+
+| 热键 | 功能 |
+| --- | --- |
+| `Alt+M` | 把选中的文件转成同名 Markdown（存到同级目录；已有同名 `.md` 则跳过、不覆盖） |
+
+> `Alt+M` 只在资源管理器是**前台窗口**时生效 —— 它在 Excel / Word 里有自己的用途，
+> 全局注册会把人家按菜单的那一下抢走。
 
 ### 编辑器内热键（窗口激活时）
 
@@ -1217,6 +1246,7 @@ Windows Terminal 的 settings.json
 
 | 版本 | 日期 | 变化 |
 | --- | --- | --- |
+| **v2.8** | 2026-10-21 | **新增 `Alt+M`：选中的文件转 Markdown**（Folders 模块，pandoc 转换）。① **热键挂 `explorer` 上下文**（`WinActive("ahk_class CabinetWClass")`），只在资源管理器前台响应 —— `Alt+M` 在 Excel / Word 里有自己的用途，全局注册会抢人家的菜单；`HotkeyRouter` 自 v2.6 起表驱动，新 ctx 不必改 Router，只在 `FoldersModule.GetContexts()` 报一行（这个模块此前注释写的就是「GetContexts 不需要」）。② **能力层新增 `WorkBench/Capabilities/Document/PandocRunner.ahk`**：只回答「pandoc 在哪」和「这个文件转不转得成」，收 `(cmd, src, dst, mediaDir)`、返回 `{ok, reason, code?}`，不读 Config / 不发事件 / 不写日志。**没有复用 SevenNote 的 `PandocService`** —— 那份是笔记保存链路专用（RTF 输入 + 图片搬 `_assets` + 可用性缓存 + 后处理），改它要动「每次 `Alt+Z` 都跑」的路径；而「Feature 之间零调用」也不允许 Folders 直接调 SevenNote 的 Service。③ **`ExplorerProbe.SelectedPaths(hwnd)`**：读 `Document.SelectedItems` 拿选中项绝对路径；壳窗口（`Document` 为 Null）与「视图正在切换」都由内层 `try` 兜住，返回已收上来的部分而不是抛错。④ **策略在 `FileConvertService`**：输出 `<源目录>\<主名>.md`；跳过规则按优先级 —— 文件夹 / 已是 `.md` / `pdf`+`doc`（pandoc 没有这两种输入格式）/ 无扩展名 / **已存在同名 `.md`（绝不覆盖，那可能是自己写的笔记）**。图片抽到同级 `<主名>_media\`，转完再把 pandoc 写下的**绝对路径**换成相对链接（`picdoc_media/media/rId9.png`），md 与 `_media` 目录一起搬走即可；pandoc 失败时清掉它留下的 0 字节产物 —— 否则下次会被「已存在」永久跳过。⑤ **反馈**：ToolTip 3 秒，复用 `FolderWindowFeature` 的提示（`_Tip` 改名公开的 `Tip(msg, ms)`，一份实现一个定时器，两条提示不会互相清掉）；单文件给具体原因，多文件给数量汇总，**全程没有模态框**。⑥ **验收（探针 + 真机）**：docx → md 内容正确（`# Test Heading` / `- item one`）✓；带图 docx 抽出 `_media/media/rId9.png` 且链接已相对化 ✓；四种跳过原因 `unsupported` / `is-folder` / `is-markdown` / `bad-path` 全对、重复转换走 `exists` ✓；真机启动 stderr 为空、`_error.log` 无新增（证明 `Alt+M` 注册成功）✓。⑦ **踩坑（三个，都只有探针能抓出来）**：**`SplitPath` 的输出参数是 `(&FileName, &Dir, &Ext, &NameNoExt)` 而不是 `(&Dir, &Name, &Ext)`** —— 写错后 `dst` 拼成 `sample.docx\C:\...\convtest.md`，pandoc 以「目标路径不存在」退出 1，代码看着毫无问题；**`Ext` 不带点**（`"DOCX"` 而非 `".DOCX"`），写成 `SubStr(ext, 2)` 把 `pdf` 削成 `df`，`unsupported` / `is-markdown` 全不命中；**`cmd /c ""<exe>" <args>"` 起不来 pandoc**（退出码 1、目标文件不生成），`cmd /s /c` 同样失败，`<exe> <args>` 直接 `RunWait` 才成功 —— 代价是拿不到 pandoc 的 stderr 原文，失败只给退出码。⑧ **自定义标题样式名自动规范化（同日追补）**：用户报「转出来的 md 在编辑器大纲里全是正文」。实测源 docx 的 `Header` 数为 **0** —— 那些所谓标题，其实是套了「二级标题 / 三级标题 / 半括号标题（五级）」这类**自定义样式名**的段落，而 pandoc 只认 `w:name` 为 `heading 1..9` 的样式，于是整篇塌成嵌套有序列表。**根因在源文档、不在 pandoc，但可以用代码修**：新增能力 `DocxHeadingFix`（`tar.exe` 解包 → 改 `word/styles.xml` 的 `w:name` → 重打包 → 转完即删），**源文件零改动**，任何一步失败都退回转原件。实测 23MB 课件 0 → **223** 个标题（`#`8 / `##`32 / `###`55 / `####`34 / `#####`53 / `######`41，与 `styles.xml` 里各样式使用次数**逐项相等**），144 张图照常抽出。同时给 `PandocRunner` 补上 `--markdown-headings=atx` —— 默认 setext 会把 H1/H2 写成 `====` / `----` 下划线式，很多编辑器的大纲只认 `#`。踩坑两个：**`tar -C dir .` 打出的条目名带 `./` 前缀**（`./word/media/image1.png`），pandoc 读得到 `document.xml` 却找不到图片，`--extract-media` **静默丢图**（145 张一张不剩、退出码仍是 0），必须改用 `*`；**AHK v2 对象字面量里 `base:` 是设原型的保留键**，`{src: x, base: "C:\\路径"}` 直接抛 `Invalid base.`（字段改名 `tmpBase`）。 |
 | **v2.7** | 2026-10-20 | **新增 Folders 模块（`Alt+1/2/3`）+ `Alt+S` 升级为工作台面板**。① **文件夹槽位**：热键写死、目标可换 —— 固定 `Alt+1/2/3` 三个槽位，各指哪个目录存在 `_config.ini` 的 `[Folders] Slot1/2/3`，随时在面板里换。显隐语义与 `Alt+C` / `Alt+X` 一致：没开 → 打开、开着且在前台 → `WinHide`、开着不在前台 → 只激活、藏着 → `WinShow` + `WinRestore` + 激活。② **定位不走标题**：资源管理器标题是文件夹名（重名 / 本地化都不可靠），新增能力 `WorkBench/Capabilities/Shell/ExplorerProbe.ahk` 读 `Shell.Application.Windows` 的 `Document.Folder.Self.Path` 做真实路径比对。③ **面板改造**：`WorkBenchUI` 从「一坨纯文本帮助」变成左列模块 / 右列热键 + 设置的管控面板（`w900 h690` 逻辑，首项「总览」保留原全部热键视图）；模块**可选**实现 `GetSettingsSpec()` 返回 `{title, hint, fields, apply}`，平台只认 `kind`（`folder` = 输入框 + `DirSelect`），零业务耦合 —— 加设置不用碰 `WorkBenchUI`。④ **未配置的处理**：按空槽位不弹模态框，而是发 `Panel.OpenRequested` 事件，面板自动打开并定位到「文件夹」页。⑤ **验收（真机 150% DPI）**：`Alt+1` 未配置 → 窗口标题变 `SevenWork · 工作台` 且停在 Folders 页 ✓；探针 15 项 —— 槽位四态（有值 / 空 / 目录不存在 / 尾斜杠归一）、`Toggle` 三轮 `visible 1→0→1` ✓、`ExplorerProbe` 找到 hwnd 且**窗口被 `WinHide` 后仍能定位** ✓（`WinExist` 在 `DetectHiddenWindows(false)` 下反而找不到，证明必须走 COM）；面板 11 项 —— 5 个模块页逐页渲染 ✓、保存回写 + 去尾斜杠 ✓、重复 `ShowHelp` 不重建 ✓、关窗后句柄全清 ✓、无 `#32770` 模态框 ✓。⑥ **踩坑**：`ListView` 的事件名是 `ItemSelect`（写 `Change` 会抛 `Parameter #1 of Gui.Control.Prototype.OnEvent is invalid`）；`for` 循环里建的闭包全部指向最后一个变量，按钮回调要用工厂函数把控件当参数传进去。⑦ **面板细节打磨（同日补）**：面板去掉 `+AlwaysOnTop` —— 一置顶，「选择文件夹」对话框就被压在下面看不见；`DirSelect` 的第 2 参数由 `0` 改成 `0x41`（`BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE`），老式对话框没有地址栏、不能粘路径 / 拖入 / 新建文件夹，**这才是「浏览范围小」的真正原因**，换成新式后全盘一步可达；浏览起点按「输入框现有值 → 上次浏览 → `D:\` → 我的文档」挑并记住上次位置；保存按钮改三段反馈（`保存设置` → `保存中…` → `✓ 已保存`，1.2 秒后复原），状态行按语义四色（普通 / 提示 / 警告 / 错误），空输入框加灰字占位（新增可选字段 `placeholder` → `EM_SETCUEBANNER`，只显示不进 `Value`）；左列模块名统一中文 —— `TextModule.GetMetadata()` 此前没给 `name`，平台退回用 `Id` 显示成英文 `Text`，五个模块的 `desc` 一并统一成「功能 · 主热键」；修 `g.OnEvent("Close", … this._OnClosed())` 的方法名拼错（类里只有 `_OnHelpClosed`，点标题栏 × 会抛「没有这个方法」且句柄不清）；面板内容改成**露面之前**填好，不再闪一帧空列表。⑧ **新踩的坑**：本机 v2.0.27 的 `DirSelect` 只收 **3 个参数**，没有「父窗口」位 —— 传第 4 个直接抛 `Too many parameters passed to function`，所以「对话框被面板压住」只能靠不置顶解决。⑨ **左列导航重做**：`≡ 全部热键` 是**视图**（老 Alt+S 的内容），下面才是**模块** —— 靠 `≡` 前缀与第二列的「本页热键条数」一眼区分，不再和模块混成平级；导航两列（名称 / 条数），底部一行统计（`5 个模块 · 共 42 条热键`，口径含平台级热键，与首行数字一致）；右列顶部加页眉显示「当前在哪一页」，页面正文不再重复模块名与描述；`order` 相同时按 `Id` 字典序排，顺序不再取决于登记顺序；**启动失败的模块仍占一行并标 `(失败)`**，其页写明「热键未注册、修复后重启」，而不是渲染成看起来正常的页；切页收敛为 `_GoToRow()` 一条路径（鼠标点 / 键盘上下 / 模块请求定位共用），不再有两套状态各走各的；布局常量 `_Right` / `_RightW` / `_specY` 集中到类顶，改版只动一行。真机 150% DPI 截图核对：两列对齐、选中高亮整行、页脚统计、右列页眉与热键分组层次分明。⑩ **面板格局重排（同日再改）**：`w900 h690` → `w940 h700`，改成**三块底色**——左侧栏（`F2E8D2`，`x0 w232` 整高）、内容底（`FFF8E7`）、底部操作栏（`F2E8D2`，`y648` 起，与侧栏同色把内容框住），左侧不再是「一条白列表浮在米色底上」，保存按钮也不再「浮在空气里」；右列标题拆成**两级**（页眉 `s12 bold` 模块名 / 副标题 `s9` 灰 `desc`），此前挤在一行里两种字号层级就没了；侧栏顶部加 `导航` 小标题、页脚统计上移到 `y640`；设置字段的标签去掉 `BackgroundTrans`（透明 Text 每次重绘都靠底下控件先擦，尺寸一变就留残影），改为继承实色底；灰字统一 `9A9080` → `8A7F66`（原色在米底上偏淡）；**删除 1px 竖分隔线**——它在 150% DPI 下被 `ListView` 自身的凹陷边框吞掉，换 `D8CDB0` 也一样看不见，分区改由底色承担。真机截图核对：侧栏与内容区界线清楚、底栏贯通、文件夹页 3 个字段完整落在底栏上方不被压住。⑪ **切页销毁设置字段（同日再改）**：从「文件夹」切到没有设置的页（如「文本」），上一页的 3 个 `Alt+1/2/3` 输入框与「浏览…」按钮**原地不动**、保存按钮还停在启用态（页标题已换、只有控件没走）—— 根因是 `_ClearSpec()` 里写 `row.ctrl.Destroy()`，而 **AHK v2 的 `Gui.Control` 没有 `Destroy()`**（那是 `Gui` 对象的方法），异常被同一行的 `try` 吞掉、不留一点痕迹；改为 `_KillCtrl()` 走 `DllCall("DestroyWindow", "ptr", ctrl.Hwnd)`（非 `folder` 字段的 `browse` 是空串，`IsObject` 守卫跳过）。验收：文件夹 → 文本（字段全消失、按钮转灰）→ 文件夹（3 个字段正常重建）→ `Esc` 关窗 → 再 `Alt+S` 重开并来回切，`_error.log` 全程为空 |
 | **v2.6.3** | 2026-10-20 | **双击复制后自动收窗**：复制成功即 `Hide()`，鼠标旁 `ToolTip` 闪 1.2 秒「已复制「X」」—— 状态行随窗口一起藏了、看不见，故改用 ToolTip 给确认；清除定时器同样走「箭头函数 + 存字段引用」，`_ClearTip()` 里顺手放掉引用。复制**失败**时不收窗，原因留在状态行。真机探针：双击后 `showing=0` 且剪贴板拿到正文 ✓、1.5 秒后 `_tipTimer` 已清 ✓、收窗后 `Alt+P` 再呼出正常 ✓、`Enter` 路径仍只开编辑窗、主窗留在原地 ✓ |
 | **v2.6.2** | 2026-10-20 | **提示词库交互对调（复制优先）**：`Enter` 由「复制」改为「进入编辑」，双击由「进入编辑」改为「直接复制」—— 复制是高频动作，双击一发就拿到正文走人，不必先进编辑窗再退出来。抽 `_SelectedRow()`（`GetNext()` 选中优先、`GetNext(0,"F")` 焦点兜底）供两个入口共用；`CopySelected()` 更名 `EditSelected()`，另立 `_CopyRow()`。双击表头下方空白（`row = 0`）退回按选中行处理，列表为空时两个入口都只提示「没有选中项」、不抛错。复制成功走 `Notify()`，4 秒回落状态行。真机探针：双击后 `editHwnd=0` 且剪贴板拿到正文 ✓、`Enter` 后编辑窗 `hwnd=2362372` 且标题正确 ✓、空列表不炸 ✓ |

@@ -44,7 +44,7 @@ Kernel 唯一的「回头出口」是**注入**：`EventBus` 不认识 `LogError
 - 根 `SevenWork.ahk` 只是启动器，`#Include src\SevenWork.ahk`；
 - 组合根在 `src/SevenWork.ahk`，平台层在 `src/WorkBench/`，
   模块在 `src/modules/<模块名>/`；
-- 平台能力在 `src/WorkBench/Capabilities/<领域>/`（当前 `Placement/` 与 `Graphics/`）；
+- 平台能力在 `src/WorkBench/Capabilities/<领域>/`（当前 `Placement/` / `Graphics/` / `Shell/` / `Document/`）；
   跨模块协调在 `src/WorkBench/Coordinator/`；
 - `src/SevenWork.ahk` 内部的 `#Include WorkBench\...` / `modules\...` 是相对路径，
   以**该文件所在目录**为基准，别改成从项目根起算。

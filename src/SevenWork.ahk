@@ -138,6 +138,15 @@ Persistent()
 ; ExplorerProbe：按**真实路径**找资源管理器窗口（读 Shell.Application.Windows）。
 ; 不用窗口标题 —— 标题是文件夹名，重名 / 本地化都靠不住。Folders 模块用它做显隐定位。
 #Include WorkBench\Capabilities\Shell\ExplorerProbe.ahk
+; PandocRunner：用 pandoc 把一个文件转成另一个格式（单文件、通用）。
+; pandoc 路径由调用方传入 —— 它不读 Config，与 ExplorerProbe 同一条规矩。
+; ⚠ 与 SevenNote 的 PandocService 并存，不是漏改：那份是笔记保存链路专用
+;   （RTF + 图片搬 _assets + 可用性缓存），改它要动「每次 Alt+Z 都跑」的路径。
+#Include WorkBench\Capabilities\Document\PandocRunner.ahk
+; DocxHeadingFix：把 .docx 里的自定义标题样式名（「三级标题」「半括号标题（五级）」等）
+; 规范成 pandoc 认得的 `heading N` —— 不然整篇会被当成嵌套有序列表、一个标题都出不来。
+; 只读源文件，改的是临时副本；tar.exe 缺失 / 解压失败时返回 {ok:false}，调用方转原件。
+#Include WorkBench\Capabilities\Document\DocxHeadingFix.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  COORDINATION 跨模块协调 —— 读业务状态、发事件、算几何后交给能力层
@@ -324,10 +333,16 @@ Persistent()
 ; 每个槽位指哪个目录写在 _config.ini 的 [Folders]，随时可按需替换；
 ; 替换入口在 Alt+S 呼出的工作台面板里（模块自己声明设置字段，平台只负责渲染）。
 ;
+; 另有一条 Alt+M：把资源管理器里**选中的文件**交给 pandoc 转成同名 .md（存同级目录）。
+; 它的输入是「选中项」而不是槽位，所以是 explorer 上下文热键 —— 只在资源管理器前台
+; 响应，不会去抢别的程序里的 Alt+M。
+;
 ; 顺序有意义：#Include 的先后就是类的可用性，模块类必须最后引入。
 
 #Include modules\Folders\Services\FolderSlotService.ahk
+#Include modules\Folders\Services\FileConvertService.ahk
 #Include modules\Folders\Features\FolderWindowFeature.ahk
+#Include modules\Folders\Features\ConvertFeature.ahk
 #Include modules\Folders\FoldersModule.ahk
 
 
