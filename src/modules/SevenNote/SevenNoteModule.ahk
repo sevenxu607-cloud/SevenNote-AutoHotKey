@@ -7,11 +7,15 @@
 class SevenNoteModule {
     static Id := "SevenNote"
     static Name := "笔记"
+    ; 笔记模块自己的显示名（标题栏用）。工作台叫 SevenWork（Config.AppName），
+    ; 而 Alt+Z 呼出的是**笔记窗口** —— 标题用模块名才与目录 / 模块 Id / 事件名自洽。
+    ; 平台级界面（Alt+S 帮助、启动提示、报错框）仍用 Config.AppName。
+    static Title := "SevenNote"
 
     ; 创建主窗口 + 挂载 Feature（原组合根 3901-3997）
     static Init() {
         ; ─── 创建主窗口 ───
-        g := Gui(, Config.AppName)
+        g := Gui(, this.Title)
         ; +E0x02000000 = WS_EX_COMPOSITED：整个窗口走「离屏双缓冲」重绘。
         ; 编辑区（RichEdit）自己不带双缓冲，滚动时它会先把客户区擦一遍再画文字，那一帧的空档
         ; 就是「上下滑动时略微频闪」的来源。开了合成重绘，父子控件的绘制顺序由系统统一保证，

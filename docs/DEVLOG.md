@@ -11,8 +11,8 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
-- **最近一次改动**：`Ctrl+H` 动态分隔线 + 帮助热键 `Alt+H` → `Alt+S`
-- **正在处理**：`Ctrl+H` 动态分隔线的真机验收（`Alt+S` 帮助已在 2026-10-20 真机验证通过）
+- **最近一次改动**：启动提示改指平台热键 `Alt+S`（笔记模块显示名已还原 `SevenNote`）；此前 `Ctrl+H` 动态分隔线 + 帮助热键 `Alt+H` → `Alt+S`
+- **正在处理**：人工验收 `Ctrl+H` 动态分隔线（标题类改动已真机核过：`Alt+Z` = `SevenNote`、搜索跳转 = `SevenNote · 搜索跳转`、启动提示 = `SevenWork`）
 - **下一步**：人工验收 `Alt+S` / `Ctrl+H`，再跑保存 / 主题 / `Alt+Z` 回归
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -20,6 +20,8 @@
 
 ## 待办与方向
 
+- [x] 启动提示改指平台热键 `Alt+S`（提示窗同步放宽到 `w370`，一行不裁字）
+- [x] 笔记模块窗口标题还原为 `SevenNote`（「搜索跳转」对话框同步），平台级文案仍 `SevenWork`
 - [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
 - [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
@@ -61,6 +63,80 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 02:50　启动提示改指 Alt+S：平台级提示只说平台热键
+
+**我说**（原话）
+> 既然是平台级,就不要显示alt+z .改为alt+s?
+
+**意图**
+启动提示署名 `SevenWork`（工作台），就不该顺手推广笔记模块的 `Alt+Z`；
+改指平台自己的 `Alt+S` —— 帮助页里能看到全部热键（含 `Alt+Z`），层级才一致。
+
+**决定 / 过程**
+- `ShowStartupTip()`：`" 已启动！Alt+Z 呼出"` → `" 已启动！Alt+S 查看帮助"`
+  （措辞与帮助里 `Alt+S 显示本帮助` 对齐）。
+- 排版先量后改：文案实测 314 逻辑像素宽，而原控件 `w200` / 窗口 `w240` 一行放不下
+  （旧文案 275 也一样是折行显示），故控件放宽到 `w330`、窗口 `w370`。
+- 真机读数：提示窗客户端 `555x120` 物理（= `370x80` 逻辑）、文本控件 `495x28`
+  （= `330` 逻辑、单行高）→ **一行完整显示、无裁字**；stderr 空、`exit=0`。
+
+**代价 / 风险**
+提示不再直接告诉用户「怎么呼出笔记」（最高频动作），多一跳（`Alt+S` → 帮助）。
+若要两者兼得，可写成 `SevenWork 已启动！Alt+Z 呼出 / Alt+S 帮助`，需把窗口放宽到 `w470` 左右。
+
+**待办**
+- [ ] 用户确认「只留 `Alt+S`」是否合意，不合意就换上面那版双热键文案
+
+### 2026-10-20 02:30　把笔记模块的显示名还原成 SevenNote
+
+**我说**（原话）
+> 我是想出现 SevenNote这个词,将笔记模块还原SevenNote,本来就是笔记模块的名字,自洽
+
+**意图**
+工作台叫 `SevenWork`，笔记模块本来就叫 `SevenNote`（目录 / 模块 `Id` / 事件名都是它）；
+`Alt+Z` 呼出的是笔记窗口，标题栏该显示模块自己的名字，不该顶程序名。
+
+**决定 / 过程**
+- `SevenNoteModule` 新增 `static Title := "SevenNote"`，主窗口改为 `Gui(, this.Title)`；
+  笔记模块自己的「搜索跳转」对话框改用 `SevenNoteModule.Title . " · 搜索跳转"`。
+- 平台级界面**保持** `Config.AppName`（`SevenWork`）：启动提示、`Alt+S` 帮助、启动报错框、
+  首次运行选目录、Launcher 的 MsgBox。
+- 真机实测（根 `SevenWork.ahk`）：启动提示 `SevenWork 已启动！Alt+Z 呼出`、
+  `Alt+Z` 窗口标题 `SevenNote`、搜索跳转 `SevenNote · 搜索跳转`。
+- 上一轮「旧实例抢热键」的结论同时被证实：旧实例清掉后，`Alt+Z` 立刻显示新标题。
+
+**代价 / 风险**
+窗口标题与程序名不再一致（任务栏 / `Alt+Tab` 显示 `SevenNote`）—— 这正是想要的；
+项目内没有按标题 `"SevenWork"` 认主窗口的代码（匹配一律走 `hwnd` 或模块自己的 `winTitle`），无功能影响。
+
+**待办**
+- [ ] 人工看一眼任务栏 / `Alt+Tab` 的显示是否合心意
+
+### 2026-10-20 02:00　Alt+Z 打开的还是 SevenNote：旧实例未退，不是代码问题
+
+**我说**（原话）
+> 我的意思是alt+z打开的是SevenNote,笔记模块,这里不是打开SevenWork
+
+**意图**
+`Alt+Z` 呼出的笔记窗口应显示 `SevenWork`，实际看到 `SevenNote`。
+
+**决定 / 过程**
+- 标题唯一来源是 `SevenNoteModule.ahk:14 → Gui(, Config.AppName)`，而 `Config.AppName = "SevenWork"`；
+  全仓字符串字面量扫描后，`"SevenNote"` 只剩四处：事件名 `SevenNote.Move` / `SevenNote.WindowReady`、
+  模块内部 `Id`、`A_AppData\SevenNote` 旧数据迁移路径、`PowerShellFeature._legacyWindowTitle`
+  （认旧终端用）—— **都不显示**。
+- 实测：启动根 `SevenWork.ahk` 后按 `Alt+Z`，Win32 读到窗口标题 `SevenWork`；
+  启动提示为 `SevenWork 已启动！Alt+Z 呼出`；全系统窗口枚举**没有任何** `SevenNote` 标题的窗口。
+- 结论：用户看到的是**改名之前启动、一直没退出的旧实例**。旧脚本路径不同，
+  `#SingleInstance Force` 不会清理它；热键先注册者优先，于是 `Alt+Z` 被旧实例接管。
+- 处理：结束系统里所有 AutoHotkey 实例，只留新版（命令行指向根 `SevenWork.ahk`）。
+
+**代价 / 风险**
+结束进程前未保存的编辑内容会丢（自动保存两分钟一档）。测试实例留在运行，验证完可 `Alt+Shift+Z` 退出。
+
+**待办**
+- [ ] 用户按 `Alt+Z` 复核标题；若仍为 `SevenNote`，按窗口句柄反查那个旧进程的脚本路径
 
 ### 2026-10-20 01:40　[仅讨论] 核查合并结果：无冲突残留，真机启动正常
 

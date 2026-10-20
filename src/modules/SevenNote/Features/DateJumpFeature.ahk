@@ -11,7 +11,8 @@ class DateJumpFeature {
     }
 
     static ShowDialog() {
-        winTitle := Config.AppName . " · 搜索跳转"
+        ; 这是笔记模块自己的对话框，标题跟着模块显示名走（不借用工作台的 Config.AppName）
+        winTitle := SevenNoteModule.Title . " · 搜索跳转"
         if WinExist(winTitle . " ahk_class AutoHotkeyGUI") {
             WinActivate(winTitle . " ahk_class AutoHotkeyGUI")
             return

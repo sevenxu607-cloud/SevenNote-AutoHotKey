@@ -459,9 +459,11 @@ ShowStartupTip() {
     tip := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "提示")
     tip.SetFont("s14", "楷体")
     tip.BackColor := "E4E9EE"
-    tip.AddText("x20 y20 w200 Center c3D5166", Config.AppName . " 已启动！Alt+Z 呼出")
+    ; 平台级提示只指向平台级热键：Alt+S 打开帮助（里面才有模块热键 Alt+Z 等）。
+    ; 文案实测 314 逻辑像素宽，控件取 w330、窗口取 w370 才能一行放完不被裁。
+    tip.AddText("x20 y20 w330 Center c3D5166", Config.AppName . " 已启动！Alt+S 查看帮助")
     tipY := A_ScreenHeight * 0.65
-    tip.Show("w240 h80 y" . tipY)
+    tip.Show("w370 h80 y" . tipY)
     ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，
     ;   而 SetTimer 回调没有外层 try，异常即弹模态框（见 .clinerules/03）。
     SetTimer(() => DestroyTipWindow(tip), -1500)
