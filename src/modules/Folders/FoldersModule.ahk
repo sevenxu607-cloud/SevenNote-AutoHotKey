@@ -1,0 +1,95 @@
+#Requires AutoHotkey v2.0
+; ═══════════════════════════════════════════════════════════════════════════
+;  FoldersModule —— 文件夹模块（资源的入口）
+; ═══════════════════════════════════════════════════════════════════════════
+; 定位：**本模块不建自己的窗口**，只负责把系统的资源管理器窗口喊出来 / 收起来。
+;   对一个「文件夹」而言，容器是 Explorer 自己提供的 —— 我们只做热键与定位。
+;
+; 核心设计：**热键写死、目标可换**。
+;   文件夹太多，一个目录一个热键会吃光键盘；所以固定 Alt+1/2/3 三个槽位，
+;   每个槽位绑哪个目录写在 _config.ini，随时可按需替换。
+;   替换入口在 Alt+S 呼出的工作台面板里（模块自己声明设置字段，平台负责渲染）。
+;
+; 生命周期（照平台的 Init → RegisterAll → Start 三段式）：
+;   Init()   读一次槽位，把「哪个槽位没配 / 目录没了」记进日志 —— 只碰配置，不碰窗口
+;   Start()  无对外可见动作，不实现
+;   GetContexts  不需要：三条热键全是全局的，没有窗口内上下文
+
+class FoldersModule {
+    static Id := "Folders"
+    static Name := "文件夹"
+
+    static _initialized := false
+
+    static Init() {
+        if this._initialized
+            return
+        this._initialized := true
+
+        ; 槽位配错的提示放在启动时写一次，而不是等用户按了才发现：
+        ; 这只是磁盘/配置检查，不碰窗口，符合「Init 只做内部就绪」的约定。
+        loop FolderSlotService.Count {
+            state := FolderSlotService.GetUsable(A_Index)
+            if (state.ok)
+                continue
+            label := FolderSlotService.HotkeyLabel(A_Index)
+            if (state.reason = "missing")
+                LogError("文件夹槽位 " . label . " 指向的目录不存在：" . state.path)
+            ; 空槽位是**正常状态**（第一次用还没配），不记日志。
+        }
+    }
+
+    ; ═══ 热键 ═══
+    ; 三个槽位各一条。加槽位只需把 FolderSlotService.Count 调大，并在这里补一行 ——
+    ; 帮助窗口与面板都从 GetHotkeys / 服务读，不用再改别处。
+    static GetHotkeys() {
+        return [
+            {ctx: "global", key: "!1", group: "文件夹"
+                , line: "   Alt+1            呼出 / 隐藏槽位 1 的文件夹"
+                , fn: (*) => FolderWindowFeature.Toggle(1)},
+            {ctx: "global", key: "!2", group: "文件夹"
+                , line: "   Alt+2            呼出 / 隐藏槽位 2 的文件夹"
+                , fn: (*) => FolderWindowFeature.Toggle(2)},
+            {ctx: "global", key: "!3", group: "文件夹"
+                , line: "   Alt+3            呼出 / 隐藏槽位 3 的文件夹"
+                , fn: (*) => FolderWindowFeature.Toggle(3)}
+        ]
+    }
+
+    ; ═══ 面板设置声明 ═══
+    ; 平台（WorkBenchUI）只认 {label, kind, value} 三个字段，**不认识「槽位」这个词**；
+    ; 保存时把 values 原样交回这里的 apply 函数，由本模块自己写配置。
+    ; 这样平台零业务耦合，将来别的模块加设置照抄这份形状即可。
+    ; kind 目前支持 "folder"（输入框 + 浏览按钮）；后续可扩 "text" / "number" / "toggle"。
+    ; ⚠ 平台调用时**必须先把 apply 取到局部变量再调**：AHK v2 的 obj.prop(args)
+    ;   走方法查找，属性里存的 Func 不会被调用（见 .clinerules/03）。
+    static GetSettingsSpec() {
+        fields := []
+        loop FolderSlotService.Count {
+            slot := A_Index
+            fields.Push({
+                key:   "Slot" . slot,
+                label: FolderSlotService.HotkeyLabel(slot) . " →",
+                kind:  "folder",
+                value: FolderSlotService.Get(slot),
+                ; 平台支持的可选字段：空输入框里的灰色提示（EM_SETCUEBANNER）。
+                ; 只显示、不写入 —— 不填直接保存，存进去的仍是空串（= 该槽位未启用）。
+                placeholder: "留空 = 不启用，也可直接粘贴路径"
+            })
+        }
+        return {
+            title:  "文件夹槽位",
+            hint:   "热键固定为 Alt+1/2/3，指向哪个文件夹随时换；留空 = 该槽位未启用。"
+                . "`n浏览窗口的地址栏能直接粘贴路径（如 D:\Work），上次浏览的位置会被记住。",
+            fields: fields,
+            apply:  (values) => FolderSlotService.SaveAll(values)
+        }
+    }
+
+    ; 帮助窗口（Alt+S）用：order 决定模块在面板里的先后
+    ; （平台 0 / 笔记 20 / 外部程序 30 / 文件夹 35 / 文本 40）。
+    static GetMetadata() {
+        return {name: this.Name, desc: "文件夹槽位 · Alt+1/2/3", order: 35
+            , hotkeys: this.GetHotkeys()}
+    }
+}

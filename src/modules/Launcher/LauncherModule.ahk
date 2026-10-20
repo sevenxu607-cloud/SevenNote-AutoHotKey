@@ -62,7 +62,7 @@ class LauncherModule {
 
     static GetMetadata() {
         ; order 让帮助里的「输入增强」保持旧顺序：CapsLock 层 → Alt+C / Alt+X。
-        return {name: this.Name, desc: "PowerShell / DeepSeek", order: 30
+        return {name: this.Name, desc: "PowerShell / DeepSeek · Alt+C", order: 30
             , hotkeys: this.GetHotkeys()}
     }
 }

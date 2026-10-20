@@ -4,7 +4,7 @@
 
 class Config {
     static AppName := "SevenWork"
-    static Version := "2.4.5"
+    static Version := "2.7"
 
     ; ⚠ 配置目录与 pandoc 目录**故意不同**，不是笔误：
     ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按版本隔离 ——

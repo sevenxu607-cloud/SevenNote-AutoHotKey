@@ -135,6 +135,9 @@ Persistent()
 #Include WorkBench\Capabilities\Placement\WindowProbe.ahk
 #Include WorkBench\Capabilities\Placement\PlacementExecutor.ahk
 #Include WorkBench\Capabilities\Graphics\BackdropService.ahk
+; ExplorerProbe：按**真实路径**找资源管理器窗口（读 Shell.Application.Windows）。
+; 不用窗口标题 —— 标题是文件夹名，重名 / 本地化都靠不住。Folders 模块用它做显隐定位。
+#Include WorkBench\Capabilities\Shell\ExplorerProbe.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  COORDINATION 跨模块协调 —— 读业务状态、发事件、算几何后交给能力层
@@ -312,6 +315,23 @@ Persistent()
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
+;  MODULE 模块层 · Folders（Phase 7：文件夹槽位 —— 热键写死、目标可换）
+; ═══════════════════════════════════════════════════════════════════════════
+; 与前两个「数据面」模块都不同：本模块**不建自己的窗口**，只负责把系统的资源管理器
+; 窗口喊出来 / 收起来（容器由 Explorer 提供）。
+;
+; 核心：文件夹太多，一个目录配一个热键会吃光键盘 —— 所以固定 Alt+1/2/3 三个槽位，
+; 每个槽位指哪个目录写在 _config.ini 的 [Folders]，随时可按需替换；
+; 替换入口在 Alt+S 呼出的工作台面板里（模块自己声明设置字段，平台只负责渲染）。
+;
+; 顺序有意义：#Include 的先后就是类的可用性，模块类必须最后引入。
+
+#Include modules\Folders\Services\FolderSlotService.ahk
+#Include modules\Folders\Features\FolderWindowFeature.ahk
+#Include modules\Folders\FoldersModule.ahk
+
+
+; ═══════════════════════════════════════════════════════════════════════════
 ;  组合根 —— 装配 + 启动
 ; ═══════════════════════════════════════════════════════════════════════════
 
@@ -485,11 +505,11 @@ ShowStartupTip() {
     tip := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "提示")
     tip.SetFont("s14", "楷体")
     tip.BackColor := "E4E9EE"
-    ; 平台级提示只指向平台级热键：Alt+S 打开帮助（里面才有模块热键 Alt+Z 等）。
+    ; 平台级提示只指向平台级热键：Alt+S 打开工作台（里面才有模块热键 Alt+Z 等）。
     ; 上下两行：一行要 314 逻辑像素、横条太宽观感差；拆开后每行 ≤153，窗口回到窄条 w240。
     ; 控件 h48 是两行高度（单行约 18.7），窗口 h80 容得下（y16 + 48 = 64）。
     tip.AddText("x20 y16 w200 h48 Center c3D5166"
-        , Config.AppName . " 已启动！`nAlt+S 查看帮助")
+        , Config.AppName . " 已启动！`nAlt+S 打开工作台")
     tipY := A_ScreenHeight * 0.65
     tip.Show("w240 h80 y" . tipY)
     ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，

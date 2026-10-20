@@ -30,7 +30,7 @@ class KeysInputModule {
 
     static GetMetadata() {
         ; order = 20：帮助的「输入增强」里排在 Launcher（30）之前，保持旧顺序。
-        return {name: this.Name, desc: "CapsLock 层", order: 20
+        return {name: this.Name, desc: "CapsLock 层 · Alt+Shift+C", order: 20
             , hotkeys: this.GetHotkeys()}
     }
 }

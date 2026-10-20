@@ -16,14 +16,16 @@ src/WorkBench/
 │  │  ├─ RectMath.ahk          纯几何：堆叠方案、外框换算、角点、相交
 │  │  ├─ WindowProbe.ahk       窗口 / 工作区事实查询
 │  │  └─ PlacementExecutor.ahk 唯一搬窗口出口
-│  └─ Graphics/
-│     └─ BackdropService.ahk   背景图图层 + 位图合成
+│  ├─ Graphics/
+│  │  └─ BackdropService.ahk   背景图图层 + 位图合成
+│  └─ Shell/
+│     └─ ExplorerProbe.ahk     按真实路径找资源管理器窗口
 ├─ Coordinator/                跨模块协调：读业务上下文、发事件、算几何
 │  └─ PeerCoordinator.ahk
 ├─ ModuleRegistry.ahk
 ├─ HotkeyRouter.ahk
 ├─ WorkBenchUI.ahk
-└─ WorkBench.ahk               组合根：装配 3 个模块
+└─ WorkBench.ahk               组合根：装配 5 个模块
 ```
 
 `Coordinator/` **不并进** `Capabilities/`：协调器必须读 `Config`、订阅 / 发布事件，
@@ -206,6 +208,29 @@ BackdropService.Render(x, y, w, h)
 > 设为 `WS_EX_TRANSPARENT`；失败时恢复不透明、隐藏图层、清掉尺寸记忆，退回主题纯色。
 > 绝不能留下「编辑区透明 + 没有图」的组合。
 
+### 4.5 `ExplorerProbe`（资源管理器窗口）
+
+```ahk
+ExplorerProbe.ListWindows()          ; → [{hwnd, path}, ...]
+ExplorerProbe.FindFor(path)          ; → hwnd；找不到为 0
+ExplorerProbe.IsExplorerWindow(hwnd) ; → bool
+ExplorerProbe.SamePath(a, b)         ; → bool
+ExplorerProbe.NormalizePath(path)    ; → 归一化后的路径串
+```
+
+按**真实路径**找资源管理器窗口：读 `Shell.Application.Windows` 的
+`Document.Folder.Self.Path`，再与目标路径做归一化比对（去两端空白与末尾反斜杠、统一大小写；
+盘根 `D:\` 保留反斜杠）。
+
+窗口标题是**文件夹名**（`Documents`、`本地磁盘 (C:)`），重名与本地化都靠不住，所以不用它。
+
+- 失败（COM 不可用 / 遍历中途出错）返回 `0` 或已收集到的部分数组，**不抛错**；
+- 没有文件夹路径的壳窗口（「此电脑」/「快速访问」/ 桌面）会被跳过；
+- ⚠ 被 `WinHide` 藏起来的窗口**仍然在集合里**（实测：隐藏后 `FindFor` 照常返回原 `hwnd`），
+  而 `WinExist` 在 `DetectHiddenWindows(false)` 下会返回 `0` —— 判断「这个文件夹有没有开着的窗口」
+  只能走本能力，不能靠 `WinExist`；
+- 本能力**只查不动**：显示 / 隐藏 / 激活都由调用方负责（`FolderWindowFeature`）。
+
 ---
 
 ## 5. 不该放进 `Capabilities` 的东西
@@ -265,7 +290,7 @@ Coordinator
 
 ## 8. 当前边界说明
 
-- `WorkBench.ahk` 仍硬编码模块清单（SevenNote / Launcher / KeysInput / Text），
+- `WorkBench.ahk` 仍硬编码模块清单（SevenNote / Launcher / KeysInput / Text / Folders），
   本轮不改成 `WorkBench.Init(modules)`；
 - `HotkeyRouter` 的上下文**已改为表驱动**（加 Text 模块时一并做的）：注册哪些 ctx
   由各模块 `GetContexts()` 决定，Router 里不再有 `global` / `editor` / `search` 字面量。

@@ -172,6 +172,23 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 - 写长文时手不离主键区
 - 可选，不影响正常 CapsLock 使用
 
+### 📂 文件夹快捷槽位
+
+`Alt+1 / Alt+2 / Alt+3` 各绑一个目录：按一下呼出、再按一下收起，和 `Alt+C` 终端同一套显隐逻辑
+（开着但不在前台时只激活、不收起 —— 免得「按一下就没」）。
+
+槽位指向哪个目录**不写死**：`Alt+S` 面板里选「文件夹」，点「浏览…」换一个目录，保存即生效。
+
+- 浏览窗口是**新版**文件夹对话框（`BIF_NEWDIALOGSTYLE`）：带地址栏，可以直接把 `D:\Work`
+  粘进去，全盘任意位置一步可达；上次浏览到的目录会被记住；
+- 起点按「输入框里的现有值 → 上次浏览的目录 → `D:\` → 我的文档」挑 —— 本机有 D 盘就从 D 盘起步；
+- 定位靠资源管理器的**真实路径**（读 `Shell.Application`），不靠窗口标题 ——
+  两个同名的 `Documents` 也不会认错，中英文系统的表现一致；
+- 三个槽位默认留空（输入框里有灰字提示），按下会直接打开面板并停在「文件夹」页引导你设置；
+- 面板**不置顶**、保存按钮会亮出「✓ 已保存」—— 前者保证浏览对话框不会被压在面板下面，
+  后者保证「点了到底有没有生效」看得见；
+- ⚠ 属于全系统热键，会占用其它程序的 `Alt+1/2/3`。
+
 ---
 
 ## 🚀 快速开始
@@ -202,6 +219,8 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `src\modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
 | `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
+| `src\modules\Text\` | 文本模块：提示词库（`Alt+P`）—— 2 个 Feature + `PromptStoreService` + 模块生命周期 |
+| `src\modules\Folders\` | 文件夹模块：`Alt+1/2/3` 三个槽位（不建自己的窗口，只驱动资源管理器） |
 | `docs\legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
 | `docs\screenshots\` | README 配图 |
@@ -220,7 +239,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Alt+Shift+Z` | 保存并退出 |
 | `Alt+C` | 呼出 / 隐藏 PowerShell，笔记窗口自动与它上下对齐成规整一列 |
 | `Alt+X` | 呼出 / 隐藏 DeepSeek 网页（**独立 profile 的普通 Edge 窗口**，标签栏与工具栏齐全，窗口内可直接浏览网页），同样自动与笔记对齐 |
-| `Alt+S` | 显示快捷键帮助 |
+| `Alt+S` | 打开**工作台面板**：左侧导航选页（`≡ 全部热键` / 各模块），右侧看该页热键、直接改该模块的设置 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
 | `Alt+T` | 切换主题（含两套背景图主题「星空 / 金克斯」） |
@@ -228,6 +247,10 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Alt+= / Alt+-` | 调大 / 调小字号 |
 | `Alt+Shift+C` | 切换 CapsLock 键盘映射 |
 | `Alt+P` | 呼出 / 隐藏**提示词库**（片段库，数据在 `<Vault>\_prompts\`） |
+| `Alt+1 / Alt+2 / Alt+3` | 呼出 / 隐藏**文件夹槽位 1 / 2 / 3** —— 指向哪个目录在 `Alt+S` 面板里换，留空表示该槽位未启用 |
+
+> ⚠ `Alt+1/2/3` 是**全系统**热键，会占用其它程序的这三个组合。三个槽位默认留空，
+> 第一次按下会直接打开工作台面板并停在「文件夹」页，指着旁边的「浏览…」选一个目录即可。
 
 ### 编辑器内热键（窗口激活时）
 
@@ -511,11 +534,52 @@ class ExportFeature {
 ```
 
 `group` 取 `WorkBenchUI._GroupOrder` 里的组名之一（平台 / 窗口 / 外观 / 输入增强 /
-搜索 / 保存 / 日期与标签 / 编辑 / 分段）。新组不在表里也没关系，会按首次出现顺序
+搜索 / 文本 / 文件夹 / 保存 / 日期与标签 / 编辑 / 分段）。新组不在表里也没关系，会按首次出现顺序
 自动追加到帮助末尾 —— 不用改显示函数。
 
 **完成**，不需要改任何其他 Feature，也不用再去帮助窗口里补文本：
-`HotkeyRouter` 注册与 `WorkBenchUI` 帮助读的是同一份模块数据。
+`HotkeyRouter` 注册与 `WorkBenchUI` 面板读的是同一份模块数据。
+
+### 给模块加一项可调设置（`Alt+S` 面板里可改）
+
+模块**可选**实现 `GetSettingsSpec()`，面板就会在它的页面多出一块设置区。
+平台只认「怎么渲染」，不认识字段的业务含义 —— 所以加设置**不用碰 `WorkBenchUI`**。
+
+```ahk
+class MyModule {
+    static GetSettingsSpec() {
+        return {
+            title:  "我的设置",
+            hint:   "一句话说明默认值与留空的含义",
+            fields: [
+                {key: "Slot1", label: "Alt+1 →", kind: "folder", value: MyService.Get(1)}
+            ],
+            ; 保存时平台把输入框的值按声明顺序装成数组交回来，由模块自己决定怎么落盘。
+            ; 返回 true / false；false 时面板显示「保存失败」。
+            apply:  (values) => MyService.SaveAll(values)
+        }
+    }
+}
+```
+
+| `kind` | 渲染成 | 备注 |
+| --- | --- | --- |
+| `folder` | 输入框 + 「浏览…」（`DirSelect` + `BIF_NEWDIALOGSTYLE`） | 取消选择时不改动原值；起点按「现有值 → 上次浏览 → `D:\` → 我的文档」挑 |
+| `text` | 普通输入框 | `kind` 缺省即此 |
+
+字段除 `key` / `label` / `kind` / `value` 外，还可以给一个可选的 **`placeholder`** ——
+空输入框里的灰色提示（`EM_SETCUEBANNER`）。它只显示、**不进 `Value`**：
+用户不填直接保存，存进去的仍是空串（所以正适合写「留空 = 不启用」这种话）。
+
+- 面板每切一次模块会**销毁上一页的控件再重建**，模块只需给出当前值，不用管生命周期；
+- 保存成功后本页会重画一次 —— 模块可以在 `apply` 里把值规整成最终形态（如去掉末尾反斜杠）；
+- 保存按钮自带三段反馈：「保存设置」→「保存中…」→「✓ 已保存」（1.2 秒后复原），
+  失败时亮「✗ 失败」且状态行变红 —— 模块不用自己造反馈；
+- ⚠ 平台调用 `apply` 时**先取到局部变量再调**：AHK v2 的 `obj.prop(args)` 走方法查找，
+  属性里存的 `Func` 不会被调用（见 `.clinerules/03`）。模块自己写调用代码也要照此办理。
+- ⚠ **`GetMetadata()` 必须给 `name`**：平台拿不到就退回用 `Id`（英文），面板左列会冒出
+  一个 `Text` 这种与其它中文条目格格不入的名字（v2.7 踩过）。`desc` 建议统一成
+  「一句话功能 · 主热键」，例如 `提示词库 · Alt+P`。
 
 ### 添加新主题
 
@@ -1153,6 +1217,7 @@ Windows Terminal 的 settings.json
 
 | 版本 | 日期 | 变化 |
 | --- | --- | --- |
+| **v2.7** | 2026-10-20 | **新增 Folders 模块（`Alt+1/2/3`）+ `Alt+S` 升级为工作台面板**。① **文件夹槽位**：热键写死、目标可换 —— 固定 `Alt+1/2/3` 三个槽位，各指哪个目录存在 `_config.ini` 的 `[Folders] Slot1/2/3`，随时在面板里换。显隐语义与 `Alt+C` / `Alt+X` 一致：没开 → 打开、开着且在前台 → `WinHide`、开着不在前台 → 只激活、藏着 → `WinShow` + `WinRestore` + 激活。② **定位不走标题**：资源管理器标题是文件夹名（重名 / 本地化都不可靠），新增能力 `WorkBench/Capabilities/Shell/ExplorerProbe.ahk` 读 `Shell.Application.Windows` 的 `Document.Folder.Self.Path` 做真实路径比对。③ **面板改造**：`WorkBenchUI` 从「一坨纯文本帮助」变成左列模块 / 右列热键 + 设置的管控面板（`w900 h690` 逻辑，首项「总览」保留原全部热键视图）；模块**可选**实现 `GetSettingsSpec()` 返回 `{title, hint, fields, apply}`，平台只认 `kind`（`folder` = 输入框 + `DirSelect`），零业务耦合 —— 加设置不用碰 `WorkBenchUI`。④ **未配置的处理**：按空槽位不弹模态框，而是发 `Panel.OpenRequested` 事件，面板自动打开并定位到「文件夹」页。⑤ **验收（真机 150% DPI）**：`Alt+1` 未配置 → 窗口标题变 `SevenWork · 工作台` 且停在 Folders 页 ✓；探针 15 项 —— 槽位四态（有值 / 空 / 目录不存在 / 尾斜杠归一）、`Toggle` 三轮 `visible 1→0→1` ✓、`ExplorerProbe` 找到 hwnd 且**窗口被 `WinHide` 后仍能定位** ✓（`WinExist` 在 `DetectHiddenWindows(false)` 下反而找不到，证明必须走 COM）；面板 11 项 —— 5 个模块页逐页渲染 ✓、保存回写 + 去尾斜杠 ✓、重复 `ShowHelp` 不重建 ✓、关窗后句柄全清 ✓、无 `#32770` 模态框 ✓。⑥ **踩坑**：`ListView` 的事件名是 `ItemSelect`（写 `Change` 会抛 `Parameter #1 of Gui.Control.Prototype.OnEvent is invalid`）；`for` 循环里建的闭包全部指向最后一个变量，按钮回调要用工厂函数把控件当参数传进去。⑦ **面板细节打磨（同日补）**：面板去掉 `+AlwaysOnTop` —— 一置顶，「选择文件夹」对话框就被压在下面看不见；`DirSelect` 的第 2 参数由 `0` 改成 `0x41`（`BIF_RETURNONLYFSDIRS|BIF_NEWDIALOGSTYLE`），老式对话框没有地址栏、不能粘路径 / 拖入 / 新建文件夹，**这才是「浏览范围小」的真正原因**，换成新式后全盘一步可达；浏览起点按「输入框现有值 → 上次浏览 → `D:\` → 我的文档」挑并记住上次位置；保存按钮改三段反馈（`保存设置` → `保存中…` → `✓ 已保存`，1.2 秒后复原），状态行按语义四色（普通 / 提示 / 警告 / 错误），空输入框加灰字占位（新增可选字段 `placeholder` → `EM_SETCUEBANNER`，只显示不进 `Value`）；左列模块名统一中文 —— `TextModule.GetMetadata()` 此前没给 `name`，平台退回用 `Id` 显示成英文 `Text`，五个模块的 `desc` 一并统一成「功能 · 主热键」；修 `g.OnEvent("Close", … this._OnClosed())` 的方法名拼错（类里只有 `_OnHelpClosed`，点标题栏 × 会抛「没有这个方法」且句柄不清）；面板内容改成**露面之前**填好，不再闪一帧空列表。⑧ **新踩的坑**：本机 v2.0.27 的 `DirSelect` 只收 **3 个参数**，没有「父窗口」位 —— 传第 4 个直接抛 `Too many parameters passed to function`，所以「对话框被面板压住」只能靠不置顶解决。⑨ **左列导航重做**：`≡ 全部热键` 是**视图**（老 Alt+S 的内容），下面才是**模块** —— 靠 `≡` 前缀与第二列的「本页热键条数」一眼区分，不再和模块混成平级；导航两列（名称 / 条数），底部一行统计（`5 个模块 · 共 42 条热键`，口径含平台级热键，与首行数字一致）；右列顶部加页眉显示「当前在哪一页」，页面正文不再重复模块名与描述；`order` 相同时按 `Id` 字典序排，顺序不再取决于登记顺序；**启动失败的模块仍占一行并标 `(失败)`**，其页写明「热键未注册、修复后重启」，而不是渲染成看起来正常的页；切页收敛为 `_GoToRow()` 一条路径（鼠标点 / 键盘上下 / 模块请求定位共用），不再有两套状态各走各的；布局常量 `_Right` / `_RightW` / `_specY` 集中到类顶，改版只动一行。真机 150% DPI 截图核对：两列对齐、选中高亮整行、页脚统计、右列页眉与热键分组层次分明。⑩ **面板格局重排（同日再改）**：`w900 h690` → `w940 h700`，改成**三块底色**——左侧栏（`F2E8D2`，`x0 w232` 整高）、内容底（`FFF8E7`）、底部操作栏（`F2E8D2`，`y648` 起，与侧栏同色把内容框住），左侧不再是「一条白列表浮在米色底上」，保存按钮也不再「浮在空气里」；右列标题拆成**两级**（页眉 `s12 bold` 模块名 / 副标题 `s9` 灰 `desc`），此前挤在一行里两种字号层级就没了；侧栏顶部加 `导航` 小标题、页脚统计上移到 `y640`；设置字段的标签去掉 `BackgroundTrans`（透明 Text 每次重绘都靠底下控件先擦，尺寸一变就留残影），改为继承实色底；灰字统一 `9A9080` → `8A7F66`（原色在米底上偏淡）；**删除 1px 竖分隔线**——它在 150% DPI 下被 `ListView` 自身的凹陷边框吞掉，换 `D8CDB0` 也一样看不见，分区改由底色承担。真机截图核对：侧栏与内容区界线清楚、底栏贯通、文件夹页 3 个字段完整落在底栏上方不被压住。⑪ **切页销毁设置字段（同日再改）**：从「文件夹」切到没有设置的页（如「文本」），上一页的 3 个 `Alt+1/2/3` 输入框与「浏览…」按钮**原地不动**、保存按钮还停在启用态（页标题已换、只有控件没走）—— 根因是 `_ClearSpec()` 里写 `row.ctrl.Destroy()`，而 **AHK v2 的 `Gui.Control` 没有 `Destroy()`**（那是 `Gui` 对象的方法），异常被同一行的 `try` 吞掉、不留一点痕迹；改为 `_KillCtrl()` 走 `DllCall("DestroyWindow", "ptr", ctrl.Hwnd)`（非 `folder` 字段的 `browse` 是空串，`IsObject` 守卫跳过）。验收：文件夹 → 文本（字段全消失、按钮转灰）→ 文件夹（3 个字段正常重建）→ `Esc` 关窗 → 再 `Alt+S` 重开并来回切，`_error.log` 全程为空 |
 | **v2.6.3** | 2026-10-20 | **双击复制后自动收窗**：复制成功即 `Hide()`，鼠标旁 `ToolTip` 闪 1.2 秒「已复制「X」」—— 状态行随窗口一起藏了、看不见，故改用 ToolTip 给确认；清除定时器同样走「箭头函数 + 存字段引用」，`_ClearTip()` 里顺手放掉引用。复制**失败**时不收窗，原因留在状态行。真机探针：双击后 `showing=0` 且剪贴板拿到正文 ✓、1.5 秒后 `_tipTimer` 已清 ✓、收窗后 `Alt+P` 再呼出正常 ✓、`Enter` 路径仍只开编辑窗、主窗留在原地 ✓ |
 | **v2.6.2** | 2026-10-20 | **提示词库交互对调（复制优先）**：`Enter` 由「复制」改为「进入编辑」，双击由「进入编辑」改为「直接复制」—— 复制是高频动作，双击一发就拿到正文走人，不必先进编辑窗再退出来。抽 `_SelectedRow()`（`GetNext()` 选中优先、`GetNext(0,"F")` 焦点兜底）供两个入口共用；`CopySelected()` 更名 `EditSelected()`，另立 `_CopyRow()`。双击表头下方空白（`row = 0`）退回按选中行处理，列表为空时两个入口都只提示「没有选中项」、不抛错。复制成功走 `Notify()`，4 秒回落状态行。真机探针：双击后 `editHwnd=0` 且剪贴板拿到正文 ✓、`Enter` 后编辑窗 `hwnd=2362372` 且标题正确 ✓、空列表不炸 ✓ |
 | **v2.6.1** | 2026-10-20 | **提示词库可用性**。① **分类改可编辑下拉**：展开列出 `_prompts\` 现有目录（含空目录、含 `Code/代码审查` 多级，显示用 `/`），也能直接手输；`_lastCat` 记住上次用过的分类（只放内存，不落盘以免动 Kernel 冻结的 `Config`）。⚠ 控件读写**不走 `ComboBox.Value`** —— 赋值要求值必须在下拉列表里，否则抛 `Invalid value`，而「目录被删了 / 刚手输新分类」正是常态，改用 `WM_SETTEXT`(0x0C) / `WM_GETTEXT`(0x0D)。② **删除改就地二次确认**：弃 `MsgBox`（模态框被置顶的编辑窗口压在后面，表现成「点了没反应」）—— 点一次按钮变「确认删除」+ 提示行红字「3 秒内有效」，3 秒内再点才真删，超时 / 关窗 / 保存自动复原；保存失败也改写到提示行，编辑窗口里**不再有任何模态框**。③ **状态反馈**：保存 / 删除后主窗口状态行显示「已保存「X」」，4 秒回落。④ **踩坑**：AHK v2.0.27 的 `SetTimer` **不接受类静态方法的函数对象**（`Type()` 是 `Func` 却报 `Invalid callback function`），必须用箭头函数并把闭包引用存字段，才能用同一引用 `SetTimer(fn, 0)` 停掉；`LOG` 是内置数学函数名、`Typeof` 不存在（是 `Type`）。⑤ **验收**：`Work/会议` 多级分类落盘 ✓；重开只改正文再存**不产生 `-2` 副本** ✓（`Save` 拼路径与 `LoadAll` 读到的 `dirPart` 同为单反斜杠）；二次点击才删 ✓；3.8 秒超时自动复原且文件仍在 ✓ |

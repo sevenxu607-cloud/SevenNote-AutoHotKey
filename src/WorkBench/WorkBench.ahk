@@ -19,18 +19,19 @@ class WorkBench {
         ModuleRegistry.Register(LauncherModule)
         ModuleRegistry.Register(KeysInputModule)
         ModuleRegistry.Register(TextModule)
+        ModuleRegistry.Register(FoldersModule)
 
         ; Phase 3b：先挂上 Launcher.Opened / SevenNote.WindowReady 的监听。
         PeerCoordinator.Init()
         WorkBenchUI.Init()
     }
 
-    ; ─── 平台级热键：帮助 + 保存退出 ───
-    ; Alt+S 由平台负责显示帮助；Alt+Shift+Z 只广播 Save.Requested，
+    ; ─── 平台级热键：工作台面板 + 保存退出 ───
+    ; Alt+S 由平台负责打开面板（帮助 + 各模块设置）；Alt+Shift+Z 只广播 Save.Requested，
     ; 真正落盘仍由 SevenNote 的 SaveFeature 订阅处理 —— 平台不直接调用模块内部 Feature。
     static GetHotkeys() {
         return [
-            {ctx: "global", key: "!s", group: "平台", line: "   Alt+S            显示本帮助"
+            {ctx: "global", key: "!s", group: "平台", line: "   Alt+S            工作台面板（帮助 + 设置）"
                 , fn: (*) => WorkBenchUI.ShowHelp()},
             {ctx: "global", key: "!+z", group: "平台", line: "   Alt+Shift+Z      保存并退出"
                 , fn: (*) => (EventBus.Emit("Save.Requested"), ExitApp())}

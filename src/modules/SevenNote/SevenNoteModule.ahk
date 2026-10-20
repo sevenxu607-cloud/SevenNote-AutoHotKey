@@ -204,7 +204,7 @@ class SevenNoteModule {
     }
 
     static GetMetadata() {
-        return {name: this.Name, desc: "笔记编辑与检索", order: 10
+        return {name: this.Name, desc: "笔记编辑与检索 · Alt+Z", order: 10
             , hotkeys: this.GetHotkeys()}
     }
 
