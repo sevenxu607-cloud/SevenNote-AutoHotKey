@@ -36,6 +36,17 @@ class Config {
     }
     static SetVault(path) => ConfigService.Write("Paths", "Vault", path)
 
+    ; 提示词库根目录（Text 模块的数据面）。
+    ; 默认挂在 Vault 下的 `_prompts\` —— 数据跟着笔记库走，备份 / 迁移只有一处。
+    ; 想让它独立（单独同步、放别的盘）就在 _config.ini 写 `[Paths] PromptsDir=...`，
+    ; 非空即覆盖。留这个口子是为了「不逼用户把两类数据绑死」，默认则零配置。
+    static GetPromptsDir() {
+        d := ConfigService.Read("Paths", "PromptsDir")
+        if (d = "")
+            return this.GetVault() . "\_prompts"
+        return d
+    }
+
     ; 首次呼出时窗口距屏幕工作区右边 / 顶边的距离（物理像素）
     static PlaceRight := 15
     static PlaceTop := 264

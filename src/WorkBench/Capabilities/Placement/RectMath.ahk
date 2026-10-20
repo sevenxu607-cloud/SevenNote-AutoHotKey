@@ -105,6 +105,22 @@ class RectMath {
         return {x: x, y: y}
     }
 
+    ; 贴工作区**右上角**；offsetRight / offsetTop 为物理像素边距。
+    ; 与 CornerRect 只差纵向贴哪条边 —— 提示词库要落在屏幕右上（笔记窗口那列的上方）。
+    static TopRightRect(workArea, w, h, offsetRight := 0, offsetTop := 0) {
+        if !this._ValidRect(workArea)
+            return ""
+        if !(IsNumber(w) && IsNumber(h) && w > 0 && h > 0)
+            return ""
+        x := workArea.x + workArea.w - w - offsetRight
+        y := workArea.y + offsetTop
+        if (x < workArea.x + 10)
+            x := workArea.x + 10
+        if (y < workArea.y + 10)
+            y := workArea.y + 10
+        return {x: x, y: y}
+    }
+
     ; 可见目标是否满足最小尺寸；不满足返回空串，交给下一个方案。
     static _NotePlan(visL, visT, visW, visH, frame, minW, minH) {
         if (visH < minH || visW + frame.r - frame.l < minW)

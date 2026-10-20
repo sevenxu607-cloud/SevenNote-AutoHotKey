@@ -73,6 +73,10 @@ ModuleRegistry.Register(<名字>Module)      ; ② WorkBench.Init() 内
 
 模块类约定：`static Id` / `static Name` / `static Init()`（必填）、`GetHotkeys()` / `GetContexts()`（可选）。
 
+热键上下文**由模块自己声明**（`GetContexts()` 返回 `{名字: 表达式}`），不要再改 `HotkeyRouter` ——
+v2.6 起它遍历各模块报上来的名字来注册。⚠ 声明了却没人提供实现的 ctx，它的热键**一条都不注册**
+并写 `_error.log`；让它退回 `HotIf()` 更糟 —— 那就把 `Esc` / `Enter` 变成全系统热键了。
+
 - `Init()` 只做「内部就绪」——订阅事件、准备 Feature，**不碰窗口**；
 - `Start()`（可选）做「对外可见」——加载内容、恢复配置，**必须晚于热键注册**
   （否则窗口先露面、热键还没就位，按 `Alt+Z` 会「没反应」）。

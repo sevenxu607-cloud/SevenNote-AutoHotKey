@@ -299,6 +299,19 @@ Persistent()
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
+;  MODULE 模块层 · Text（Phase 6：文本 / 片段库 —— 首个功能是提示词工程）
+; ═══════════════════════════════════════════════════════════════════════════
+; 与 SevenNote（时间流）并列的第二个「数据面」模块：按分类 + 标题收纳可复用片段。
+; 数据在 <Vault>\_prompts\，目录即分类、文件名即标题 —— 外部编辑器也能改。
+; 顺序有意义：#Include 的先后就是类的可用性，模块类必须最后引入。
+
+#Include modules\Text\Services\PromptStoreService.ahk
+#Include modules\Text\Features\PromptWindowFeature.ahk
+#Include modules\Text\Features\PromptEditFeature.ahk
+#Include modules\Text\TextModule.ahk
+
+
+; ═══════════════════════════════════════════════════════════════════════════
 ;  组合根 —— 装配 + 启动
 ; ═══════════════════════════════════════════════════════════════════════════
 

@@ -18,6 +18,7 @@ class WorkBench {
         ModuleRegistry.Register(SevenNoteModule)
         ModuleRegistry.Register(LauncherModule)
         ModuleRegistry.Register(KeysInputModule)
+        ModuleRegistry.Register(TextModule)
 
         ; Phase 3b：先挂上 Launcher.Opened / SevenNote.WindowReady 的监听。
         PeerCoordinator.Init()

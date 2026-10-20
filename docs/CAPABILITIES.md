@@ -216,7 +216,7 @@ BackdropService.Render(x, y, w, h)
 | `PeerLayoutService` | 带 Launcher 策略（`TargetW/H`、`Config.PlaceRight`） | `modules/Launcher/Services/` |
 | `BackdropFeature` | 决策该不该铺、失败怎么回退 | `modules/SevenNote/Features/` |
 | 主题 / 字体 / 保存 | 业务规则、配置、用户旅程 | 对应 Feature / Service |
-| `HotkeyRouter` | 应用级热键上下文（`global` / `editor` / `search`） | `WorkBench/` |
+| `HotkeyRouter` | 应用级热键注册（上下文名由各模块 `GetContexts()` 提供） | `WorkBench/` |
 
 `PeerLayoutService` 只把通用的 `IsPlaceable` / `RectOf` / `CornerRect` 内部委托给能力层；
 `TargetW` / `TargetH` 与 `Config.PlaceRight` 仍由它自己解释。
@@ -265,9 +265,12 @@ Coordinator
 
 ## 8. 当前边界说明
 
-- `WorkBench.ahk` 仍硬编码 3 个模块（SevenNote / Launcher / KeysInput），
+- `WorkBench.ahk` 仍硬编码模块清单（SevenNote / Launcher / KeysInput / Text），
   本轮不改成 `WorkBench.Init(modules)`；
-- `HotkeyRouter` 仍硬编码 `global` / `editor` / `search` 三个上下文，
-  属于应用级机制，不在能力层；
+- `HotkeyRouter` 的上下文**已改为表驱动**（加 Text 模块时一并做的）：注册哪些 ctx
+  由各模块 `GetContexts()` 决定，Router 里不再有 `global` / `editor` / `search` 字面量。
+  改之前新模块加上下文必须回来改 Router，漏改的后果是它的 `Esc` / `Enter` 一条都不注册；
+  现在 `_ApplyContext` 按表查、`RegisterAll` 遍历 contexts 的键，新 ctx 自动生效。
+  它仍属于应用级机制，不在能力层；
 - `PeerCoordinator.GetLastNote/GetLastPeer` 暂无调用方，保留给探针与后续协调；
   若确认不需要，可单独删除，不影响能力层。

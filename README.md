@@ -227,6 +227,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Shift+Alt+T` | 切换字体 |
 | `Alt+= / Alt+-` | 调大 / 调小字号 |
 | `Alt+Shift+C` | 切换 CapsLock 键盘映射 |
+| `Alt+P` | 呼出 / 隐藏**提示词库**（片段库，数据在 `<Vault>\_prompts\`） |
 
 ### 编辑器内热键（窗口激活时）
 
@@ -253,6 +254,27 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `Enter / Shift+Enter` | 下一个 / 上一个匹配 |
 | `Esc` | 关闭搜索栏 |
 
+### 提示词库内（`Alt+P` 呼出后）
+
+| 热键 / 操作 | 功能 |
+| --- | --- |
+| `Enter` | 复制选中项到剪贴板 |
+| 双击某行 | 打开编辑窗口（改标题 / 分类 / 正文，也能删） |
+| `Ctrl+N` | 新建提示词 |
+| `F5` | 重新扫描 `_prompts\`（在外部编辑器里改过文件时用） |
+| `Esc` | 关闭 |
+
+编辑窗口内：`Ctrl+S` 保存、`Esc` 取消（不保存）。单击只选中，**不会**把内容塞进剪贴板 ——
+选错了不会覆盖你正在粘的东西。
+
+**「分类」是可编辑下拉**：展开时列出 `_prompts\` 下现有的目录（含空目录，多级显示成
+`Code/代码审查`），也可以直接敲一个新分类 —— `Work/会议` 这种多级会自动建目录。
+上一次保存用过的分类会自动填进下一条新建，省得每条都重选；重启回落到「未分类」。
+
+**删除是就地二次确认**：点「删除」按钮 → 它变成「确认删除」，下方提示行红字提醒
+「3 秒内有效」；3 秒内再点一次才真删，超时 / 关窗 / 保存都会自动复原。这里**故意不弹框** ——
+编辑窗口是置顶的，模态框会被压在它后面，看起来就是「点了没反应」。
+
 ---
 
 ## 📁 文件结构
@@ -270,7 +292,21 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 │   │   └── image1.png
 │   └── 2026-09-19/
 │       └── image2.png
-└── _tmp/                         pandoc 临时目录（自动清理）
+├── _tmp/                         pandoc 临时目录（自动清理）
+└── _prompts/                     ★ 提示词库（Alt+P 呼出）
+    ├── Chat/                     目录名 = 分类
+    │   └── 角色设定.md           文件名 = 标题，文件全文 = 正文
+    ├── Code/
+    │   └── 代码审查/              子目录 = 多级分类（Code\代码审查）
+    │       └── 清单.md
+    └── 随手记.md                 根目录下的文件 = 未分类
+```
+
+> `_prompts\` 是**普通目录 + 普通 markdown 文件**，没有数据库、没有 front matter：
+> 用 VS Code / Obsidian 直接改，用 git 直接备份。分类就是文件夹 —— 想加分类就在资源管理器里
+> 建一个，或新建提示词时在「分类」里写 `Work/会议`。首次运行会播种 `Chat` / `Code` / `Work`
+> 三个空目录当起步结构，之后完全自由。想换位置就在 `_config.ini` 写
+> `[Paths] PromptsDir=D:\你的路径`（非空即覆盖默认的 `<Vault>\_prompts`）。
 ```
 
 ### 配置目录（AppData）
@@ -1116,6 +1152,8 @@ Windows Terminal 的 settings.json
 
 | 版本 | 日期 | 变化 |
 | --- | --- | --- |
+| **v2.6.1** | 2026-10-20 | **提示词库可用性**。① **分类改可编辑下拉**：展开列出 `_prompts\` 现有目录（含空目录、含 `Code/代码审查` 多级，显示用 `/`），也能直接手输；`_lastCat` 记住上次用过的分类（只放内存，不落盘以免动 Kernel 冻结的 `Config`）。⚠ 控件读写**不走 `ComboBox.Value`** —— 赋值要求值必须在下拉列表里，否则抛 `Invalid value`，而「目录被删了 / 刚手输新分类」正是常态，改用 `WM_SETTEXT`(0x0C) / `WM_GETTEXT`(0x0D)。② **删除改就地二次确认**：弃 `MsgBox`（模态框被置顶的编辑窗口压在后面，表现成「点了没反应」）—— 点一次按钮变「确认删除」+ 提示行红字「3 秒内有效」，3 秒内再点才真删，超时 / 关窗 / 保存自动复原；保存失败也改写到提示行，编辑窗口里**不再有任何模态框**。③ **状态反馈**：保存 / 删除后主窗口状态行显示「已保存「X」」，4 秒回落。④ **踩坑**：AHK v2.0.27 的 `SetTimer` **不接受类静态方法的函数对象**（`Type()` 是 `Func` 却报 `Invalid callback function`），必须用箭头函数并把闭包引用存字段，才能用同一引用 `SetTimer(fn, 0)` 停掉；`LOG` 是内置数学函数名、`Typeof` 不存在（是 `Type`）。⑤ **验收**：`Work/会议` 多级分类落盘 ✓；重开只改正文再存**不产生 `-2` 副本** ✓（`Save` 拼路径与 `LoadAll` 读到的 `dirPart` 同为单反斜杠）；二次点击才删 ✓；3.8 秒超时自动复原且文件仍在 ✓ |
+| **v2.6** | 2026-10-20 | **新增 Text 模块：提示词库（`Alt+P`）**，同时把热键上下文从「写死三个」改成表驱动。① **数据契约**：目录即分类、文件名即标题、文件全文即正文，不写 front matter、不用 JSON（AHK v2.0 没有内置 JSON 对象）；默认落 `<Vault>\_prompts\`（`[Paths] PromptsDir` 非空即覆盖），`Loop Files ... "R"` 递归扫描，多级分类（`Code\代码审查`）不需要登记表；扫描结果进程内缓存，`F5` / 保存 / 删除后失效。`_` 开头的文件不进列表，且该目录不在 Vault 根，不会与笔记的扫描互相误伤。② **界面**：三列 `ListView`（分类 / 标题 / 摘要，摘要把正文压成一行 60 字并丢掉代码块与 markdown 标记）、搜索框按标题+分类过滤；**单击只选中**、`Enter` 复制、双击编辑、`Ctrl+N` 新建、`F5` 重扫、`Esc` 关闭。配色固定米黄（`#FFF8E7` / 正文 `#3D2B1F`，列表底 `#FDF3D9` 靠 `LVM_SETBKCOLOR` + `LVM_SETTEXTCOLOR` 单独上色），与笔记窗口同族；首屏落位用新增的 `RectMath.TopRightRect`，沿用「隐藏态定好位置再露脸」。③ **平台改造（这次的要害）**：`HotkeyRouter` 原先把上下文写死在 `["global", "editor", "search"]`，`_ApplyContext` 的 `switch` 也只认这三个名字 —— 新模块的 `prompts` 会落到 `default` 分支变成 `HotIf()`，等于把 `Esc` / `Enter` 注册成**全系统热键**。现在 `RegisterAll` 遍历各模块 `GetContexts()` 报上来的键、`_ApplyContext` 按表查，新 ctx 自动生效；声明了却没人提供的 ctx 会补写一条 `_error.log`（否则表现是「按了没反应」而日志干干净净）。④ **验收（真机 150% DPI）**：`Alt+P` 呼出 `1602,120 943x782`（= 620×520 逻辑）；4 条测试数据（含多级分类与未分类）全部列出、空分类排最前、摘要正确截断；`Esc` 后 `IsWindowVisible=0`；`Enter` 后状态栏显示「已复制「随手记」」且剪贴板拿到正文；双击正确回填标题/分类/正文；点「保存」后窗口隐藏、列表刷新、文件 mtime 更新。服务层直测：改名并跨分类移动到 `Work\新分类\ZZ单测甲.md`（自动建多级目录 + 删旧文件）、空标题返回 `empty-title`、`SanitizeCategory` 把 `/a//../b\c/` 归一成 `a\b\c`（`..` 被丢弃，跳不出根目录）、`Summary` 把 `## 标题` 与 `**粗体**` 压成一行。⑤ **踩坑**：三连反引号在 AHK 字符串里写不出来（反引号是转义符，报 `Missing """`），要 `Chr(96)` 拼出来；`edit` 是 v2 内置函数名，不能当变量（探针里踩到 `This Func cannot be used as an output variable`） |
 | **v2.5** | 2026-10-20 | **模块流水线修通：加模块从「改三处」降到「改两处」**。原先加一个模块要在组合根手写三步（三个 `XxxModule.Init()`）+ 两处 `Start()`，而且那三个 `Init()` **一个 `try` 都没有** —— 任一模块初始化抛错，会静默带走它后面的模块**以及** `HotkeyRouter.RegisterAll()` 整段热键注册，表现成「按什么都没反应」而 `_error.log` 干干净净。现在：① `ModuleRegistry.InitAll()` 遍历登记表逐个 `try`，失败记 `_failed` + 写 `_error.log`（模块 id / 名称 / 文件行号），**其余模块照常启动**；② 新增 `StartAll()`，只在热键就位后跑「对外可见」动作（加载笔记 / 恢复配置 / CapsLock 映射）——`Init` 与 `Start` 的分工是**真实约束**而非过度设计：`Start` 若早于热键注册，窗口先露面而 `Alt+Z` 还没就位，按下去就是「没反应」；③ `HotkeyRouter.RegisterAll()` 跳过 `_failed` 里的模块（坏模块的热键按了只会复现同一个错）。组合根 11 行手写调用缩成 3 行遍历，加模块只需 `#Include` + `Register` 相邻两行。**探针验收**（塞两个假模块：`ProbeBad` 故意抛错 + `ProbeGood` 正常）：`failedCount=1`、`ProbeGood.IsFailed=0`、`ProbeGood._started=1`、`date=[2026-10-20]`（笔记真的加载了）、`Hotkey("!+q")` 抛 `Nonexistent hotkey`（坏模块热键未注册）、`Hotkey("!+w")` 与真实 `Hotkey("!z")` 返回同类（好模块热键已注册）、stderr 为空、进程正常退出 |
 | **v2.4** | 2026-10-16 | 两项精简：①**时间戳一律手动** —— 删掉「启动时无戳就自动补一个」与「切日期时距上一戳 ≥60 分钟再补一个」两条自动路径，连带 `EditorService` 的 `FindLastTimestamp` / `FindLastTimestampInText` / `DiffMinutes`、`Config.TimestampInterval`、以及为自动模式兜底的「保存前剥掉空戳」`StripIfEmpty` 一并删除；`Ctrl+T` 手动路径不变。实测切到一个**空的新日期**，编辑区里只有日期头、没有 `🕐 HH:mm`（旧版此处必有一个）。②**主题精简 8 套 → 5 套**：删掉天空蓝 / 薄荷绿 / 高雅灰，留下纯米黄 / 护眼绿 / 纸白 / 星空 / 金克斯（两套浅色底 + 一套中性白 + 两套图主题）。⚠ 删主题会让**其后元素的下标整体前挪** —— 老用户的 `ThemeIndex` 会指向另一套主题、指向末尾的还会越界兜底，故新增 `ThemeService._MigrateIndex`（旧→新映射表 + `[Appearance] ThemeSchema=2` 一次性标记 + 把新下标写回配置）。实测本机老配置 `ThemeIndex=8` 启动后自动变 **5**，**主题仍是金克斯、背景图照旧**；再按 `Alt+T` 循环得 `1→2→3→4→5`，正好 5 套 |
 | **v2.4.5** | 2026-10-20 | **事件总线不再吞异常**：`EventBus.Emit` 原先对每个订阅者只有一句 `try fn(data)`、没有 `catch` —— 订阅者抛出的异常被静默吃掉，既到不了 `OnError`、也不进 `_error.log`，表现成「某个副作用没发生」而日志干干净净（`Theme.Changed` 触发时若 `BackdropFeature.Refresh` 抛错，状态栏照常刷新、背景图没换，查不出任何线索）。现在：① 异常逐个捕获且**互相隔离** —— 一个订阅者抛错，同一事件后面的订阅者照常执行（不能改成裸调用让异常透出去：`Theme.Changed` 有 3 个订阅者，前一个抛了后两个就再也不跑，比静默更糟）；② 循环结束后把本轮异常汇聚成**一条**写日志（`事件名 + 订阅者第 N 个 + 消息 + 文件/行`），同一事件不重复写盘；③ Kernel 不直接引用 `LogError`（`.clinerules/02` 严禁反向依赖），改由组合根 `EventBus.SetErrorSink(LogError)` **注入**，没注入时退回 `OutputDebug`。⚠ **第一版修法是坏的**：`this._sink(msg)` 这种写法治不了 —— AHK v2 的 `obj.prop(args)` 走**方法查找**，属性里存的 `Func` 不会被调用，实测抛 `Too many parameters passed to function`，再被自己的 `try` 吞掉，等于「修了等于没修」；必须先把 sink 取到局部变量 `sink := this._sink` 再调。**只有探针抓得到**（`local-var-call-ok` vs `prop-call-threw`）。验收：故意抛错的订阅者排第 2 位，第 3 位仍执行、`_error.log` 出现 `事件订阅者异常：Probe.Test / 订阅者第 2 个：probe deliberate failure / 文件 … 行`、stderr 为空、进程正常退出 |

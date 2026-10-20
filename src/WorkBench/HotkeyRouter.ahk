@@ -50,9 +50,16 @@ class HotkeyRouter {
             staticTable.Push(hk)
         }
 
-        ; 注册顺序 = 全局 → 编辑器内 → 搜索栏（与改造前三个 #HotIf 块的先后一致）。
+        ; 注册顺序 = 全局 → 各模块声明的上下文（按声明顺序）。
         ; 全局变体（无上下文）的优先级天然最低，所以「先建全局」不会抢上下文变体的命中。
-        for ctxName in ["global", "editor", "search"] {
+        ; ⚠ 上下文名不再写死（Phase 6）：模块 GetContexts() 报什么就注册什么。
+        ;   以前这是 ["global", "editor", "search"] 三个字面量 —— 新模块加上下文
+        ;   必须回来改 Router，而忘了改的后果是「它的 Esc / Enter 一条都没注册」。
+        ctxNames := ["global"]
+        for name in contexts.OwnProps()
+            ctxNames.Push(name)
+
+        for ctxName in ctxNames {
             this._ApplyContext(ctxName)
             for hk in staticTable {
                 if (hk.key = "" || hk.ctx != ctxName)
@@ -64,6 +71,16 @@ class HotkeyRouter {
             }
         }
         HotIf()   ; 复位：别把上下文漏给后面动态注册的热键
+
+        ; 声明了上下文、但没有任何模块在 GetContexts() 里提供它 —— 这些热键
+        ; **一条都没注册**（上面只遍历 global + 已知 ctx）。不报出来的话，
+        ; 表现就是「按了没反应」，而日志干干净净。
+        for hk in staticTable {
+            if (hk.key = "" || hk.ctx = "" || hk.ctx = "global")
+                continue
+            if !contexts.HasProp(hk.ctx)
+                LogError("热键的上下文不存在，已跳过：" . hk.ctx . " | " . hk.key)
+        }
     }
 
     ; 动态注册（Phase 4：CapsLock 层开关时调用）。
@@ -105,25 +122,24 @@ class HotkeyRouter {
             this.Remove(key)
     }
 
+    ; 上下文 → HotIf。三种输入：
+    ;   · "global" 或没在 contexts 里出现的名字 → 无上下文（全系统）
+    ;   · 传函数对象（兼容旧调用）              → 直接用它
+    ;   · contexts 里的名字                     → 取它对应的函数
+    ;
+    ; ⚠ 为什么是「按表查」而不是 switch：
+    ;   原来 switch 只认 global / editor / search，新加的 prompts 会落到 default 分支
+    ;   变成 HotIf() —— 也就是把 Esc / Enter 注册成**全系统热键**。Phase 6 加 Text
+    ;   模块时正是这里挡着，所以改成表驱动，新 ctx 自动生效。
     static _ApplyContext(ctx) {
-        switch ctx {
-            case "global":
-                HotIf()
-            case "editor":
-                if IsObject(this._contexts) && this._contexts.HasProp("editor")
-                    HotIf(this._contexts.editor)
-                else
-                    HotIf()
-            case "search":
-                if IsObject(this._contexts) && this._contexts.HasProp("search")
-                    HotIf(this._contexts.search)
-                else
-                    HotIf()
-            default:
-                if IsObject(ctx)
-                    HotIf(ctx)
-                else
-                    HotIf()
+        if IsObject(ctx) {
+            HotIf(ctx)
+            return
         }
+        if (ctx = "global" || !IsObject(this._contexts) || !this._contexts.HasProp(ctx)) {
+            HotIf()
+            return
+        }
+        HotIf(this._contexts.%ctx%)
     }
 }

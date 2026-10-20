@@ -20,7 +20,8 @@
 
 | 坑 | 说明 |
 | --- | --- |
-| `Clear` / `log` / `min` / `max` / `Indent` 不能做变量名 | 它们是 AHK v2 内置函数名 |
+| `Clear` / `log` / `min` / `max` / `Indent` / `Edit` 不能做变量名 | 它们是 AHK v2 内置函数名。`Edit` 是 Gui 控件创建函数 —— 实测在探针里写 `edit := WinExist(...)` 直接报 `This Func cannot be used as an output variable. Specifically: edit`，脚本一句都不执行、输出为空，很容易误判成「探针没跑」 |
+| **反引号在 AHK 字符串里是转义符，三连写不出来** | 想用正则匹配 markdown 代码块围栏时，直接写三个反引号会让字符串提前结束、报 `Missing """`（实测）。用 `Chr(96)` 拼出围栏再交给 `RegExReplace`（见 `PromptStoreService.Summary`） |
 | **`Gui` 也不能做变量名** | 它是内置**类**名（同类还有 `Object` / `Map` / `Array` / `Buffer` / `Func` / `File` / `Clipboard`）。实测 `gui := WinExist(...)` 直接报 `This Class cannot be used as an output variable. Specifically: Gui`；**没加 `/ErrorStdOut` 时会弹模态框并卡住不退出**，表现为平白多出一个 `AutoHotkey64` 进程。变量名写长一点最省事（`guiHwnd` / `idxMap`） |
 | AHK v2 的 `<` `>` 是数值比较 | 字符串比较用 `StrCompare` |
 | AHK v2 的 `<=` / `>=` 遇**空字符串**会抛错 | 报 `Expected a Number but got an empty string`；数值比较前先 `IsNumber()` 守卫（`State` 未初始化的记忆值就是 `""`，实测踩到） |
@@ -38,6 +39,9 @@
 | **AHK v2 没有内置 `JSON` 对象** | `JSON.Stringify` 是 v2.1 alpha 才有的，v2.0.27 上会把它当**未赋值变量**。项目没写 `#Warn`，但 **v2 默认就开 `VarUnset` 警告且默认动作是弹模态框** —— 于是「Warning: This local variable appears to never be assigned a value. Specifically: JSON」直接卡死整个脚本，`Alt+Z` 全无反应，窗口标题是脚本名的 `#32770` 对话框挡住一切。**排查手段**：`DetectHiddenWindows(true)` 后枚举窗口找 `#32770`，再 `WinGetText` 读出正文 |
 | **未捕获异常默认弹模态框卡死（v2.4.2 起已有全局兜底）** | 未处理异常 + `SetTimer` 回调里的代码没有外层 try → 漏一处就弹 `#32770` 停摆、热键全无反应（`EventBus.Emit` 自 v2.4.5 起自己 `catch` 并写日志，不再算这一类）。v2.4.2 起在组合根注册了 `OnError`（写 `_error.log` 后 `return 1` 继续跑），`#Warn VarUnset` 的动作也从 MsgBox 改成 OutputDebug。⚠ **兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前仍须自己过闸（见上一条） |
 | **`obj.prop(args)` 调不动属性里存的函数** | AHK v2 的 `obj.prop(...)` 走**方法查找**；属性值是 `Func` 时不会被调用，实测抛 `Too many parameters passed to function`。必须**先取到局部变量**再调：`fn := obj.prop` → `fn(args)`。v2.4.5 修 `EventBus` 时踩到：`this._sink(msg)` 一直抛、又被自己的 `try` 吞掉，表现为「日志一条都不写」而代码看着完全正确 —— 只有探针（`local-var-call-ok` vs `prop-call-threw`）能抓出来 |
+| **`SetTimer(this.StaticMethod, -1000)` 报 `Invalid callback function`** | AHK v2.0.27 里类静态方法的函数对象**看着是干净的**（`Type(T.StaticReset)` = `Func`），但 `SetTimer` 就是不收。三段对照实测：`A type=Func` / `B err=Invalid callback function` / `C ok`（`SetTimer(() => T.StaticReset(), -300)` 随后 `fired`）。**对策**：一律用箭头函数包一层，并把闭包**存到字段**（`this._delTimer := timerFn`）—— 每次新建的箭头函数是新对象，`SetTimer(fn, 0)` 认不出是同一个、停不掉。⚠ 从字段取出来先放局部变量：`timerFn := this._delTimer` 再 `SetTimer(timerFn, 0)` |
+| **`ComboBox.Value := x` 抛 `Invalid value`** | 不是「值不在列表里」那么简单 —— 实测下拉已填好 5 项（含 `Code`）再 `Value := "Code"` 照样抛。可编辑下拉的语义本来就是「值可以不在列表里」（目录被删、用户正要输新值），所以**读写都别用 `.Value`**：`WM_SETTEXT(0x0C)` / `WM_GETTEXT(0x0D)` / `WM_GETTEXTLENGTH(0x0E)` 直接对控件 `Hwnd` 发 `DllCall("SendMessage", ...)`，既不校验、也不依赖窗口可见性。⚠ 内置 `SendMessage()` 的第 4 参数是 **Control** 不是 WinTitle，传错位报 `Target window not found` |
+| **`log` 大小写都算内置函数名；v2 没有 `Typeof()`** | `global LOG := ...` 直接报 `This Func cannot be used as an output variable. Specifically: LOG`（`log` 是数学函数，变量名不区分大小写）。判类型用 `Type(x)` —— 写成 `Typeof(x)` 是未定义函数，抛出的错还会被外层 `try/catch` 染成一句看不懂的 `Invalid callback function` |
 
 ## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
 
