@@ -8,7 +8,7 @@
 ; 交互（用户 2026-10-20 定调）：
 ;   单击        → 只选中，既不复制也不编辑
 ;   Enter       → 进入编辑窗口（改标题 / 分类 / 正文）
-;   双击        → 直接复制到剪贴板，**不**进编辑（复制是高频动作，一发就走）
+;   双击        → 直接复制到剪贴板 + 窗口立即收起（复制是高频动作：一发拿到就走）
 ;   Esc         → 隐藏
 ;
 ; 配色：**第一版写死米黄**，不订阅 Theme.Changed。
@@ -35,6 +35,7 @@ class PromptWindowFeature {
     static _items := []    ; 当前列表里显示的行，下标 = ListView 行号
     static _placed := false
     static _statusTimer := ""   ; 「已保存 / 已删除」提示的回落定时器（闭包引用）
+    static _tipTimer := ""      ; 复制后收窗时那条 ToolTip 的清除定时器（闭包引用）
 
     ; ═══ 显隐 ═══
 
@@ -209,7 +210,10 @@ class PromptWindowFeature {
         return row
     }
 
-    ; 复制某一行的正文到剪贴板
+    ; 复制某一行的正文到剪贴板，**成功即收窗**。
+    ; 用户 2026-10-20 定调：双击 → 窗口消失 → 直接 Ctrl+V，这才叫「快速启用」。
+    ; 所以状态行那句「已复制」在这里没用（窗口已经藏了、看不见），改用 ToolTip
+    ; 在鼠标旁闪 1.2 秒给个确认；失败的提示留在窗口里并**不**收窗 —— 收了就看不到了。
     static _CopyRow(row) {
         it := this._items[row]
         try {
@@ -219,8 +223,29 @@ class PromptWindowFeature {
             this._UpdateStatus("复制失败：剪贴板被占用")
             return
         }
-        ; 走 Notify：4 秒后状态行自己回到默认提示，不会让「已复制」一直挂着
-        this.Notify("已复制「" . it.title . "」")
+        this.Hide()
+        this._Tip("已复制「" . it.title . "」")
+    }
+
+    ; 轻量确认：窗口已收，状态行看不到，就在鼠标旁闪一下
+    static _Tip(msg) {
+        try ToolTip(msg)
+        this._StopTipTimer()
+        timerFn := () => this._ClearTip()
+        this._tipTimer := timerFn
+        SetTimer(timerFn, -1200)
+    }
+
+    static _StopTipTimer() {
+        timerFn := this._tipTimer
+        this._tipTimer := ""
+        if IsObject(timerFn)
+            try SetTimer(timerFn, 0)
+    }
+
+    static _ClearTip(*) {
+        this._tipTimer := ""        ; 自然触发后也要放掉引用，别让字段一直攥着闭包
+        try ToolTip()
     }
 
     ; 新建按钮 / Ctrl+N
