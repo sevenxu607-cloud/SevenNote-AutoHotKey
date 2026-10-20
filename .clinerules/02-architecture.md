@@ -61,6 +61,26 @@ Kernel 唯一的「回头出口」是**注入**：`EventBus` 不认识 `LogError
 5. **能力层只收数据**：hwnd、数字、`Rect`；失败返回 `{ok:false, reason}`，
    由 Feature / Module 决定回退与日志。详细契约见 `docs/CAPABILITIES.md`。
 
+## 加新模块的标准步骤（两处）
+
+模块 = 计算机能力面上的一个占位（有窗口 = 容器，无窗口 = 加速器）。
+新建 `src/modules/<名字>/<名字>Module.ahk` 后，**只改两处，都在 `WorkBench.Init()` 里**：
+
+```ahk
+#Include modules\<名字>\<名字>Module.ahk   ; ① src\SevenWork.ahk 的 #Include 区
+ModuleRegistry.Register(<名字>Module)      ; ② WorkBench.Init() 内
+```
+
+模块类约定：`static Id` / `static Name` / `static Init()`（必填）、`GetHotkeys()` / `GetContexts()`（可选）。
+
+- `Init()` 只做「内部就绪」——订阅事件、准备 Feature，**不碰窗口**；
+- `Start()`（可选）做「对外可见」——加载内容、恢复配置，**必须晚于热键注册**
+  （否则窗口先露面、热键还没就位，按 `Alt+Z` 会「没反应」）。
+
+组合根不再逐个手写模块名：`ModuleRegistry.InitAll()` → `HotkeyRouter.RegisterAll()` →
+`ModuleRegistry.StartAll()`。某个模块 `Init` 抛错只记 `_error.log` 并在 `_failed` 里留名
+（**它的热键不注册**），其余模块照常启动 —— 失败不带走别人。
+
 ## 加新功能的标准步骤
 
 0. 先判断是不是**跨模块复用的纯平台能力**：是 → 放 `WorkBench/Capabilities/<领域>/`，

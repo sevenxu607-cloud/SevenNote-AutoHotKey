@@ -13,7 +13,8 @@ class WorkBench {
         this._initialized := true
 
         ; 模块登记只放「模块类」——它们统一带 Id / Name / Init() / GetHotkeys()。
-        ; Phase 4 起 KeysInput 也在这里登记。
+        ; ⚠ 加模块只改这里（一行 #Include 在上面）+ 一行 Register，组合根不动：
+        ;   启动 / 热键 / 兜底都由 ModuleRegistry.InitAll() / StartAll() / HotkeyRouter 遍历。
         ModuleRegistry.Register(SevenNoteModule)
         ModuleRegistry.Register(LauncherModule)
         ModuleRegistry.Register(KeysInputModule)

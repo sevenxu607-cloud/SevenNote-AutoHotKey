@@ -26,6 +26,20 @@ $t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
 [System.IO.File]::WriteAllText($src, $t, [System.Text.UTF8Encoding]::new($false))
 ```
 
+> ⚠ **正则必须写在双引号里。** 写成单引号 `'(?<!`r)`n'` 时 PowerShell **不做反引号转义** ——
+> 它变成「匹配字面 `` `n ``（反引号 + n）」的正则，后果是双向的：① 检测把源码里的 AHK
+> 换行转义当成裸 LF 报出来（实测 `src\SevenWork.ahk` 报 `bareLF=9`，字节级统计其实是 **0**）；
+> ② 照它去「修」会把 9 处 `` `n `` **替换成真换行**，`OnScriptError` 里的多行字符串当场
+> 报 `Missing """`、脚本起不来，只有 `git checkout` 能救回（2026-10-20 实测踩到）。
+> **判换行只认字节**：`0x0D 0x0A` = CRLF、单独 `0x0A` = 裸 LF、单独 `0x0D` = 裸 CR。
+> ```powershell
+> $b=[System.IO.File]::ReadAllBytes($f); $crlf=0;$cr=0;$lf=0
+> for($i=0;$i -lt $b.Length;$i++){
+>     if($b[$i] -eq 13 -and $i+1 -lt $b.Length -and $b[$i+1] -eq 10){ $crlf++;$i++ }
+>     elseif($b[$i] -eq 13){ $cr++ } elseif($b[$i] -eq 10){ $lf++ }
+> }
+> ```
+
 ### 语法检查
 
 ⚠️ **`/validate` 不可用** —— 本机 AHK v2.0.27 不识别该参数。别用。

@@ -426,21 +426,17 @@ DirCreate(Config.GetVault())
 ; 必须在模块 Init() 之前：订阅要赶在第一次 Alt+C / Alt+X 之前就位。
 WorkBench.Init()
 
-; ═══ 笔记模块（Phase 2：GUI 与 Feature 挂载已搬入 src/modules/SevenNote）═══
-SevenNoteModule.Init()
-
-; ═══ 外部程序模块（Phase 3：热键由 LauncherModule.GetHotkeys 提供）═══
-LauncherModule.Init()
-
-; ═══ 键位模块（Phase 4：CapsLock 层状态，热键由 KeysInputModule.GetHotkeys 提供）═══
-KeysInputModule.Init()
+; ═══ 统一启动（第一段）：遍历登记表，逐个 Init ───
+; 加模块只改两处，都在 WorkBench.Init() 里：一行 #Include、一行 Register。
+; 这里不再逐个手写模块名 —— 一个模块 Init 抛错不带走后面（失败记日志 + 跳过其热键）。
+ModuleRegistry.InitAll()
 
 ; ═══ 热键（Router 聚合平台 + 各模块的 GetHotkeys）═══
 HotkeyRouter.RegisterAll()
 
-; ═══ 启动 ═══
-SevenNoteModule.Start()
-KeysInputModule.Start()
+; ═══ 统一启动（第二段）：对外可见 —— 加载笔记 / 恢复配置 / 应用 CapsLock 映射 ═══
+; 必须晚于热键注册：否则窗口先露面、热键还没就位，按 Alt+Z 会「没反应」。
+ModuleRegistry.StartAll()
 
 ShowStartupTip()
 

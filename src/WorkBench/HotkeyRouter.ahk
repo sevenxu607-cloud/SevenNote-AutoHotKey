@@ -20,6 +20,9 @@ class HotkeyRouter {
             table.Push(hk)
 
         for id, module in ModuleRegistry.All() {
+            ; 启动失败的模块：热键不注册（按了只会复现同一个错），失败原因已在 InitAll 里记过
+            if ModuleRegistry.IsFailed(id)
+                continue
             if module.HasMethod("GetContexts") {
                 moduleContexts := module.GetContexts()
                 for name in moduleContexts.OwnProps()
