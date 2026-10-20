@@ -15,11 +15,22 @@ Persistent()
 #Warn VarUnset, OutputDebug
 
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenWork —— v2.4.5
+;  SevenWork —— v2.8
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
 ;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+S 帮助窗口底部），改这里要一并改它。
 ;
 ;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
+;    v2.8    Alt+M 把资源管理器里选中的文件转成同名 Markdown（挂 explorer 上下文，
+;            不抢别的程序的 Alt+M）；新增能力 PandocRunner / DocxHeadingFix ——
+;            后者把 docx 的自定义标题样式名（「三级标题」等）规范成 pandoc 认的
+;            `heading N`，否则整篇塌成嵌套有序列表、一个标题都出不来
+;    v2.7    新增 Folders 模块：Alt+1/2/3 三个文件夹槽位（热键写死、目录可换）；
+;            Alt+S 从纯文本帮助升级成侧栏式工作台面板 —— 模块可选实现
+;            GetSettingsSpec() 声明设置字段，平台只认 kind（folder / text）+ apply
+;    v2.6    新增 Text 模块：提示词库 Alt+P（目录即分类 / 文件名即标题 / 全文即正文）；
+;            HotkeyRouter 的上下文从写死三个改成遍历各模块 GetContexts() 报上来的名字
+;    v2.5    模块流水线修通：ModuleRegistry.InitAll / StartAll 逐模块 try，坏模块
+;            不带走别人；加模块只需 #Include + Register 相邻两行
 ;    v2.4.5  事件总线不再吞异常：原先 `try fn(data)` 把订阅者的异常静默吃掉 ——
 ;            到不了 OnError、也不进 _error.log，表现成「某个副作用没发生」而日志
 ;            干干净净。现在逐个隔离执行（一个抛错不拖累后面的订阅者），循环结束
@@ -68,11 +79,14 @@ Persistent()
 ;      所以在全局那一段里编号看起来是跳着的（② 之后直接 ⑤），那是正常的。
 ;
 ;  【整体架构 —— 四层 + 组合根】
-;    FEATURE 功能层（21 项，按用户旅程排列）→ SERVICE 服务层（8 项，纯能力）
+;    FEATURE 功能层（25 项，按用户旅程排列）→ SERVICE 服务层（10 项，纯能力）
 ;     → KERNEL 骨架层（4 项：生命周期 / 状态 / 事件 / 配置）
 ;     → 表示层 StatusBar → 组合根（装配 + 启动，在文件末尾）
-;    Kernel 实现在 src/WorkBench/Kernel/；SevenNote 模块的 7 个 Service、StatusBar、
-;    18 个 Feature 与模块生命周期在 src/modules/SevenNote/。
+;    另有 CAPABILITY 平台能力（7 项，src/WorkBench/Capabilities/，只收 hwnd / 数字 / Rect）
+;    与 Coordinator（跨模块协调，不算能力层）。
+;    Kernel 实现在 src/WorkBench/Kernel/；SevenNote 模块的 6 个 Service、StatusBar、
+;    18 个 Feature 与模块生命周期在 src/modules/SevenNote/。其余 4 个模块
+;    （Launcher / KeysInput / Text / Folders）合计 7 个 Feature、4 个 Service。
 ;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册与帮助窗口已分别归
 ;    src/WorkBench/HotkeyRouter.ahk 与 src/WorkBench/WorkBenchUI.ahk。
 ;

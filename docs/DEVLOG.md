@@ -11,15 +11,13 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.8`，分支 `main`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 / 7 已实现
-- **最近一次改动**：**`Alt+M` 转出的 md 现在带完整标题层级**（同日追补）
-  —— 源 docx 用的是「二级标题 / 三级标题 / 半括号标题（五级）」这类**自定义样式名**，
-  pandoc 只认 `heading 1..9`，于是 0 个标题、整篇塌成嵌套有序列表。
-  新增能力 `DocxHeadingFix`（`tar.exe` 解包 → 改 `styles.xml` 的 `w:name` → 重打包，
-  **源文件零改动**，失败即退回转原件），`PandocRunner` 补 `--markdown-headings=atx`。
-  实测 23MB 课件 0 → **223** 个标题、144 张图照常抽出、临时目录转完即净 ✓
+- **最近一次改动**：**版本号统一到 2.8** —— `Config.Version` 还停在 `2.7`（`Alt+S` 面板右下角
+  与交付说明不符）；`src\SevenWork.ahk` 头注释的版本、版本摘要、规模计数一并刷新
+  （25 Feature / 10 Service / 7 Capability / SevenNote 6 Service、18 Feature）。
+  上一批功能改动（`Alt+M` + `DocxHeadingFix`，12 文件 / 891 行）已单独提交 `40341df` ✓
 - **正在处理**：无
-- **下一步**：人工按键验收 `Alt+M`（转一次，确认编辑器大纲能看出一到六级）；
-  此前挂着的 `Alt+1/2/3` 显隐与面板切页复核仍未做
+- **下一步**：按代码审查清单往下走 —— 先 P1（`PandocService.Convert` 失败静默、
+  `SearchFeature` 的 DPI 单位混用待探针实测），再 P2（pandoc 移出 `Critical`、MD 出口补 `atx`）
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -80,7 +78,12 @@
 - [ ] 人工按键复核：`Alt+1` 开 → 再按藏 → 第三次回来；面板换槽位后按热键生效
 - [x] 修面板切页残留设置字段（`Gui.Control` 没有 `Destroy()` → 改用 `DestroyWindow`）
 - [ ] 文件夹槽位进阶（可选）：同一目录多窗口的合并 / 记住上次窗口位置
-- [ ] `docs/DEVLOG.md` 已到 1032 行（>600 阈值），建议把最早的季度整段移到 `docs/devlog/`（**别自查自发**，等用户点头）
+- [ ] `docs/DEVLOG.md` 已到 1267 行（>600 阈值），建议把最早的季度整段移到 `docs/devlog/`（**别自查自发**，等用户点头）
+- [ ] 代码审查 P1：`PandocService.Convert` 失败被静默吞掉（`SaveFeature` 丢弃返回值，状态栏仍报「已保存」）
+- [ ] 代码审查 P1：`SearchFeature.Show/Hide` 用 `WinGetClientPos`（物理）喂 `Gui.Control.Move`（逻辑）—— 150% DPI 下疑似 ×1.5，待探针实测
+- [ ] 代码审查 P2：`SaveFeature` 把 `RunWait(pandoc)` 移出 `Critical(1)`；`PandocService` 补 `--markdown-headings=atx`
+- [ ] 代码审查 P2：三篇架构文档（`PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION` / `WORKBENCH-PLAN`）停在 v2.4.x
+- [ ] 代码审查 P3：死代码 7 处（`FolderSlotService.GetAll/Describe`、`PromptStoreService.PathFor`、`ModuleRegistry.Unregister`、`ExplorerProbe.IsExplorerWindow`、`PeerCoordinator.GetLastNote/LastPeer`）
 
 ## 已放弃 / 已回退的方案（别重复踩）
 
@@ -95,6 +98,34 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 01:20　全量代码审查：先提交 v2.8 现状，再把版本号对齐
+
+**我说**（原话）
+> 先提交 v2.8 现状，再修版本号（①④⑪）—— 最小改动、先建可回退点
+
+**意图**
+推断：`Alt+M` 那批改动只躺在工作区里，没有可回退点；同时交付说明写 2.8、程序里还显示 2.7，
+两件事一起收干净。
+
+**决定 / 过程**
+- 先做全量走查（58 个 `.ahk` / 7690 行 + 5 篇文档），按 P1/P2/P3 分级出清单再动手 ——
+  用户只挑了最小的一批，其余进待办，不顺手改。
+- 提交 `40341df`：`Alt+M` + `DocxHeadingFix`，12 文件 / 891 行。
+- 版本号：`Config.Version` `2.7 → 2.8`；`src\SevenWork.ahk` 头注释的版本号、
+  新增 v2.5–v2.8 摘要、规模计数（25 Feature / 10 Service / 7 Capability）一并刷新。
+
+**结果**
+方案 A 预检 exit 0；方案 B 真机启动 stderr 0 字节、1 个进程；探针读出 `version=[2.8]`；
+三个改动文件 `BOM=False / bareLF=0`。
+
+**代价 / 风险**
+只改了显示值，`_config.ini` 无版本字段、老配置不用迁移。审查出的 P1/P2 项**一个都没修**。
+
+**待办**
+- [ ] `PandocService.Convert` 失败要反馈（返回值当前被丢，状态栏照样「已保存」）
+- [ ] `SearchFeature` 的 DPI 单位混用待探针实测
+- [ ] `Critical` 内跑 pandoc 要收缩；`PandocService` 补 `--markdown-headings=atx`
 
 ### 2026-10-21 00:57　`Alt+M` 转出来的 md 没有标题：源文档用的是自定义样式名
 
