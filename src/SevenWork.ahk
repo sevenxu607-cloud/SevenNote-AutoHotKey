@@ -460,10 +460,12 @@ ShowStartupTip() {
     tip.SetFont("s14", "楷体")
     tip.BackColor := "E4E9EE"
     ; 平台级提示只指向平台级热键：Alt+S 打开帮助（里面才有模块热键 Alt+Z 等）。
-    ; 文案实测 314 逻辑像素宽，控件取 w330、窗口取 w370 才能一行放完不被裁。
-    tip.AddText("x20 y20 w330 Center c3D5166", Config.AppName . " 已启动！Alt+S 查看帮助")
+    ; 上下两行：一行要 314 逻辑像素、横条太宽观感差；拆开后每行 ≤153，窗口回到窄条 w240。
+    ; 控件 h48 是两行高度（单行约 18.7），窗口 h80 容得下（y16 + 48 = 64）。
+    tip.AddText("x20 y16 w200 h48 Center c3D5166"
+        , Config.AppName . " 已启动！`nAlt+S 查看帮助")
     tipY := A_ScreenHeight * 0.65
-    tip.Show("w370 h80 y" . tipY)
+    tip.Show("w240 h80 y" . tipY)
     ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，
     ;   而 SetTimer 回调没有外层 try，异常即弹模态框（见 .clinerules/03）。
     SetTimer(() => DestroyTipWindow(tip), -1500)
