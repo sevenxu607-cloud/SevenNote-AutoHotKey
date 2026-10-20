@@ -11,9 +11,9 @@
 ## 当前状态
 
 - **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
-- **最近一次改动**：启动提示改上下两行、指向平台热键 `Alt+S`（笔记模块显示名已还原 `SevenNote`）；此前 `Ctrl+H` 动态分隔线 + 帮助热键 `Alt+H` → `Alt+S`
-- **正在处理**：人工验收 `Ctrl+H` 动态分隔线（标题类改动已真机核过：`Alt+Z` = `SevenNote`、搜索跳转 = `SevenNote · 搜索跳转`、启动提示 = `SevenWork`）
-- **下一步**：人工验收 `Alt+S` / `Ctrl+H`，再跑保存 / 主题 / `Alt+Z` 回归
+- **最近一次改动**：根目录再收纳 —— `screenshots/` → `docs/screenshots/`、`legacy/` → `docs/legacy/`（`git mv` 保留历史、引用同步、真机核过）；此前启动提示改上下两行、指向平台热键 `Alt+S`，笔记模块显示名还原 `SevenNote`
+- **正在处理**：无（本轮只动文档、目录与 `.gitignore`，运行代码未改）
+- **下一步**：待定「`DEVLOG` 归档」与「`README` 拆主题章节」；再跑 `Alt+S` / `Ctrl+H` / 保存 / 主题回归
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -47,6 +47,8 @@
 - [ ] `docs/PROJECT-OVERVIEW.md` 与 `README.md` 有部分重叠，改类数 / 行数 / 限制时两处一起改
 - [ ] 若再报错，先从 `<项目根>\.logs\_error.log` 取证据，不再盲改
 - [x] 根目录收纳：三份项目文档移入 `docs/`，引用同步
+- [x] 根目录再收纳：`screenshots/` / `legacy/` 并入 `docs/`；`.gitignore` 清 3 条 `tests/` 死规则
+- [ ] 待定：`docs/DEVLOG.md` 归档（787 行 > 600 阈值）；`README.md` 拆「添加带背景图的主题」到 `docs/THEME-IMAGES.md`
 - [x] 开发版报错日志落项目根 `.logs\`
 - [x] 滑条「拖不动」回归修复（加脱节守卫）
 - [x] 回退到「修好但不跟手」的中间版
@@ -64,6 +66,37 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 09:10　根目录再收纳：配图与 legacy 快照并入 docs/
+
+**我说**（原话）
+> 目前的项目根目录那些还可以收纳
+
+**意图**
+根目录只留启动器 / README / LICENSE / 配置，其余非运行资产收进 `docs/`。
+`screenshots/`（README 配图）与 `legacy/`（拆分前源码快照）都属于文档资产，不该占根。
+
+**决定 / 过程**
+- `git mv` 保留历史：`screenshots/` → `docs/screenshots/`（6 张 PNG）、
+  `legacy/` → `docs/legacy/`（快照 + `README.md`）。8 个文件在 `git status` 里全是 `R`。
+- 同步引用：README 图片链接 6 处 + 文件结构表 2 行、`docs/PROJECT-OVERVIEW.md` 仓库表 2 行、
+  `docs/WORKBENCH-PLAN.md` 1 处。全库搜索确认 `src/` 零引用 —— 移动对运行无影响。
+- **`tools/` 不动**：约 25 处引用（README 10、`.clinerules` 4、`docs` 4、`src` 注释 3、快照 3），
+  搬它只换根目录少一个条目，不划算。
+- `DEVLOG` 里 4 处历史条目（旧行号 39 / 322 / 462 / 584）按「不改写历史」保留旧路径。
+- 顺带清理：`.gitignore` 删 3 条 `tests/` 死规则（目录已随 E2E 移除）；
+  `docs/legacy/README.md` 订正旧名（`SevenNote.ahk` / `src/SevenNote.ahk` → `SevenWork`）；
+  `docs/PROJECT-OVERVIEW.md` 的「README 818 行」→ 1170 行。
+- 验收：6 张配图新路径 `Test-Path` 全 True；`.md` 全 LF 无 BOM；真机启动 stderr 空，
+  `Alt+Z` 标题 `SevenNote`。
+
+**代价 / 风险**
+GitHub 上旧路径书签与外部链接失效、无迁移提示；`docs/` 从「纯文档目录」变成「非运行资产总仓」；
+根目录仍保留 `tools/`，路径风格不统一（有意为之，见上）。
+
+**待办**
+- [ ] 待定：`docs/DEVLOG.md` 已 787 行，是否归档 2026-09 条目到 `docs/devlog/`
+- [ ] 待定：`README.md` 1170 行，是否把「添加带背景图的主题」拆到 `docs/THEME-IMAGES.md`
 
 ### 2026-10-20 09:05　启动提示改上下两行（一行横条太宽）
 

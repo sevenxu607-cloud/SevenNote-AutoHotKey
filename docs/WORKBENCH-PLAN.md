@@ -179,7 +179,7 @@ class SevenNoteModule {
   `search*` 由 `SearchFeature.Layout()` 管理；
 - `HotkeyRouter.RegisterAll(table, SevenNoteModule.GetContexts())`；
   Router 不再直接引用 `SearchFeature`；
-- `legacy/SevenNote.v2.4.3.ahk` 保留拆分前完整快照（用户要求保留源码），不参与运行；
+- `docs/legacy/SevenNote.v2.4.3.ahk` 保留拆分前完整快照（用户要求保留源码），不参与运行；
 - 验证：沙箱完整 `Init()` + `Show()`、stderr 为空、`_error.log` 无新增；
   `.ahk` 无 BOM 且全 CRLF。
 

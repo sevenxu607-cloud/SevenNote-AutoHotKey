@@ -22,7 +22,7 @@
 | --- | --- |
 | 源码 | 根 `SevenWork.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
 | 类 | 34 个 = Kernel 4 + Service 8 + StatusBar 1 + Feature 21 |
-| 文档 | `README.md` 818 行（含 v2.2 → v2.4.3 版本历史） |
+| 文档 | `README.md` 1170 行（含 v2.2 → v2.4.3 版本历史） |
 | 发行物 | 编译后约 250 MB（含内嵌 Pandoc 100+ MB） |
 
 ---
@@ -132,7 +132,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `src/modules/SevenNote/` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 生命周期 |
 | `src/modules/Launcher/` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 生命周期 |
 | `src/modules/KeysInput/` | 键位模块：`CapsLockFeature` + `Alt+Shift+C` 生命周期 |
-| `legacy/` | Phase 2 拆分前的单文件快照，只作对照，不参与运行 |
+| `docs/legacy/` | Phase 2 拆分前的单文件快照，只作对照，不参与运行 |
 | `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 / 版本历史 |
 | `docs/PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
 | `docs/PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
@@ -140,7 +140,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `docs/WORKBENCH-PLAN.md` | 工作台化路线：三张归属表 + 模块接口 + Phase 0–6 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
 | `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
-| `screenshots/` | README 配图 |
+| `docs/screenshots/` | README 配图 |
 
 ---
 

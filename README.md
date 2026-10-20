@@ -17,22 +17,22 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 ## 界面预览
 
 ### 主界面
-![主界面](./screenshots/main.png)
+![主界面](./docs/screenshots/main.png)
 
 ### 帮助页面
-![帮助页面](./screenshots/help.png)
+![帮助页面](./docs/screenshots/help.png)
 
 ### 检索页面
-![检索页面](./screenshots/search.png)
+![检索页面](./docs/screenshots/search.png)
 
 ### 日期跳转
-![日期跳转](./screenshots/date-jump.png)
+![日期跳转](./docs/screenshots/date-jump.png)
 
 ### 主题字体切换
-![主题字体切换](./screenshots/theme-font.png)
+![主题字体切换](./docs/screenshots/theme-font.png)
 
 ### 在 Obsidian 中回顾
-![Obsidian 回顾](./screenshots/obsidian.png)
+![Obsidian 回顾](./docs/screenshots/obsidian.png)
 
 ---
 
@@ -202,9 +202,9 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `src\modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
 | `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
-| `legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
+| `docs\legacy\SevenNote.v2.4.3.ahk` | Phase 2 拆分前的单文件快照（只作对照，不参与运行） |
 | `tools\` | 开发辅助脚本，如 `pick-theme-colors.ps1` 从壁纸取主题配色 |
-| `screenshots\` | README 配图 |
+| `docs\screenshots\` | README 配图 |
 | `docs\` | 项目文档：`DEVLOG.md`（开发日志）、`PROJECT-OVERVIEW.md`（一页纸全景）、`PROJECT-IMPLEMENTATION.md`（技术清单）、`WORKBENCH-PLAN.md`（工作台化路线） |
 | `.clinerules\` | 架构约定与踩坑记录（`05-theme-image.md` 是「看图生成主题」的配方 + 偏好） |
 
