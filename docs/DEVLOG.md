@@ -10,13 +10,13 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.8`，分支 `main`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 / 7 已实现
-- **最近一次改动**：**版本号统一到 2.8** —— `Config.Version` 还停在 `2.7`（`Alt+S` 面板右下角
-  与交付说明不符）；`src\SevenWork.ahk` 头注释的版本、版本摘要、规模计数一并刷新
-  （25 Feature / 10 Service / 7 Capability / SevenNote 6 Service、18 Feature）。
-  上一批功能改动（`Alt+M` + `DocxHeadingFix`，12 文件 / 891 行）已单独提交 `40341df` ✓
-- **正在处理**：无
-- **下一步**：按代码审查清单往下走 —— 先 P1（`PandocService.Convert` 失败静默、
+- **版本 / 分支**：`2.8`；`main` = 开发（配置 `%AppData%\SevenWork-Dev`），
+  `运行版` = 日常使用（配置 `%AppData%\SevenWork`，读旧单文件版那份）；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 / 7 已实现
+- **最近一次改动**：新增 `运行版` 分支（`04048e0`）—— 源码运行也读写 `%AppData%\SevenWork`，
+  配置从 `%AppData%\SevenNote` 迁入（Vault 指生产库 `SevenNote-01-收件箱`、纯米黄 / 楷体 16），
+  探针 + 真机验证通过。此前版本号统一为 `c50b7c0`，`Alt+M` 那批为 `40341df` ✓
+- **正在处理**：在 `运行版` 分支上用真实笔记正常使用（收集回归问题）
+- **下一步**：几天用下来后回 `main` 修问题 —— 先 P1（`PandocService.Convert` 失败静默、
   `SearchFeature` 的 DPI 单位混用待探针实测），再 P2（pandoc 移出 `Critical`、MD 出口补 `atx`）
 
 - **已知未解决**：
@@ -83,6 +83,8 @@
 - [ ] 代码审查 P1：`SearchFeature.Show/Hide` 用 `WinGetClientPos`（物理）喂 `Gui.Control.Move`（逻辑）—— 150% DPI 下疑似 ×1.5，待探针实测
 - [ ] 代码审查 P2：`SaveFeature` 把 `RunWait(pandoc)` 移出 `Critical(1)`；`PandocService` 补 `--markdown-headings=atx`
 - [ ] 代码审查 P2：三篇架构文档（`PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION` / `WORKBENCH-PLAN`）停在 v2.4.x
+- [x] 新增 `运行版` 分支：源码运行读写生产配置，配置从旧单文件版迁入（旧文件保留作回退）（2026-10-21）
+- [ ] 运行版用几天：保存 / 主题 / 搜索 / `Alt+C` / `Alt+X` / 提示词库，异常先看 `%AppData%\SevenWork\_error.log`
 - [ ] 代码审查 P3：死代码 7 处（`FolderSlotService.GetAll/Describe`、`PromptStoreService.PathFor`、`ModuleRegistry.Unregister`、`ExplorerProbe.IsExplorerWindow`、`PeerCoordinator.GetLastNote/LastPeer`）
 
 ## 已放弃 / 已回退的方案（别重复踩）
@@ -98,6 +100,29 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 02:07　新增「运行版」分支：源码跑旧配置，拿真实笔记用几天
+
+**我说**（原话）
+> 我想要你切一个分支，叫做运行版，然后去读取我原有的使用的单文件的运行版的配置，就是源码直接跑旧的运行版配置，在那个分支里面使用，因为我已经太长时间没有用过了，一直在开发，所以想正常的使用几天。
+
+**意图**
+推断：把「开发」与「日常使用」拆成两条互不干扰的轨道 —— 运行版分支用源码跑，但读写的是旧单文件版那份配置（生产库 + 原来的主题 / 字体），好拿真实笔记正常用几天。
+
+**决定 / 过程**
+- 从 `main`（`c50b7c0`）新建 `运行版` 分支，与 main 的差异**只有一处**：`Config.AppDataDir` 在源码运行时也走 `%AppData%\SevenWork`（main 走 `SevenWork-Dev`），日志随配置落 AppData —— **切分支即切身份**。
+- 配置取自 `%AppData%\SevenNote\_config.ini`（旧单文件版一直在用的那份）：Vault = `D:\shangguigu\…\SevenNote-01-收件箱`、`ThemeIndex=1` / `FontIndex=1` / `FontSizeIndex=3`；复制到 `%AppData%\SevenWork\_config.ini`，旧文件不动，留作回退。
+- 旧下标不用手工换算（`_MigrateIndex` 里旧 1 → 新 1 纯米黄），启动后自动补 `ThemeSchema=2` 并写回。
+- 探针：`appdata=…\Roaming\SevenWork`、`vault=…SevenNote-01-收件箱`、`theme=纯米黄 idx=1`、`font=楷体 16`、`schema=2`；真机 stderr 空、单进程、无 `_error.log`。
+
+**代价 / 风险**
+- 两分支源码共用同一套热键标识，**不能同时运行**；要用另一版先停掉当前实例。
+- `%AppData%\SevenWork` 从此是生产配置 —— 以后在 main 上开发别再往那儿写测试数据。
+- 分支差异就 `Config.ahk` 一处，**合并回 main 时只能挑提交**，整支合并会让开发版读写生产配置。
+
+**待办**
+- [ ] 用几天：保存 / 主题 / 搜索 / `Alt+C` / `Alt+X` / 提示词库，异常看 `%AppData%\SevenWork\_error.log`
+- [ ] 稳定后把这段时间的问题带回 main 修，再决定是否出编译版
 
 ### 2026-10-21 01:20　全量代码审查：先提交 v2.8 现状，再把版本号对齐
 
