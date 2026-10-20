@@ -51,8 +51,8 @@ class TextModule {
                 , line: "   Esc              关闭提示词库"
                 , fn: (*) => PromptWindowFeature.Hide()},
             {ctx: "prompts", key: "Enter", group: "文本"
-                , line: "   Enter            复制选中的提示词"
-                , fn: (*) => PromptWindowFeature.CopySelected()},
+                , line: "   Enter            编辑选中的提示词"
+                , fn: (*) => PromptWindowFeature.EditSelected()},
             {ctx: "prompts", key: "^n", group: "文本"
                 , line: "   Ctrl+N           新建提示词"
                 , fn: (*) => PromptWindowFeature.NewPrompt()},

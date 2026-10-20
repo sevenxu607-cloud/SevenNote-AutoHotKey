@@ -2,13 +2,13 @@
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  PromptWindowFeature —— 提示词库主窗口（模块：Text）
 ; ═══════════════════════════════════════════════════════════════════════════
-; 职责：建窗（首次呼出时懒建）/ Toggle / 列表填充 / 检索过滤 / Enter 复制。
-; 不碰磁盘 —— 读写全归 PromptStoreService；不碰编辑 —— 双击交给 PromptEditFeature。
+; 职责：建窗（首次呼出时懒建）/ Toggle / 列表填充 / 检索过滤 / Enter 进编辑。
+; 不碰磁盘 —— 读写全归 PromptStoreService；不碰编辑窗 —— Enter 交给 PromptEditFeature。
 ;
 ; 交互（用户 2026-10-20 定调）：
-;   单击        → 只选中，不复制
-;   Enter       → 复制选中项到剪贴板
-;   双击        → 打开编辑窗口（可改标题 / 分类 / 正文）
+;   单击        → 只选中，既不复制也不编辑
+;   Enter       → 进入编辑窗口（改标题 / 分类 / 正文）
+;   双击        → 直接复制到剪贴板，**不**进编辑（复制是高频动作，一发就走）
 ;   Esc         → 隐藏
 ;
 ; 配色：**第一版写死米黄**，不订阅 Theme.Changed。
@@ -143,7 +143,7 @@ class PromptWindowFeature {
         if !IsObject(this._status)
             return
         n := this._items.Length
-        tail := n . " 条 · Enter 复制 · 双击编辑 · Esc 关闭"
+        tail := n . " 条 · Enter 编辑 · 双击复制 · Esc 关闭"
         this._status.Value := (msg = "" ? "" : msg . "　·　") . tail
     }
 
@@ -172,19 +172,45 @@ class PromptWindowFeature {
 
     ; ═══ 动作 ═══
 
-    ; Enter：复制选中项。没选中时取「有焦点的那一行」（列表刚打开时就是它）。
-    static CopySelected() {
-        if !IsObject(this._lv)
+    ; Enter：进入编辑窗口。没选中时取「有焦点的那一行」（列表刚打开时就是它）。
+    static EditSelected() {
+        row := this._SelectedRow()
+        if !row {
+            this._UpdateStatus("没有选中项")
             return
+        }
+        PromptEditFeature.Open(this._items[row])
+    }
+
+    ; 双击某行 → 直接复制，**不**进编辑（用户 2026-10-20 定调：
+    ; 复制是高频动作，双击一发就拿到；想改内容才按 Enter）。
+    ; ⚠ 双击必然伴随两次单击，而单击已经把该行选中了，所以这里的 row 与
+    ;   _SelectedRow() 一致；双击表头下方空白处时 row = 0，退回按选中行处理。
+    static _OnItemActivate(row) {
+        if (!row || row > this._items.Length)
+            row := this._SelectedRow()
+        if !row
+            return
+        this._CopyRow(row)
+    }
+
+    ; 当前选中的行号；没选中返回 0。
+    ; ⚠ GetNext() 只认「选中」，GetNext(0, "F") 认「有焦点」—— 键盘移过后两者可能
+    ;   不同，选中优先（用户点了哪行就是哪行）。
+    static _SelectedRow() {
+        if !IsObject(this._lv)
+            return 0
         row := 0
         try row := this._lv.GetNext()
         if !row
             try row := this._lv.GetNext(0, "F")
-        if !row || row > this._items.Length {
-            this._UpdateStatus("没有选中项")
-            return
-        }
+        if (!row || row > this._items.Length)
+            return 0
+        return row
+    }
 
+    ; 复制某一行的正文到剪贴板
+    static _CopyRow(row) {
         it := this._items[row]
         try {
             A_Clipboard := it.text
@@ -193,14 +219,8 @@ class PromptWindowFeature {
             this._UpdateStatus("复制失败：剪贴板被占用")
             return
         }
-        this._UpdateStatus("已复制「" . it.title . "」")
-    }
-
-    ; 双击某行 → 打开编辑窗口
-    static _OnItemActivate(row) {
-        if (row < 1 || row > this._items.Length)
-            return
-        PromptEditFeature.Open(this._items[row])
+        ; 走 Notify：4 秒后状态行自己回到默认提示，不会让「已复制」一直挂着
+        this.Notify("已复制「" . it.title . "」")
     }
 
     ; 新建按钮 / Ctrl+N
