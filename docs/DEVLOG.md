@@ -10,10 +10,13 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.4.3`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
-- **最近一次改动**：根目录再收纳 —— `screenshots/` → `docs/screenshots/`、`legacy/` → `docs/legacy/`（`git mv` 保留历史、引用同步、真机核过）；此前启动提示改上下两行、指向平台热键 `Alt+S`，笔记模块显示名还原 `SevenNote`
-- **正在处理**：无（本轮只动文档、目录与 `.gitignore`，运行代码未改）
-- **下一步**：待定「`DEVLOG` 归档」与「`README` 拆主题章节」；再跑 `Alt+S` / `Ctrl+H` / 保存 / 主题回归
+- **版本 / 分支**：`2.4.5`，分支 `feature/groups`；Phase 2 / 3a / 3b / 4 / 5 / 5b / 6 已实现
+- **最近一次改动**：`EventBus.Emit` 不再静默吞异常 —— 逐订阅者 `try`/`catch`（互不拖累）+
+  汇聚一条写 `_error.log`；Kernel 不直调 `LogError`，改由组合根 `SetErrorSink` 注入。
+  探针验收：坏订阅者排第 2 位，第 3 位仍执行、日志有记录、进程正常退出
+- **正在处理**：无
+- **下一步**：人工回归 `Alt+T`（`Theme.Changed` 的 3 个订阅者）/ `Alt+Z` / 保存；再按架构分析
+  报告的顺序处理文档口径漂移（500ms→150ms、类数 34→45 等）
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
   - 用户看到的那次报错来源始终未确认 —— 脚本没有抛未捕获异常（无 `_error.log`、无 `#32770`、`STDERR` 为空）
@@ -23,7 +26,8 @@
 - [x] 启动提示改上下两行（`w240` 窄条，控件 `w200 h48`，两行均完整）
 - [x] 启动提示改指平台热键 `Alt+S`（提示窗同步放宽到 `w370`，一行不裁字）
 - [x] 笔记模块窗口标题还原为 `SevenNote`（「搜索跳转」对话框同步），平台级文案仍 `SevenWork`
-- [ ] 确认删末尾空行后「慢 500ms」是否可接受；若要更快，唯一已知可行方向是子类化 `WndProc`
+- [x] 确认删末尾空行后「慢 500ms」是否可接受 → **不可接受**，已改 150ms 巡检（2026-10-20）
+- [ ] 人工验收：长按 `Backspace` 删一整屏空行，画面应小步跟随、不抽搐
 - [x] 补三张表：模块归属 / 启动顺序 / 热键归属（落 `docs/WORKBENCH-PLAN.md`）
 - [x] Phase 0：修正 `.clinerules/04` 的 auto-execute 表述、探针验证 `#Include` / `this` / `mod.Init()`
 - [x] Phase 1a：4 个 Kernel 类搬入 `WorkBench/Kernel/`，主脚本改为 `#Include`
@@ -66,6 +70,67 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-20 14:45　EventBus 静默吞异常：连修法第一版也是「看起来对」
+
+**我说**（原话）
+> 先出 EventBus 修复方案
+
+**意图**
+架构分析查出 `EventBus.Emit` 对订阅者只有裸 `try fn(data)`、没有 `catch` —— 异常既到不了
+`OnError`、也不进 `_error.log`，表现成「某个副作用没发生」而日志干干净净。要一个能落地的修法。
+
+**决定 / 过程**
+- 否决「去掉 `try` 让异常冒到 `OnError`」：`Theme.Changed` 有 3 个订阅者，前一个抛了后两个
+  就再也不执行 —— 只是把「静默失败」换成「连锁跳过」，更糟。
+- 选「逐订阅者隔离 + 循环结束后汇聚一条上报」；Kernel 不直调 `LogError`（`02` 严禁反向依赖），
+  改由组合根 `EventBus.SetErrorSink(LogError)` **注入**，没注入时退回 `OutputDebug`。
+- ⚠ 第一版 `this._sink(msg)` 是坏的：AHK v2 的 `obj.prop(args)` 走**方法查找**，属性里存的
+  `Func` 不会被调用，抛 `Too many parameters passed to function` 又被自己的 `try` 吞掉 ——
+  等于「修了等于没修」。必须 `sink := this._sink` 取到局部变量再调。
+- 只有探针抓得到：`local-var-call-ok` vs `prop-call-threw`，再叠加「坏订阅者排第 2、
+  第 3 个仍执行」与 `_error.log` 里的条目，三条齐了才算验完。
+
+**代价 / 风险**
+- 动了 Kernel 的 `Emit` 实现（签名不变、行为向后兼容）—— 按「只加不改」的边界算加法，
+  已在 `.clinerules/02` 写明「Kernel 唯一的回头出口是注入」。
+- 不做限流：某个订阅者持续抛错会持续写日志，512KB 轮转会洗掉旧内容 —— 但那说明该修的是订阅者。
+- 日志里只有「订阅者第 N 个」，没有名字；改注册顺序后序号会变。加名字要改 30 处 `On` 调用，不值。
+
+**待办**
+- [ ] 人工回归：`Alt+T` 切主题（`Theme.Changed` 的 3 个订阅者）、`Alt+Z` 显隐、保存
+
+### 2026-10-20 14:40　删空行后的「生硬」不是背景图，是 500ms 巡检太慢
+
+**我说**（原话）
+> 现在滑条会跟着变，项目其实设计了？但是生硬一点
+
+**意图**
+推断：删掉一大片空行后，画面不是平滑跟手，而是「滑条先变、画面迟一步猛跳一下」；
+想知道这是背景图 / 架构复杂度带来的副作用，还是改得动。
+
+**决定 / 过程**
+- 先只查机制不动代码：`StatFeature` 500ms 巡检 → `SyncScrollAfterShrink` → `EM_SETSCROLLPOS`。
+- 独立探针实测（120 行文本、**真按键**删末尾 120 字，非 `EM_REPLACESEL`）：
+  - `nMax` 5082 → 4746、`nPos` 4363 → 4027 **当场**变对 —— 滑条一直是实时的；
+  - `EM_GETSCROLLPOS` 的 y 仍停在 **4368**，滞后 **341px**，闲置 500ms 也不自愈；
+  - `EM_GETLINECOUNT` / `EM_GETFIRSTVISIBLELINE` / 单独 `WM_VSCROLL(SB_ENDSCROLL)` **全部无效**；
+  - 只有 `EM_SETSCROLLPOS` 能把 drift 归零（341 → 0）。
+  - 成本：1000 次 `GetScrollInfo` = **0ms**；200 次强制重排 = 484ms（**2.4ms/次**）。
+- 结论：机制本来就对、**与背景图无关**；「生硬」= 500ms 延迟 + 一次跳 341px。
+- 改三处：`Config.StatInterval` 500 → **150**；`StatFeature` 注释 / 默认值同步；
+  `SyncScrollAfterShrink` 补上「请求了却没读」的 `SIF_TRACKPOS` 拖动守卫。
+- 真机验收：滚到底 → 追加 30 空行 → 删 30 空行 —— 27ms 时 `firstVis=32`（脱节），
+  **180ms 时 `firstVis=12`（已修）**；文档长度 414 字 / 33 行精确还原。
+
+**代价 / 风险**
+巡检频率 ×3.3：删除过程中最多每 150ms 重排一次（小窗 2.4ms，大窗估个位数 ms），
+开销从「可忽略」变成「可测量的个位数百分比」，也再次逼近曾被回退的 50ms 方案。
+真机若出现画面抽搐，回退只需把 `Config.StatInterval` 改回 500。
+
+**待办**
+- [ ] 人工验收：长按 `Backspace` 删整屏空行，确认小步跟随、不抽搐
+- [ ] 若仍嫌慢：下一步才是子类化 `WndProc` 抓 `WM_KEYDOWN`，彻底不靠轮询
 
 ### 2026-10-20 09:10　根目录再收纳：配图与 legacy 快照并入 docs/
 

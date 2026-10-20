@@ -36,7 +36,8 @@
 | **异步定时器里操作窗口，窗口可能已经藏了** | AHK v2 的 `WinMove` / `WinGetPos` / `WinActivate` **默认忽略隐藏窗口**（对 `WinHide` 过的窗口抛 `Target window not found`），而 `SetTimer` 排下的复核回调跑起来时，用户很可能已经按热键把窗口收起。实测：`Alt+X` 呼出后排 350/950/1550/2150ms 四轮尺寸复核，用户在 350ms 内再按一次 → 回调里 `WinMove` 抛错 → 弹**模态框**、整个脚本卡死（热键全无反应，框还留在屏幕上）。**规则**：凡在异步回调里碰窗口，都先过一道闸 —— `DetectHiddenWindows(false)` + `WinExist` + `!DllCall("IsIconic", "ptr", hwnd, "int")`，不满足即 `return`；「窗口已被用户收起」这种判断还要**顺手停掉后续复核**（不再排下一轮 `SetTimer`），否则会反复重摆一个看不见的窗口 |
 | **先 `Show` 再 `WinMove` 会让窗口「飘一下」** | `g.Show()` 先让窗口在 AHK 的默认落点露面，随后 `WinMove` 才把它挪到目标位置，中间那一帧是**可见**的（实测 `+31ms` 出现在 `(924,357)`，`+219ms` 才跳到 `(1629,238)`）。**定位要在隐藏状态下完成**：`Show("Hide")` → 量尺寸 / `WinMove` → 最后 `g.Show()` 一次性露面，实测从诞生起就只有一个位置 |
 | **AHK v2 没有内置 `JSON` 对象** | `JSON.Stringify` 是 v2.1 alpha 才有的，v2.0.27 上会把它当**未赋值变量**。项目没写 `#Warn`，但 **v2 默认就开 `VarUnset` 警告且默认动作是弹模态框** —— 于是「Warning: This local variable appears to never be assigned a value. Specifically: JSON」直接卡死整个脚本，`Alt+Z` 全无反应，窗口标题是脚本名的 `#32770` 对话框挡住一切。**排查手段**：`DetectHiddenWindows(true)` 后枚举窗口找 `#32770`，再 `WinGetText` 读出正文 |
-| **未捕获异常默认弹模态框卡死（v2.4.2 起已有全局兜底）** | 未处理异常 + `SetTimer` 回调 / `EventBus.Emit` 里的订阅者都没有外层 try → 任一处漏 try 就弹 `#32770` 停摆、热键全无反应。v2.4.2 起在组合根注册了 `OnError`（写 `_error.log` 后 `return 1` 继续跑），`#Warn VarUnset` 的动作也从 MsgBox 改成 OutputDebug。⚠ **兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前仍须自己过闸（见上一条） |
+| **未捕获异常默认弹模态框卡死（v2.4.2 起已有全局兜底）** | 未处理异常 + `SetTimer` 回调里的代码没有外层 try → 漏一处就弹 `#32770` 停摆、热键全无反应（`EventBus.Emit` 自 v2.4.5 起自己 `catch` 并写日志，不再算这一类）。v2.4.2 起在组合根注册了 `OnError`（写 `_error.log` 后 `return 1` 继续跑），`#Warn VarUnset` 的动作也从 MsgBox 改成 OutputDebug。⚠ **兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前仍须自己过闸（见上一条） |
+| **`obj.prop(args)` 调不动属性里存的函数** | AHK v2 的 `obj.prop(...)` 走**方法查找**；属性值是 `Func` 时不会被调用，实测抛 `Too many parameters passed to function`。必须**先取到局部变量**再调：`fn := obj.prop` → `fn(args)`。v2.4.5 修 `EventBus` 时踩到：`this._sink(msg)` 一直抛、又被自己的 `try` 吞掉，表现为「日志一条都不写」而代码看着完全正确 —— 只有探针（`local-var-call-ok` vs `prop-call-threw`）能抓出来 |
 
 ## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
 
@@ -44,6 +45,12 @@
   （**开发版 `<项目根>\.logs\_error.log`**；编译版 `%AppData%\SevenWork\_error.log`。
   含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
 - `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
+- **事件订阅者的异常也进同一份 `_error.log`**（v2.4.5 起）—— `EventBus.Emit` 对每个订阅者
+  `try`/`catch` 且**互相隔离**（一个抛错，同一事件后面的订阅者照常执行），循环结束后汇聚成
+  一条写入（`事件名 + 订阅者第 N 个 + 消息 + 文件/行`）。出口是组合根注入的 `_sink`
+  （`EventBus.SetErrorSink(LogError)`），没注入时只写 `OutputDebug`。
+  ⚠ 日志里是「订阅者第 N 个」= **注册顺序**，改了注册顺序序号就会变；没有名字标签（加名字要改
+  30 处 `On` 调用，不值）。
 
 ⚠ **别把兜底当挡箭牌**：
 

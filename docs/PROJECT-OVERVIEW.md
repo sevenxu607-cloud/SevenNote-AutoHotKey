@@ -3,7 +3,7 @@
 > **用途**：一屏看完「这是什么 · 做到哪了 · 还欠什么」。
 > 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`；
 > 工作台化路线见 `WORKBENCH-PLAN.md`（三张归属表 + Phase 0–6）。
-> 统计口径：`2026-10-19`，版本 `v2.4.3`，分支 `feature/groups`。
+> 统计口径：`2026-10-19`，版本 `v2.4.4`，分支 `feature/groups`。
 
 ---
 
@@ -22,7 +22,7 @@
 | --- | --- |
 | 源码 | 根 `SevenWork.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
 | 类 | 34 个 = Kernel 4 + Service 8 + StatusBar 1 + Feature 21 |
-| 文档 | `README.md` 1170 行（含 v2.2 → v2.4.3 版本历史） |
+| 文档 | `README.md` 1170 行（含 v2.2 → v2.4.4 版本历史） |
 | 发行物 | 编译后约 250 MB（含内嵌 Pandoc 100+ MB） |
 
 ---

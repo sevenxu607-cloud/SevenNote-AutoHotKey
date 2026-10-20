@@ -25,6 +25,13 @@
   Feature / Module → Capability → OS
   Coordinator → Capability + Config + EventBus
 严禁反向：Capability 不得引用 modules/*、EventBus、业务 Config / State。
+
+Kernel 唯一的「回头出口」是**注入**：`EventBus` 不认识 `LogError` / `Config`，订阅者出错时
+调的是组合根塞进来的 `_sink`（`EventBus.SetErrorSink(LogError)`；没注入则退回 `OutputDebug`）。
+将来 Kernel 里任何需要「向上报告」的场合都照此办理 —— **不要在 Kernel 里直接写 `LogError(...)`**。
+⚠ 调用属性里存的函数**必须先取到局部变量**：`sink := this._sink` 再 `sink(msg)`；AHK v2 的
+`obj.prop(args)` 走方法查找、不会调用属性里的 `Func`（实测抛 `Too many parameters passed to function`，
+且会被包裹它的 `try` 吞掉），详见 `03-ahk-v2` 的踩坑表。
 ```
 
 `Coordinator/` 是跨模块协调（读业务上下文、发事件、算几何），**不属于** Capability；

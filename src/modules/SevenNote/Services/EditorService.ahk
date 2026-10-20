@@ -72,7 +72,11 @@ class EditorService {
     ; 现象（用户报的「删掉末尾几行空行，画面不跟着变，拖一下滚动条才一次性闪回」）：
     ;   · 删除后 SCROLLINFO 已经重算对了 —— nMax / nPos 都是新值，滚动条滑块当场变长；
     ;   · 但 EM_GETFIRSTVISIBLELINE 和画面都停在删除前 —— 内容已短、视口没动；
-    ;   · 唯 WM_VSCROLL 能修，WM_SIZE / 重绘 / EM_SCROLLCARET 都不能。
+    ;   · 唯「真的滚动」能修，WM_SIZE / 重绘 / EM_SCROLLCARET 都不能（早期实测）。
+    ;     v2.4.4 探针补测（120 行文本、末尾删 120 字）：单独发
+    ;     WM_VSCROLL/SB_ENDSCROLL、EM_GETLINECOUNT、EM_GETFIRSTVISIBLELINE
+    ;     **全部无效**（drift 341px 原地不动、闲置 500ms 也不自愈）；
+    ;     只有 EM_SETSCROLLPOS 能把 drift 归零。它由 StatFeature 每 150ms 巡检触发。
     ; 实测（40 行正文 + 末尾 5 个空行，150% 缩放）：
     ;   删除后   fv=19  nPos=502  nMax=1476   scrollPt.y=684   画面像素只变 0.04%
     ;   写回后   fv=13  nPos=501  nMax=1476   scrollPt.y=501   画面重绘 9.9%
@@ -93,6 +97,14 @@ class EditorService {
         npos := NumGet(si, 20, "int")
         nmax := NumGet(si, 12, "int")
         npage := NumGet(si, 16, "int")
+        ntrack := NumGet(si, 24, "int")   ; SIF_TRACKPOS
+
+        ; ⓪ 用户正在拖滑块时一律不动手 —— nTrackPos 与 nPos 分离就说明拖动中，
+        ;   此时写回会把他弹回去，表现成「滑条拖不动」。静止态两者恒等
+        ;   （探针实测 S0~S8 全程 nTrack == nPos），所以这条守卫只挡拖动、
+        ;   不影响删除后的修正。
+        if (Abs(ntrack - npos) > 2)
+            return
 
         ; ① 脱节检测：内部渲染用的像素位置 vs SCROLLINFO 的逻辑位置
         cur := Buffer(8, 0)

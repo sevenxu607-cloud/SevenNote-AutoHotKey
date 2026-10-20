@@ -15,11 +15,21 @@ Persistent()
 #Warn VarUnset, OutputDebug
 
 ; ═══════════════════════════════════════════════════════════════════════════
-;  SevenWork —— v2.4.3
+;  SevenWork —— v2.4.5
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
 ;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+S 帮助窗口底部），改这里要一并改它。
 ;
 ;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
+;    v2.4.5  事件总线不再吞异常：原先 `try fn(data)` 把订阅者的异常静默吃掉 ——
+;            到不了 OnError、也不进 _error.log，表现成「某个副作用没发生」而日志
+;            干干净净。现在逐个隔离执行（一个抛错不拖累后面的订阅者），循环结束
+;            后汇聚成一条写入日志；Kernel 不直接引用 LogError，改由组合根
+;            EventBus.SetErrorSink(LogError) 注入，没注入时退回 OutputDebug。
+;    v2.4.4  删空行后「画面慢半拍再猛跳」的修复：① StatFeature 巡检 500ms → 150ms
+;            —— 探针实测滑条本来就实时（nMax/nPos 当场变对），滞后且不自愈的是
+;            画面渲染位置（drift 341px）；② SyncScrollAfterShrink 补 SIF_TRACKPOS
+;            拖动守卫（GetScrollInfo 一直在请求它却从没读过）。与背景图 /
+;            WS_EX_COMPOSITED 无关。
 ;    v2.4.3  一轮「去重与仓库卫生」：① 新增 Service `PeerLayoutService` —— 终端 / DeepSeek
 ;            两处各自留底的「右下角落点公式 + 可摆性闸 + 矩形读取」收拢成一份（原先改
 ;            一处要记着同步另一处；实测两版摆位逐项一致）；② 删掉全局覆盖键
@@ -300,6 +310,13 @@ Persistent()
 ; （开发版项目根 .logs\、编译版 %AppData%\SevenWork\），
 ; 而其中的 AppData 目录就在下面几行才建。
 OnError(OnScriptError)
+
+; ═══ 事件总线的错误出口 ═══
+; EventBus 属于 Kernel，不能直接引用 LogError（.clinerules/02「严禁反向依赖」），
+; 所以由组合根把日志函数**注入**进去。必须早于任何 EventBus.Emit ——
+; SevenNoteModule.Init() 里 State.SetGui() 就会发第一次 Gui.Ready。
+; 没注入的代价：订阅者异常只写 OutputDebug，普通使用者看不到。
+EventBus.SetErrorSink(LogError)
 
 ; AHK 的异常回调。返回 **1** = 已处理，不弹默认错误框（返回 0 就会弹）。
 ; ⚠ 回调自身绝不能抛异常 —— 会递归回到这里，所以全程 try，见 LogError。
