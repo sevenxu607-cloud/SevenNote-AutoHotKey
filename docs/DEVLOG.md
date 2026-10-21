@@ -14,11 +14,12 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：删除 `docs/legacy/` 拆分前快照（v2.4.3 单文件，4209 行）并清理 3 处引用
-  （详见 2026-10-21 15:32 条目）；此前为文档地图 + `tools/check-docs.ps1` 校验脚本
-- **正在处理**：`main` 上实打实用几天，收集回归问题（修复已在 main，日用实例跑的就是它）
-- **下一步**：继续 P1（`PandocService.Convert` 失败静默、`SearchFeature` 的 DPI 单位混用待探针实测），
-  再 P2（pandoc 移出 `Critical`、MD 出口补 `atx`）
+- **最近一次改动**：S3a 只读验证通过 —— 生产库 36 篇 `.md` 全量载入 Milkdown，零失败
+  （详见 2026-10-21 20:05 条目；技术细节在 `_spike/webview2/S3A-RESULTS.md`）
+- **正在处理**：SevenNote 从 RichEdit + RTF 双格式迁到 WebView2 / Milkdown ——
+  **Markdown 升为母版**，RTF 退出保存路径
+- **下一步**：S3b（可写落盘：先保存到副本 + 全量差异核对；同时砍 11 条编辑热键、删 `SearchFeature`），
+  之后 S3c 补回 5 条编辑热键
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -26,10 +27,16 @@
 
 ## 待办与方向
 
+**S3 迁移（WebView2 / Milkdown）**
+- [ ] S3b：可写落盘 —— 先 `SaveAs` 副本，再全量核对「差异只有 CRLF→LF 与 `\#`→`#`」
+- [ ] S3b：砍 11 条编辑热键、删 `SearchFeature`（219 行）、`EditorService` 行操作（70 行）
+- [ ] S3c：补回 5 条编辑热键（`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` / `Shift+Tab`）
+- [ ] S3d：外观对齐（`Alt+T` 循环主题、背景图主题是否随 RTF 一起退休待定）
+
 **P1（代码审查遗留）**
 - [ ] `PandocService.Convert` 失败被静默吞掉（`SaveFeature` 丢弃返回值，状态栏仍报「已保存」）
-- [ ] `SearchFeature.Show/Hide` 用 `WinGetClientPos`（物理）喂 `Gui.Control.Move`（逻辑）—— 150% DPI 下疑似 ×1.5，待探针实测
 - [ ] `SaveFeature` 把 `RunWait(pandoc)` 移出 `Critical(1)`；`PandocService` 补 `--markdown-headings=atx`
+- [x] ~~`SearchFeature.Show/Hide` 的 DPI 单位混用~~ —— 整个 Feature 随 S3b 删除，不再修
 
 **人工验收（上下文热键只能手按）**
 - [ ] 长按 `Backspace` 删一整屏空行：画面小步跟随、不抽搐
@@ -61,12 +68,44 @@
 | `EM_SETEVENTMASK` + `EN_CHANGE` 通知 | 本机 `RichEdit50W` 上掩码设不上：读回恒为 `0x0`，`WM_COMMAND` 一次都不来 |
 | 50ms `SetTimer` 轮询 + 脱节守卫（`ScrollSyncFeature`） | 真机报错；我这边探针全绿、无法复现。备份在 `%TEMP%\SevenNoteDev2\reverted_20261018_113204\` |
 | 保留 v2.4.3 单文件快照作对照（`docs/legacy/`） | 重构已验证成功：旧版 30 个 `class` 全在当前 57 个里（只在旧版有的 = **0**），6 个顶层函数已转为类方法；文件可从 `git checkout a115ea3 -- docs/legacy` 取回。留着的坏处是「打包纯代码给 AI」时会误纳 4209 行，并让助手把两套架构混起来 |
+| RTF 双格式存档（`.rtf` 母版 + `.md` 副本） | 生产库 36 篇 `.rtf` / `.md` **已 1:1 全配对、rtf-only = 0** —— 双写只是维护成本。Markdown 升为母版后，Pandoc 退回「导出」一角（`Alt+M`） |
+| AHK 侧 11 条编辑热键（撤销 / 重做 / 删行 / 复制行 / 上下移行 / 搜索 / 回车 / 退出等） | 编辑器自带 + Obsidian 能做的都不重复实现；`Ctrl+Y` 让出来正好给原生重做。`Ctrl+T` 时间戳不可替代，保留 |
 
 ---
 
 ## 会话记录
 
 （新的在最上面）
+### 2026-10-21 20:05　笔记迁到 WebView2 + Milkdown，放弃 RTF 双格式
+
+**我说**（原话）
+> 按照推荐进行，进行完再接下来
+
+**意图**
+推断：把 SevenNote 从 RichEdit + RTF 双格式搬到 WebView2 / Milkdown，笔记改成原生 Markdown；
+本轮先把 AHK 侧的编辑功能面剪掉，再动保存路径。
+
+**决定 / 过程**
+- **Markdown 成为母版**，RTF 退出保存路径，Pandoc 只留导出（`Alt+M`）。
+  依据：生产库 36 篇笔记 `.rtf` / `.md` **已 1:1 全配对、rtf-only = 0**，且用户本来就在 Obsidian 里读 `.md`。
+- 编辑热键 **27 → 14**。判据：编辑器自带的 + Obsidian 能做的 + 只省鼠标点击的，一律删。
+  `Ctrl+T` 时间戳（`🕐 HH:mm`）是唯一不可替代的，必留。
+- `Ctrl+H` 分隔线改为直接吐 `---`，不再按字宽算 20–320 个连字符（顺带删掉 ~107 行 GDI 测宽）。
+- S3a 先做**只读**渲染，不碰任何文件：36 篇真笔记全部载入成功。
+
+**代价 / 风险**
+- **保存会改写文件**：CRLF→LF、`\#`→`#`。实测最大一篇 11813 → 11151 字符，
+  差额 = 567 个 CR + 95 处转义，语义等价，但 S3b 前必须全量核一遍「差异只有这两类」。
+- `Ctrl+F` 本轮**砍掉**（笔记平均 40 行）。若实际常用长笔记检索，得在前端重做。
+- S3a 的操作细节只留在 `_spike/webview2/S3A-RESULTS.md`，`_spike/` 不进版本库、会被清理。
+
+**待办**
+- [ ] S3b：可写落盘前先「保存到副本 + 全量差异核对」
+- [ ] S3c：补回 5 条编辑热键（`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` / `Shift+Tab`）
+- [ ] 把三个坑写进 `.clinerules/03`：Milkdown 插件要 `$prose` 包、`StrReplace` 不认 NUL、
+      `Eval` 触发的 JS 函数必须有返回值
+
+
 
 ### 2026-10-21 15:32　删掉 docs/legacy：重构已证明成功，快照改成「按需从 git 取回」
 
