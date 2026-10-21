@@ -100,9 +100,21 @@ class WebWindow {
             this._gui.Show()
             WinActivate("ahk_id " . this._hwnd)
             WebHostService.Resize(this._hwnd)
+            this._Reveal()
         } catch as e {
             LogError(this._title . " 激活失败：" . e.Message)
         }
+    }
+
+    ; 呼出粒子（冰晶迸发）。所有 Web 窗口共用一个入口 ——
+    ; 从前只有笔记窗在自己的 Shown 事件里喊，面板 / 提示词窗一直没有粒子。
+    ; ⚠ 页面还没挂好时 Eval 返回 {ok:false}，前端那句 `__swfx &&` 会短路，
+    ;   不报错也不写日志 —— 首次打开没看见粒子是正常现象。
+    ; ⚠ 与笔记窗自己的 reveal() 撞上无害：burst() 重复调用只打断上一次。
+    _Reveal() {
+        if !this._mounted || !this.IsOpen()
+            return
+        WebHostService.Eval("window.__swfx&&window.__swfx.reveal()", this._hwnd)
     }
 
     ; 换主题：只换窗口底色 + 把 --sw-* 推给页面，**不重建**。
@@ -112,9 +124,11 @@ class WebWindow {
             return
         p := ThemeService.Palette()
         try this._gui.BackColor := p.win
-        UiPaint.TitleBar(this._hwnd, p.win, p.text)
         UiPaint.WindowTheme(this._hwnd, p.dark)
-        UiPaint.Glass(this._hwnd, p.style, p.win)
+        ; ⚠ 顺序：先立背板、再决定标题栏染不染。mica/acrylic 生效时染色会把
+        ;   背板盖成一块实色（见 UiPaint.TitleBar 的 caption 说明）。
+        m := UiPaint.Glass(this._hwnd, p.style, p.win)
+        UiPaint.TitleBar(this._hwnd, p.win, p.text, !(IsObject(m) && m.ok))
         ; 页面没起来时 Eval 返回 {ok:false}，忽略即可 —— 页面 onMounted 还会
         ; 再 getTheme 一次，不会留旧色。
         if this._mounted
@@ -132,10 +146,11 @@ class WebWindow {
         g := Gui("-MinimizeBox -MaximizeBox", this._title)
         g.SetFont("s10", "Microsoft YaHei UI")
         g.BackColor := p.win
-        ; 非客户区（标题栏 / 边框）的玻璃背衬 —— 客户区整个交给 WebView2
-        UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+        ; 非客户区（标题栏 / 边框）的玻璃背衬 —— 客户区整个交给 WebView2。
+        ; ⚠ 背板成功时不染标题栏底色，否则 Win11 的亚克力被实色盖掉。
         UiPaint.WindowTheme(g.Hwnd, p.dark)
-        UiPaint.Glass(g.Hwnd, p.style, p.win)
+        m := UiPaint.Glass(g.Hwnd, p.style, p.win)
+        UiPaint.TitleBar(g.Hwnd, p.win, p.text, !(IsObject(m) && m.ok))
 
         this._gui := g
         this._hwnd := g.Hwnd
@@ -158,6 +173,9 @@ class WebWindow {
         fn := this._onReady
         if IsObject(fn)
             try fn(this)
+
+        ; 首次露面也补一次粒子：导航是异步的，等 700ms 再喊（早喊会被 && 吞掉）。
+        SetTimer((*) => this._Reveal(), -700)
     }
 
     ; 摆位：center    = 主屏工作区居中偏上（不写死坐标，换显示器 / 改分辨率都不用改代码）

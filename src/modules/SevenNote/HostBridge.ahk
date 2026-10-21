@@ -20,8 +20,19 @@ NoteHostVersion() => A_AhkVersion
 ; 语义色板 → JSON。实现已上收到 WorkBench\PanelHostBridge.ahk 的 ThemeJson()：
 ; 面板也要同一份主题，而「平台去调模块里的函数」是反向依赖（.clinerules/02）。
 ; 这里只留转发，字段顺序 / 名字以平台侧那份为准。
+;
+; 编辑区字体 / 字号是**笔记模块的业务**（Alt+Shift+F 那些档位），不能塞进平台的
+; ThemeJson() —— 平台调模块里的 FontService 同样是反向依赖。做法：平台那份原样
+; 取来，去掉收口的 `}`，补两个字段再收口。前端拿到 --sw-ed-font / --sw-ed-size，
+; 面板那张网页不消费它们（那里该用系统 UI 字体）。
+; ⚠ 字号单位是**磅（pt）**，与旧版 RichEdit 的 yHeight = size*20 twips 同源；
+;   前端直接写 `14pt`，别自己换算成 px —— 换错的观感差异恰好就是「字变大」。
 NoteHostTheme() {
-    return ThemeJson()
+    j := ThemeJson()
+    return SubStr(j, 1, -1)
+        . ',"font":'     . JsText.Escape(FontService.GetName())
+        . ',"fontSize":' . FontService.GetSize()
+        . "}"
 }
 
 ; 粘贴的图片落盘：base64 → <vault>\_assets\<日期>\sw_*.png，返回 ./_assets/… 相对路径。

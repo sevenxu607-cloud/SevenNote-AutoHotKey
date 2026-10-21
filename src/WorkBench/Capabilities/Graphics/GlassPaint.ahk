@@ -42,7 +42,10 @@ class GlassPaint {
     ; ─── 玻璃背衬 ─────────────────────────────────────────────────────────
     ; tintHex 只给 Win10 的 accent 用（GradientColor）；Win11 的背板由系统
     ; 按桌面壁纸取色，不吃这个参数。alpha 是 accent 那层色的不透明度。
-    static Apply(hwnd, tintHex := "000000", alpha := 0xB4) {
+    ; ⚠ 缺省 0x50（31%）：原来 0xB4（70%）时染色层几乎盖住模糊，Win10 上看着
+    ;   就是一块不透明的深色板 —— 这是「窗口厚重」的原生侧来源。要更透往 0x38 走，
+    ;   但低于 ~0x28 后标题栏上的浅色小字开始吃力（Win11 走背板、不受此值影响）。
+    static Apply(hwnd, tintHex := "000000", alpha := 0x50) {
         if !hwnd || !DllCall("user32\IsWindow", "ptr", hwnd, "int")
             return {ok: false, mode: "none", reason: "窗口无效"}
 

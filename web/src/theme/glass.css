@@ -5,31 +5,31 @@
      .x[data-v-xxx]（0,2,0），我们多一个元素选择器（0,2,1），稳定胜出。
      ⚠ 别图省事写 !important —— 那会连将来面板的局部覆盖一起拍死。
    · 三层结构：scrim 衬底（保对比度） → 冰面（blur） → 边与光
-     ⚠ scrim 是**结构层不是调参**：青光斑最亮处 #1E5A6E 上，正文只到 Lc 86
+     ⚠ scrim 是**结构层不是调参**：光斑最亮处不压一层，正文会跟着明暗抖
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── 0. 色板默认值（AHK 推主题时由内联 style 覆盖，内联优先级最高）──── */
 html[data-style='glass'] {
   color-scheme: dark;
 
-  --sw-bg: #08222e;
-  --sw-bg-alt: #061a24;
-  --sw-fg: #e9fbff;
-  --sw-dim: #a3c9d9;
-  --sw-accent: #67e8f9;
-  --sw-accent-2: #c9b6ff;
-  --sw-glow-1: #2dd4bf;
-  --sw-glow-2: #7c6cf0;
-  --sw-warn: #ffb4a2;
-  --sw-border: rgba(190, 245, 255, 0.16);
-  --sw-code-bg: rgba(190, 245, 255, 0.07);
-  --sw-select: rgba(103, 232, 249, 0.26);
-  --sw-edge: rgba(210, 250, 255, 0.3);
-  --sw-ring: rgba(103, 232, 249, 0.28);
-  --sw-scrim: rgba(3, 14, 20, 0.46);
-  --sw-shadow-1: 0 1px 2px rgba(0, 10, 18, 0.4);
-  --sw-shadow-2: 0 6px 18px rgba(0, 10, 18, 0.45);
-  --sw-shadow-3: 0 18px 48px rgba(0, 10, 18, 0.55);
+  --sw-bg: #5B5B5B;
+  --sw-bg-alt: #4C4C4C;
+  --sw-fg: #F5F5F5;
+  --sw-dim: #DFDFDF;
+  --sw-accent: #B8B8B8;
+  --sw-accent-2: #C5C5C5;
+  --sw-glow-1: #ABABAB;
+  --sw-glow-2: #B3B3B3;
+  --sw-warn: #D3D3D3;
+  --sw-border: rgba(233, 233, 233, 0.14);
+  --sw-code-bg: rgba(228, 228, 228, 0.06);
+  --sw-select: rgba(184, 184, 184, 0.22);
+  --sw-edge: rgba(233, 233, 233, 0.22);
+  --sw-ring: rgba(184, 184, 184, 0.24);
+  --sw-scrim: rgba(0, 0, 0, 0.2);
+  --sw-shadow-1: 0 1px 2px rgba(20, 20, 20, 0.16);
+  --sw-shadow-2: 0 6px 16px rgba(20, 20, 20, 0.18);
+  --sw-shadow-3: 0 16px 40px rgba(20, 20, 20, 0.24);
   --sw-font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
 }
 
@@ -50,13 +50,18 @@ html[data-style='glass'] body {
    自检页 / 笔记页 / 将来的面板都要共享同一层底，写进模板就得抄四遍。 */
 
 /* 极光五色（RGB 三元组：rgba(var(--c), a) 要用它拼透明度）。
-   暖橙只占 16%，多了整片就脏。 */
+   v2.13 起**全部去色** —— 只剩明度差，没有色相。
+   原来是「青绿 + 靛紫 + 冰青 + 紫罗兰 + 暖橙」→ v2.12 搬到蓝系，
+   两版都还是「整窗罩了一层有色光」，观感厚重的一半来自这里，不是来自透明度。
+   现在五团都是白/浅灰：screen 叠加后是**中性光雾**，玻璃才有「透」的错觉。
+   ⚠ 白色比蓝色亮得多，orb 的 alpha 必须同步降（见下面的 radial-gradient），
+     否则五团白光 screen 叠起来直接过曝成一片纯白。 */
 html[data-style='glass'] {
-  --sw-aur-1: 45, 212, 191;   /* 青绿 */
-  --sw-aur-2: 124, 108, 240;  /* 靛紫 */
-  --sw-aur-3: 103, 232, 249;  /* 冰青 */
-  --sw-aur-4: 192, 132, 252;  /* 紫罗兰 */
-  --sw-aur-5: 240, 168, 104;  /* 暖橙 */
+  --sw-aur-1: 255, 255, 255;
+  --sw-aur-2: 236, 236, 236;
+  --sw-aur-3: 250, 250, 250;
+  --sw-aur-4: 228, 228, 228;
+  --sw-aur-5: 255, 255, 255;
 }
 
 html[data-style='glass'] .sw-aurora {
@@ -74,8 +79,10 @@ html[data-style='glass'] .sw-aurora {
        vmin 相对的。写死 64px 时，1460 宽的大窗里它只占光团直径的 6%（刚好的柔边），
        697 宽的笔记窗里却占 26% → 五团被糊成一片均匀暗青，
        看起来又退回「深色主题」（真机实测，S1 第二次踩）。
-     clamp 的 18px 下限保证小窗仍有柔边、72px 上限保证大窗不至于糊过头。 */
-  filter: blur(clamp(18px, 6vmin, 72px)) saturate(135%);
+     ⚠ v2.13 把上限从 60px 收到 38px：去色后光团是白的、层次全靠浓度差，
+       模糊一过头就摊平成「均匀灰」。同理下限从 14 降到 12 —— 小窗要保住团形。
+       sat 从 115% 降到 110%：灰上饱和变换是恒等，留着只是给将来的彩色主题。 */
+  filter: blur(clamp(10px, 3.5vmin, 24px)) saturate(100%);
 }
 
 /* flat 主题不付这笔成本（节点常驻，靠这条关掉） */
@@ -93,13 +100,17 @@ html[data-style='glass'] .sw-orb {
   /* 慢到盯着看不出来，但静置 10 秒再比一次就差很多 —— 这是「活」的来源 */
   animation: sw-orb-drift var(--dur, 46s) ease-in-out infinite alternate;
   animation-delay: var(--delay, 0s);
-  /* ⚠ 衰减到 68% 就收：76% 时边缘拖太长，几团叠起来又会平均成一片暗青 */
+  /* ⚠ 两个数一起决定「看得见团、看不见灯」：
+       · 位置：56% 就收（原来是 68%）—— 收得越晚，五团叠起来越像一片均匀的底
+       · 浓度：0.5 / 0.2 / 0.06 —— 中心要够亮才读得出「光」，但要马上掉下去，
+         否则 blur 一抹就成了整屏均匀提亮（那样玻璃就彻底没了）
+     真机 1000x880 实测：0.26 起步 + 68% 收 = 板内一片均匀深灰，没有雾感。 */
   background: radial-gradient(
     circle closest-side,
-    rgba(var(--c), 0.95) 0%,
-    rgba(var(--c), 0.6) 34%,
-    rgba(var(--c), 0.22) 58%,
-    transparent 68%
+    rgba(var(--c), 0.8) 0%,
+    rgba(var(--c), 0.3) 26%,
+    rgba(var(--c), 0.08) 38%,
+    transparent 54%
   );
 }
 
@@ -155,13 +166,13 @@ html[data-style='glass'] .sw-plate {
   position: relative;
   border-radius: var(--sw-radius-lg);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.34),
-    inset 0 0 0 1px rgba(190, 245, 255, 0.12),
-    0 1px 2px rgba(0, 10, 18, 0.3),
-    0 12px 28px rgba(0, 10, 18, 0.34),
-    0 42px 90px -28px rgba(0, 10, 18, 0.6),
-    0 0 26px -8px rgba(103, 232, 249, calc(var(--sw-edge-a, 0.7) * 0.9));
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(233, 233, 233, 0.1),
+    0 1px 2px rgba(20, 20, 20, 0.16),
+    0 10px 22px rgba(20, 20, 20, 0.18),
+    0 26px 60px -30px rgba(20, 20, 20, 0.26),
+    0 0 22px -10px rgba(184, 184, 184, calc(var(--sw-edge-a, 0.4) * 0.5));
 }
 
 html[data-style='glass'] .sw-plate::before {
@@ -174,11 +185,11 @@ html[data-style='glass'] .sw-plate::before {
   background: conic-gradient(
     from 200deg,
     rgba(255, 255, 255, 0.03),
-    rgba(160, 250, 255, calc(var(--sw-edge-a, 0.7) * 1)) 12%,
+    rgba(231, 231, 231, calc(var(--sw-edge-a, 0.7) * 1)) 12%,
     rgba(255, 255, 255, 0.06) 28%,
-    rgba(200, 180, 255, calc(var(--sw-edge-a, 0.7) * 0.8)) 52%,
+    rgba(190, 190, 190, calc(var(--sw-edge-a, 0.7) * 0.8)) 52%,
     rgba(255, 255, 255, 0.04) 72%,
-    rgba(140, 245, 255, calc(var(--sw-edge-a, 0.7) * 0.75)) 88%,
+    rgba(223, 223, 223, calc(var(--sw-edge-a, 0.7) * 0.75)) 88%,
     rgba(255, 255, 255, 0.03)
   );
   -webkit-mask:
@@ -234,7 +245,7 @@ html[data-style='glass'] .side {
   /* 三个参数全部走 token：blur / sat / bright 就是滑杆与 material 字段的落点 */
   backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%)) brightness(var(--sw-bright, 1.06));
   -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%)) brightness(var(--sw-bright, 1.06));
-  box-shadow: inset -1px 0 0 rgba(210, 250, 255, 0.12);
+  box-shadow: inset -1px 0 0 rgba(233, 233, 233, 0.12);
 }
 
 /* 侧栏顶光带：1px 渐变，从左上淡入淡出 */
@@ -243,7 +254,7 @@ html[data-style='glass'] .side::before {
   position: absolute;
   inset: 0 0 auto;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(210, 250, 255, 0.6), transparent);
+  background: linear-gradient(90deg, transparent, rgba(233, 233, 233, 0.6), transparent);
   pointer-events: none;
 }
 
@@ -254,11 +265,11 @@ html[data-style='glass'] .side::before {
      合计 0.30 + 0.2 ≈ 0.44，与 lab 主板的 0.36–0.48 同档。 */
 html[data-style='glass'] .main {
   position: relative;
-  background: rgba(3, 14, 20, 0.3);
-  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
-  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
 }
 
 /* ── 工作台面板（Alt+S）：两块独立玻璃板 ───────────────────────────────
@@ -268,19 +279,19 @@ html[data-style='glass'] .main {
    ⚠ scoped 样式会把选择器编成 .pnav[data-v-xxx]（specificity 0,2,0），
      这条 html[data-style] .pnav 是 0,2,1 —— 赢一格，能盖住组件里的兜底底色。 */
 html[data-style='glass'] .pnav {
-  background: rgba(10, 26, 36, 0.5);
-  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
-  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
 }
 
 html[data-style='glass'] .pmain {
-  background: rgba(3, 14, 20, 0.34);
-  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
-  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
-    brightness(var(--sw-bright, 1.06));
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 15px)) saturate(var(--sw-sat, 120%))
+    brightness(var(--sw-bright, 1.02));
 }
 
 
@@ -289,14 +300,14 @@ html[data-style='glass'] .pmain {
    transform 走合成层，background-position 走重绘。 */
 html[data-style='glass'] .brand {
   color: var(--sw-fg);
-  text-shadow: 0 0 14px rgba(103, 232, 249, 0.24);
+  text-shadow: 0 0 10px rgba(184, 184, 184, 0.12);
 }
 
 html[data-style='glass'] .dot {
   background: var(--sw-accent);
   box-shadow:
-    0 0 0 3px rgba(103, 232, 249, 0.14),
-    0 0 14px rgba(103, 232, 249, 0.75);
+    0 0 0 3px rgba(184, 184, 184, 0.14),
+    0 0 14px rgba(184, 184, 184, 0.75);
 }
 
 html[data-style='glass'] .nav {
@@ -316,7 +327,7 @@ html[data-style='glass'] .nav::after {
   background: linear-gradient(
     100deg,
     transparent 18%,
-    rgba(210, 250, 255, 0.16) 50%,
+    rgba(233, 233, 233, 0.16) 50%,
     transparent 82%
   );
   transform: translateX(-115%);
@@ -328,7 +339,7 @@ html[data-style='glass'] .nav:hover:not(.off):not(.on)::after {
 }
 
 html[data-style='glass'] .nav.on {
-  background: linear-gradient(90deg, rgba(103, 232, 249, 0.18), rgba(103, 232, 249, 0.03));
+  background: linear-gradient(90deg, rgba(184, 184, 184, 0.18), rgba(184, 184, 184, 0.03));
   box-shadow:
     inset 2px 0 0 var(--sw-accent),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
@@ -343,7 +354,7 @@ html[data-style='glass'] .nav.off {
 /* ── 4. 按钮 ────────────────────────────────────────────────────────────
    两套选择器：① 覆盖现有 .note-act button（scoped 0,2,1 → 我们 0,2,2）
                 ② 将来的 .sw-btn 通用类
-   主按钮用「亮底 + 深字」：青底 #67E8F9 上配 #04141A 对比度 12.9，
+   主按钮用「亮底 + 深字」：青底 #CECECE 上配 #111111 对比度 12.9，
    比「深底 + 青字」更亮眼，也不会在青光斑上糊掉。 */
 html[data-style='glass'] .note-act button,
 html[data-style='glass'] .sw-btn {
@@ -360,7 +371,7 @@ html[data-style='glass'] .sw-btn {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.38),
     inset 0 -1px 0 rgba(255, 255, 255, 0.06),
-    0 2px 10px rgba(0, 10, 18, 0.38);
+    0 2px 10px rgba(8, 8, 8, 0.3);
   transition:
     background var(--sw-dur-fast) var(--sw-ease),
     border-color var(--sw-dur-fast) var(--sw-ease),
@@ -370,12 +381,12 @@ html[data-style='glass'] .sw-btn {
 
 html[data-style='glass'] .note-act button:hover,
 html[data-style='glass'] .sw-btn:hover {
-  border-color: rgba(103, 232, 249, 0.55);
-  background: linear-gradient(180deg, rgba(103, 232, 249, 0.2), rgba(103, 232, 249, 0.06));
+  border-color: rgba(184, 184, 184, 0.55);
+  background: linear-gradient(180deg, rgba(184, 184, 184, 0.2), rgba(184, 184, 184, 0.06));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 0 18px rgba(103, 232, 249, 0.26),
-    0 2px 10px rgba(0, 10, 18, 0.38);
+    0 0 18px rgba(184, 184, 184, 0.26),
+    0 2px 10px rgba(8, 8, 8, 0.3);
 }
 
 /* 按下：下沉 1px + 内凹阴影。不做放大 —— 密集工具条里放大反而打架。 */
@@ -383,7 +394,7 @@ html[data-style='glass'] .note-act button:active,
 html[data-style='glass'] .sw-btn:active {
   transform: translateY(1px) scale(0.988);
   box-shadow:
-    inset 0 2px 6px rgba(0, 10, 18, 0.55),
+    inset 0 2px 6px rgba(8, 8, 8, 0.42),
     inset 0 -1px 0 rgba(255, 255, 255, 0.05);
 }
 
@@ -397,21 +408,21 @@ html[data-style='glass'] .sw-btn:focus-visible {
 
 /* 主按钮 */
 html[data-style='glass'] .sw-btn--primary {
-  border-color: rgba(210, 250, 255, 0.55);
-  background: linear-gradient(180deg, #9ff2ff, #67e8f9 42%, #2dd4bf);
-  color: #04141a;
+  border-color: rgba(233, 233, 233, 0.55);
+  background: linear-gradient(180deg, #E1E1E1, #CECECE 42%, #AFAFAF);
+  color: #111111;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 -2px 6px rgba(4, 20, 26, 0.22),
-    0 4px 16px rgba(45, 212, 191, 0.32);
+    inset 0 -2px 6px rgba(17, 17, 17, 0.22),
+    0 4px 16px rgba(175, 175, 175, 0.32);
 }
 
 html[data-style='glass'] .sw-btn--primary:hover {
-  background: linear-gradient(180deg, #b9f7ff, #7deeff 42%, #45e0cb);
+  background: linear-gradient(180deg, #EAEAEA, #D7D7D7 42%, #BEBEBE);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 6px 22px rgba(45, 212, 191, 0.44);
+    0 6px 22px rgba(175, 175, 175, 0.44);
 }
 
 /* 幽灵按钮：无底无框，hover 才浮出冰面 */
@@ -424,7 +435,7 @@ html[data-style='glass'] .sw-btn--ghost {
 
 html[data-style='glass'] .sw-btn--ghost:hover {
   border-color: var(--sw-border);
-  background: rgba(190, 245, 255, 0.07);
+  background: rgba(228, 228, 228, 0.07);
   color: var(--sw-fg);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
@@ -435,13 +446,13 @@ html[data-style='glass'] .sw-btn--ghost:hover {
 html[data-style='glass'] input,
 html[data-style='glass'] textarea,
 html[data-style='glass'] .sw-input {
-  border: 1px solid rgba(190, 245, 255, 0.18);
+  border: 1px solid rgba(228, 228, 228, 0.18);
   border-radius: var(--sw-radius);
-  background: rgba(3, 14, 20, 0.42);
+  background: rgba(12, 12, 12, 0.42);
   color: var(--sw-fg);
   font: inherit;
   box-shadow:
-    inset 0 1px 3px rgba(0, 10, 18, 0.55),
+    inset 0 1px 3px rgba(8, 8, 8, 0.42),
     inset 0 -1px 0 rgba(255, 255, 255, 0.05);
   transition:
     border-color var(--sw-dur-fast) var(--sw-ease),
@@ -457,18 +468,18 @@ html[data-style='glass'] textarea {
 
 html[data-style='glass'] input::placeholder,
 html[data-style='glass'] textarea::placeholder {
-  color: rgba(163, 201, 217, 0.55);
+  color: rgba(194, 194, 194, 0.55);
 }
 
 html[data-style='glass'] input:focus,
 html[data-style='glass'] textarea:focus,
 html[data-style='glass'] .sw-input:focus {
   outline: none;
-  border-color: rgba(103, 232, 249, 0.6);
-  background: rgba(3, 14, 20, 0.55);
+  border-color: rgba(184, 184, 184, 0.6);
+  background: rgba(12, 12, 12, 0.55);
   box-shadow:
     0 0 0 3px var(--sw-ring),
-    inset 0 1px 3px rgba(0, 10, 18, 0.55);
+    inset 0 1px 3px rgba(8, 8, 8, 0.42);
 }
 
 /* ── 6. 标题层级 ────────────────────────────────────────────────────────
@@ -476,8 +487,8 @@ html[data-style='glass'] .sw-input:focus {
    字重和笔画变虚，长文档读起来累。
    ⚠ 光晕别开大：>24px 的大半径会让中文笔画边缘糊成一片，看起来像失焦。 */
 html[data-style='glass'] h1 {
-  color: #f2feff;
-  text-shadow: 0 0 16px rgba(103, 232, 249, 0.14);
+  color: #FCFCFC;
+  text-shadow: 0 0 12px rgba(184, 184, 184, 0.08);
   letter-spacing: -0.01em;
 }
 
@@ -487,7 +498,7 @@ html[data-style='glass'] .hint {
 }
 
 html[data-style='glass'] .k {
-  color: rgba(163, 201, 217, 0.78);
+  color: rgba(194, 194, 194, 0.78);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-size: 11px;
@@ -495,7 +506,7 @@ html[data-style='glass'] .k {
 
 html[data-style='glass'] .v {
   color: var(--sw-fg);
-  text-shadow: 0 0 10px rgba(103, 232, 249, 0.1);
+  text-shadow: 0 0 10px rgba(184, 184, 184, 0.05);
 }
 
 /* ── 7. 卡片 / 探针块 ───────────────────────────────────────────────────
@@ -504,10 +515,10 @@ html[data-style='glass'] .v {
 html[data-style='glass'] .card,
 html[data-style='glass'] .probe {
   position: relative;
-  border: 1px solid rgba(190, 245, 255, 0.22);
+  border: 1px solid rgba(228, 228, 228, 0.22);
   border-radius: var(--sw-radius-lg);
   background:
-    linear-gradient(180deg, rgba(190, 245, 255, 0.13), rgba(190, 245, 255, 0.045));
+    linear-gradient(180deg, rgba(228, 228, 228, 0.13), rgba(228, 228, 228, 0.045));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     inset 0 -1px 0 rgba(255, 255, 255, 0.04),
@@ -527,47 +538,53 @@ html[data-style='glass'] .probe::before {
   inset: 0 0 auto;
   height: 1px;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, rgba(210, 250, 255, 0.55), transparent);
+  background: linear-gradient(90deg, transparent, rgba(233, 233, 233, 0.55), transparent);
   pointer-events: none;
 }
 
 html[data-style='glass'] .card:hover {
   transform: translateY(-1px);
-  border-color: rgba(103, 232, 249, 0.34);
+  border-color: rgba(184, 184, 184, 0.34);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.36),
-    0 10px 26px rgba(0, 10, 18, 0.5),
-    0 0 22px rgba(103, 232, 249, 0.12);
+    0 10px 26px rgba(8, 8, 8, 0.4),
+    0 0 22px rgba(184, 184, 184, 0.12);
 }
 
 html[data-style='glass'] .warn {
   color: var(--sw-warn);
-  background: rgba(255, 180, 162, 0.1);
-  border: 1px solid rgba(255, 180, 162, 0.32);
+  background: rgba(195, 195, 195, 0.1);
+  border: 1px solid rgba(195, 195, 195, 0.32);
   border-radius: var(--sw-radius);
 }
 
 /* ── 8b. 笔记窗 = 一块悬浮的大玻璃 ──────────────────────────────────────
    ⚠ 笔记窗是**满窗**的，不做这一步就没有「板外」——
      整屏都是一层均匀柔光，看起来又是深色主题（S1 第一版真踩了）。
-     四周留 12px 让光雾透出来，板才有「浮在光上」的厚度。
-   ⚠ 板内 scrim 别低于 .34：正文要在这块板上读半小时。 */
+     四周留 22px 让光雾透出来，板才有「浮在光上」的厚度。
+     ⚠ v2.13 从 12px 提到 22px：12px 在 1000 宽的窗里只占 1.2%，
+       肉眼看就是「板贴着窗框」，光雾那圈完全看不见 —— 而「板外有一圈光」
+       正是玻璃「浮起来」的唯一线索（我们透不到桌面，只能靠这个）。
+     ⚠ 板内 scrim 走 .10/.16（v2.13 去色后从 .22/.28 降下来）：底色换成中性
+       #1C1C1C 之后，同一个 alpha 读起来比以前「更黑」—— 不降就是一块闷住的板，
+       底下的白雾透不上来，玻璃又变回「深色方块」。
+       正文可读性由 .ProseMirror 自己那层 .10 兜底（合计 ≈ .20–.26），仍远超 15:1。 */
 html[data-style='glass'] .main.note {
-  margin: 12px;
+  margin: 22px;
   border-radius: var(--sw-radius-lg);
   overflow: hidden;
   background: linear-gradient(
     180deg,
-    rgba(3, 14, 20, 0.36) 0%,
-    rgba(3, 14, 20, 0.46) 100%
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.03) 100%
   );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(190, 245, 255, 0.1),
-    0 1px 2px rgba(0, 10, 18, 0.3),
-    0 12px 28px rgba(0, 10, 18, 0.34),
-    0 0 26px -8px rgba(103, 232, 249, calc(var(--sw-edge-a, 0.7) * 0.9));
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(233, 233, 233, 0.1),
+    0 1px 2px rgba(20, 20, 20, 0.16),
+    0 10px 22px rgba(20, 20, 20, 0.18),
+    0 0 34px -6px rgba(233, 233, 233, calc(var(--sw-edge-a, 0.4) * 0.9));
 }
 
 /* ── 8. 工具条 / 页脚 ───────────────────────────────────────────────────
@@ -576,9 +593,9 @@ html[data-style='glass'] .main.note {
 html[data-style='glass'] .note-head {
   position: relative;
   border-bottom: 1px solid var(--sw-border);
-  background: rgba(190, 245, 255, 0.045);
-  backdrop-filter: blur(12px) saturate(135%);
-  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  background: rgba(228, 228, 228, 0.045);
+  backdrop-filter: blur(10px) saturate(115%);
+  -webkit-backdrop-filter: blur(10px) saturate(115%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
@@ -589,24 +606,24 @@ html[data-style='glass'] .note-head h1 {
 html[data-style='glass'] .note-foot {
   position: relative;
   border-top: 1px solid var(--sw-border);
-  background: rgba(190, 245, 255, 0.05);
-  backdrop-filter: blur(12px) saturate(135%);
-  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  background: rgba(228, 228, 228, 0.05);
+  backdrop-filter: blur(10px) saturate(115%);
+  -webkit-backdrop-filter: blur(10px) saturate(115%);
   color: var(--sw-dim);
 }
 
 html[data-style='glass'] .dim {
-  color: rgba(163, 201, 217, 0.72);
+  color: rgba(194, 194, 194, 0.72);
   font-variant-numeric: tabular-nums;
 }
 
 /* ── 9. 编辑器正文 ──────────────────────────────────────────────────────
    ⚠ 这里是**文字层**：绝不加 backdrop-filter。
      玻璃放在文字下面，字就会跟着背景的明暗一起抖，读半小时眼睛就废了。
-   ⚠ 底色是 scrim 叠加（.main .18 + 这里 .2 ≈ .34），不是可选装饰：
-     最亮青光斑 #1E5A6E 上，正文裸奔只有 Lc 86，压一层才回到 95+。 */
+   ⚠ 底色是 scrim 叠加（.main .12 + 这里 .10 ≈ .22），不是可选装饰：
+     光斑最亮处不压 scrim，正文会跟着背景的明暗一起抖（读半小时眼睛就废了）。 */
 html[data-style='glass'] .sw-editor .ProseMirror {
-  background: rgba(3, 14, 20, 0.2);
+  background: rgba(0, 0, 0, 0.05);
   color: var(--sw-fg);
   caret-color: var(--sw-accent);
   text-rendering: optimizeLegibility;
@@ -622,47 +639,47 @@ html[data-style='glass'] .sw-editor .ProseMirror h1,
 html[data-style='glass'] .sw-editor .ProseMirror h2,
 html[data-style='glass'] .sw-editor .ProseMirror h3,
 html[data-style='glass'] .sw-editor .ProseMirror h4 {
-  color: #f4feff;
+  color: #FCFCFC;
   letter-spacing: -0.008em;
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror h1 {
-  text-shadow: 0 0 18px rgba(103, 232, 249, 0.16);
+  text-shadow: 0 0 12px rgba(184, 184, 184, 0.08);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror h2 {
-  text-shadow: 0 0 14px rgba(103, 232, 249, 0.1);
+  text-shadow: 0 0 14px rgba(184, 184, 184, 0.1);
 }
 
 /* 链接：青字 + 下划线用渐变淡出，hover 时整条亮起 */
 html[data-style='glass'] .sw-editor .ProseMirror a {
   color: var(--sw-accent);
-  text-decoration-color: rgba(103, 232, 249, 0.45);
+  text-decoration-color: rgba(184, 184, 184, 0.45);
   text-decoration-thickness: 1px;
   transition: color var(--sw-dur-fast), text-decoration-color var(--sw-dur-fast);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror a:hover {
-  color: #b9f7ff;
-  text-decoration-color: rgba(185, 247, 255, 0.9);
+  color: #EAEAEA;
+  text-decoration-color: rgba(234, 234, 234, 0.9);
 }
 
 /* 行内代码 / 代码块：冰面 + 左侧青条 */
 html[data-style='glass'] .sw-editor .ProseMirror code {
-  color: #d7fbff;
-  background: rgba(190, 245, 255, 0.09);
-  border: 1px solid rgba(190, 245, 255, 0.14);
+  color: #F4F4F4;
+  background: rgba(228, 228, 228, 0.09);
+  border: 1px solid rgba(228, 228, 228, 0.14);
   border-radius: 5px;
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror pre {
   position: relative;
   background:
-    linear-gradient(180deg, rgba(190, 245, 255, 0.08), rgba(190, 245, 255, 0.03));
-  border: 1px solid rgba(190, 245, 255, 0.16);
+    linear-gradient(180deg, rgba(228, 228, 228, 0.08), rgba(228, 228, 228, 0.03));
+  border: 1px solid rgba(228, 228, 228, 0.16);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 6px 20px rgba(0, 10, 18, 0.35);
+    0 6px 20px rgba(8, 8, 8, 0.28);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror pre::before {
@@ -680,15 +697,15 @@ html[data-style='glass'] .sw-editor .ProseMirror pre::before {
 html[data-style='glass'] .sw-editor .ProseMirror pre code {
   background: none;
   border: 0;
-  color: #e6fbff;
+  color: #F7F7F7;
 }
 
 /* 引用：左侧渐变竖条（青 → 透明），不用纯色 —— 纯色在深底上太像边框 */
 html[data-style='glass'] .sw-editor .ProseMirror blockquote {
   border-left: 0;
   padding-left: 1.1em;
-  color: rgba(163, 201, 217, 0.95);
-  background: linear-gradient(90deg, rgba(103, 232, 249, 0.08), transparent 70%);
+  color: rgba(194, 194, 194, 0.95);
+  background: linear-gradient(90deg, rgba(184, 184, 184, 0.08), transparent 70%);
   border-radius: 0 var(--sw-radius) var(--sw-radius) 0;
   position: relative;
 }
@@ -701,31 +718,31 @@ html[data-style='glass'] .sw-editor .ProseMirror blockquote::before {
   bottom: 0;
   width: 2px;
   border-radius: 2px;
-  background: linear-gradient(180deg, rgba(103, 232, 249, 0.9), rgba(103, 232, 249, 0.06));
+  background: linear-gradient(180deg, rgba(184, 184, 184, 0.9), rgba(184, 184, 184, 0.06));
 }
 
 /* 表格：表头冰面 + 行 hover 微亮 + 半透明细边 */
 html[data-style='glass'] .sw-editor .ProseMirror th {
-  background: rgba(190, 245, 255, 0.08);
-  color: #f4feff;
-  box-shadow: inset 0 -1px 0 rgba(210, 250, 255, 0.22);
+  background: rgba(228, 228, 228, 0.08);
+  color: #FCFCFC;
+  box-shadow: inset 0 -1px 0 rgba(233, 233, 233, 0.22);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror td,
 html[data-style='glass'] .sw-editor .ProseMirror th {
-  border-color: rgba(190, 245, 255, 0.2);
+  border-color: rgba(228, 228, 228, 0.2);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror tbody tr:hover {
-  background: rgba(190, 245, 255, 0.035);
+  background: rgba(228, 228, 228, 0.035);
 }
 
 /* 任务列表勾选框：圆角冰面，选中填青并带微光晕 */
 html[data-style='glass'] .sw-editor .ProseMirror li[data-item-type='task']::before {
-  border: 1.5px solid rgba(190, 245, 255, 0.55);
+  border: 1.5px solid rgba(228, 228, 228, 0.55);
   border-radius: 4px;
-  background: rgba(3, 14, 20, 0.35);
-  box-shadow: inset 0 1px 2px rgba(0, 10, 18, 0.5);
+  background: rgba(12, 12, 12, 0.35);
+  box-shadow: inset 0 1px 2px rgba(8, 8, 8, 0.4);
   transition: background var(--sw-dur-fast), border-color var(--sw-dur-fast),
     box-shadow var(--sw-dur-fast);
 }
@@ -735,10 +752,10 @@ html[data-style='glass']
   .ProseMirror
   li[data-item-type='task'][data-checked='true']::before {
   background: var(--sw-accent);
-  border-color: rgba(210, 250, 255, 0.85);
+  border-color: rgba(233, 233, 233, 0.85);
   box-shadow:
-    0 0 0 3px rgba(103, 232, 249, 0.14),
-    0 0 10px rgba(103, 232, 249, 0.38);
+    0 0 0 3px rgba(184, 184, 184, 0.14),
+    0 0 10px rgba(184, 184, 184, 0.38);
 }
 
 /* 分隔线：两端消隐，比实线轻 */
@@ -748,8 +765,8 @@ html[data-style='glass'] .sw-editor .ProseMirror hr {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(210, 250, 255, 0.28) 20%,
-    rgba(210, 250, 255, 0.28) 80%,
+    rgba(233, 233, 233, 0.28) 20%,
+    rgba(233, 233, 233, 0.28) 80%,
     transparent
   );
 }
@@ -758,19 +775,19 @@ html[data-style='glass'] .sw-editor .ProseMirror hr {
 html[data-style='glass'] .sw-editor .ProseMirror img {
   border-radius: var(--sw-radius);
   box-shadow:
-    0 0 0 1px rgba(190, 245, 255, 0.16),
-    0 8px 26px rgba(0, 10, 18, 0.5);
+    0 0 0 1px rgba(228, 228, 228, 0.16),
+    0 8px 26px rgba(8, 8, 8, 0.4);
 }
 
 html[data-style='glass'] .sw-editor .ProseMirror img.ProseMirror-selectednode {
   outline: 2px solid var(--sw-accent);
   outline-offset: 2px;
-  box-shadow: 0 0 22px rgba(103, 232, 249, 0.45);
+  box-shadow: 0 0 22px rgba(184, 184, 184, 0.45);
 }
 
 /* 空文档占位：压到 dim 的 65%，只是提示，不抢注意力 */
 html[data-style='glass'] .sw-editor .ProseMirror p.is-editor-empty:first-child::before {
-  color: rgba(163, 201, 217, 0.5);
+  color: rgba(194, 194, 194, 0.5);
 }
 
 /* ── 10. 滚动条：8px 窄条，hover 才亮 ───────────────────────────────────
@@ -782,14 +799,14 @@ html[data-style='glass'] ::-webkit-scrollbar {
 }
 
 html[data-style='glass'] ::-webkit-scrollbar-thumb {
-  background: rgba(190, 245, 255, 0.22);
+  background: rgba(228, 228, 228, 0.22);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
 html[data-style='glass'] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(190, 245, 255, 0.45);
+  background: rgba(228, 228, 228, 0.45);
   background-clip: content-box;
 }
 
@@ -808,8 +825,8 @@ html[data-style='glass'] .sw-hr {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(210, 250, 255, 0.26) 18%,
-    rgba(210, 250, 255, 0.26) 82%,
+    rgba(233, 233, 233, 0.26) 18%,
+    rgba(233, 233, 233, 0.26) 82%,
     transparent
   );
 }
@@ -820,10 +837,10 @@ html[data-style='glass'] .sw-chip {
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  border: 1px solid rgba(103, 232, 249, 0.3);
+  border: 1px solid rgba(184, 184, 184, 0.3);
   border-radius: var(--sw-radius-pill);
-  background: rgba(103, 232, 249, 0.14);
-  color: #b9f7ff;
+  background: rgba(184, 184, 184, 0.14);
+  color: #EAEAEA;
   font-size: 11px;
   line-height: 1.8;
   font-variant-numeric: tabular-nums;
@@ -856,7 +873,7 @@ html[data-style='glass'] .sw-list__item::after {
   background: linear-gradient(
     100deg,
     transparent 18%,
-    rgba(210, 250, 255, 0.14) 50%,
+    rgba(233, 233, 233, 0.14) 50%,
     transparent 82%
   );
   transform: translateX(-115%);
@@ -868,7 +885,7 @@ html[data-style='glass'] .sw-list__item:hover::after {
 }
 
 html[data-style='glass'] .sw-list__item.is-active {
-  background: linear-gradient(90deg, rgba(103, 232, 249, 0.18), rgba(103, 232, 249, 0.03));
+  background: linear-gradient(90deg, rgba(184, 184, 184, 0.18), rgba(184, 184, 184, 0.03));
   box-shadow: inset 2px 0 0 var(--sw-accent);
   color: #ffffff;
 }
@@ -881,7 +898,7 @@ html[data-style='glass'] .sw-empty {
   justify-content: center;
   gap: 10px;
   padding: 40px 20px;
-  color: rgba(163, 201, 217, 0.6);
+  color: rgba(194, 194, 194, 0.6);
   font-size: 13px;
   text-align: center;
 }
@@ -903,7 +920,7 @@ html[data-style='glass'] .sw-spin {
   background: conic-gradient(
     from 0deg,
     transparent 0deg 250deg,
-    rgba(103, 232, 249, 0.15) 280deg,
+    rgba(184, 184, 184, 0.15) 280deg,
     var(--sw-accent) 350deg,
     transparent 360deg
   );
@@ -929,14 +946,14 @@ html[data-style='glass'] .sw-toast {
   gap: 8px;
   max-width: min(520px, calc(100vw - 48px));
   padding: 9px 16px 9px 14px;
-  border: 1px solid rgba(210, 250, 255, 0.26);
+  border: 1px solid rgba(233, 233, 233, 0.26);
   border-radius: var(--sw-radius-lg);
-  background: rgba(6, 26, 36, 0.86);
+  background: rgba(22, 22, 22, 0.86);
   color: var(--sw-fg);
   font-size: 13px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 18px 48px rgba(0, 10, 18, 0.6);
+    0 18px 48px rgba(8, 8, 8, 0.46);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   transform: translate(-50%, 120%);
@@ -952,7 +969,7 @@ html[data-style='glass'] .sw-toast::before {
   width: 3px;
   align-self: stretch;
   border-radius: 2px;
-  background: linear-gradient(180deg, var(--sw-accent), rgba(45, 212, 191, 0.35));
+  background: linear-gradient(180deg, var(--sw-accent), rgba(175, 175, 175, 0.35));
 }
 
 html[data-style='glass'] .sw-toast.is-show {
@@ -973,9 +990,9 @@ html[data-style='glass'] [data-tip]::after {
   z-index: 50;
   transform: translate(-50%, -4px);
   padding: 4px 9px;
-  border: 1px solid rgba(210, 250, 255, 0.2);
+  border: 1px solid rgba(233, 233, 233, 0.2);
   border-radius: var(--sw-radius-sm);
-  background: rgba(6, 26, 36, 0.92);
+  background: rgba(22, 22, 22, 0.92);
   color: var(--sw-fg);
   font-size: 12px;
   white-space: nowrap;
@@ -1016,17 +1033,49 @@ html[data-style='glass'] [data-tip]:hover::after {
 
 @media (prefers-contrast: more) {
   html[data-style='glass'] {
-    --sw-scrim: rgba(1, 8, 12, 0.62);
-    --sw-border: rgba(210, 250, 255, 0.34);
-    --sw-edge: rgba(230, 253, 255, 0.55);
-    --sw-dim: #bcd9e6;
+    --sw-scrim: rgba(7, 7, 7, 0.62);
+    --sw-border: rgba(233, 233, 233, 0.34);
+    --sw-edge: rgba(248, 248, 248, 0.55);
+    --sw-dim: #D4D4D4;
   }
 
   html[data-style='glass'] .sw-editor .ProseMirror {
-    background: rgba(1, 8, 12, 0.3);
+    background: rgba(7, 7, 7, 0.3);
   }
 }
 
+/* ── 12. 玻璃厚度（v2.13）────────────────────────────────────────────────
+   「质感」不是靠颜色，是靠**一条亮线 + 一条暗线 + 一层内雾**同时存在：
+     · 上沿 1px 冷光 = 光从上方来，玻璃上边缘反光
+     · 下沿 1px 暗线 = 玻璃有厚度，下边缘是背光面
+     · inset 内雾     = 玻璃体内的散射 —— 没有它，再亮的边也像贴纸
+   ⚠ 三条必须一起给，少一条就退回「深色方块」。
+   ⚠ 全部走 box-shadow：一次合成、不额外产生离屏表面（GPU 友好）；
+     用 border 或独立 div 会因为多一层合成而掉帧。
+   ⚠ 只加在 .main.note 上 —— 面板的两块板由 .pnav / .pmain 自己的环边负责。 */
+html[data-style='glass'] .main.note::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 rgba(247, 247, 247, 0.34),
+    inset 0 -1px 0 rgba(20, 20, 20, 0.28),
+    inset 0 0 46px rgba(236, 236, 236, 0.05);
+}
 
-
-
+/* 顶部光带：从左上 12% 处淡入淡出，1px。比整条实线更像「光落上去」 */
+html[data-style='glass'] .main.note::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(247, 247, 247, 0.5) 14%,
+    rgba(247, 247, 247, 0.24) 52%,
+    transparent 88%);
+}

@@ -16,9 +16,9 @@
 /* ── 0. 页面基座 ────────────────────────────────────────────────────── */
 .lab {
   /* 墨色（文字三档）—— scrim 之后板面是深的，次要文字不能按浅底配色取 */
-  --lab-ink: #eafcff;
-  --lab-ink-dim: #b6d7e4;
-  --lab-ink-faint: #82a8ba;
+  --lab-ink: #F8F8F8;
+  --lab-ink-dim: #D1D1D1;
+  --lab-ink-faint: #A1A1A1;
 
   /* 光色（极光五色，暖橙只占 16% 做冷暖对比，多了就脏）*/
   --lab-teal: 45, 212, 191;
@@ -27,7 +27,7 @@
   --lab-violet: 192, 132, 252;
   --lab-warm: 240, 168, 104;
 
-  --lab-abyss: #04121a;
+  --lab-abyss: #101010;
   /* 霜别开高：0.09 时整屏像磨砂脏了，0.035 才是"一层薄霜" */
   --lab-frost: 0.035;
 
@@ -386,7 +386,7 @@
 }
 
 .gl-btn--primary {
-  color: #03202a;
+  color: #1B1B1B;
   font-weight: 600;
   background: linear-gradient(170deg, rgba(163 245 255 / 0.95), rgba(45 212 191 / 0.9));
   box-shadow:
@@ -497,7 +497,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: linear-gradient(170deg, #d9fbff, #67e8f9);
+  background: linear-gradient(170deg, #F4F4F4, #CECECE);
   box-shadow:
     0 0 0 3px rgba(103 232 249 / 0.18),
     0 2px 6px rgba(0 10 18 / 0.5);

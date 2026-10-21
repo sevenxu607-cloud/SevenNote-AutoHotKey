@@ -4,7 +4,7 @@
 
 class Config {
     static AppName := "SevenWork"
-    static Version := "2.10"
+    static Version := "2.13"
 
     ; ═══ 身份判据：`_dev.flag`（目录即身份，与分支无关）═══
     ; 项目根存在 `_dev.flag` = 开发身份；主目录（日用）不放它。

@@ -12,31 +12,41 @@
 .sw-editor .ProseMirror {
   outline: none;
   min-height: 100%;
-  padding: 18px 22px 40px;
+  /* ⚠ 与旧版 RichEdit 编辑区对齐（用户反馈「字太大、形式变了」）：
+       内边距从 18/22/40 收到 8/14/24，行高从 1.75 收到 1.55。
+       RichEdit 是单倍行距 + 很窄的内边距，「书排版」那套是网页化之后多出来的，
+       不是原来的使用习惯。 */
+  padding: 8px 14px 24px;
   color: var(--sw-fg);
-  font-size: 15px;
-  line-height: 1.75;
+  /* 字体 / 字号由 AHK 的 FontService 推来（--sw-ed-font / --sw-ed-size），
+     默认值与旧版一致：楷体 14pt。⚠ 单位必须是 pt —— 写 px 会让字变大。 */
+  font-family: var(--sw-ed-font, "楷体", KaiTi, serif);
+  font-size: var(--sw-ed-size, 14pt);
+  line-height: 1.55;
   caret-color: var(--sw-accent);
 }
 
 .sw-editor .ProseMirror > * + * {
-  margin-top: 0.7em;
+  margin-top: 0.4em;
 }
 
-/* ── 标题：靠字号与留白分层，不加颜色 ───────────────────────────── */
+/* ── 标题：靠字号与留白分层，不加颜色 ─────────────────────────────
+   ⚠ 旧版是纯文本 RichEdit，`#` 就是字符、没有字号分层；Markdown 化之后必然
+   有层级，但**别做成大标题** —— 缩到 1.3 倍以内，观感才是「行首那行字重一点」，
+   而不是「贴了一篇博客」。 */
 .sw-editor .ProseMirror h1,
 .sw-editor .ProseMirror h2,
 .sw-editor .ProseMirror h3,
 .sw-editor .ProseMirror h4 {
   font-weight: 600;
   line-height: 1.35;
-  margin: 1.4em 0 0.5em;
+  margin: 0.9em 0 0.35em;
 }
 
-.sw-editor .ProseMirror h1 { font-size: 1.7em; }
-.sw-editor .ProseMirror h2 { font-size: 1.4em; }
-.sw-editor .ProseMirror h3 { font-size: 1.18em; }
-.sw-editor .ProseMirror h4 { font-size: 1.05em; }
+.sw-editor .ProseMirror h1 { font-size: 1.3em; }
+.sw-editor .ProseMirror h2 { font-size: 1.16em; }
+.sw-editor .ProseMirror h3 { font-size: 1.06em; }
+.sw-editor .ProseMirror h4 { font-size: 1em; }
 
 .sw-editor .ProseMirror > :first-child {
   margin-top: 0;

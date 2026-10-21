@@ -22,7 +22,9 @@ type Grain = {
 }
 
 const MAX = 160
-const SPRITE = 32
+// 48 而不是 32：六角冰晶要画 6 条主线 + 12 根短枝，32px 上全糊成一团白点。
+// 预渲染 sprite 的开销是一次性的，drawImage 的成本只跟**目标尺寸**有关。
+const SPRITE = 48
 
 let canvas: HTMLCanvasElement | null = null
 let ctx2d: CanvasRenderingContext2D | null = null
@@ -32,21 +34,66 @@ let raf = 0
 let running = false
 let lastMs = 0
 
-/** 预渲染一枚柔边光点。每帧现算 createRadialGradient 是 160 次/帧，太贵。 */
+/**
+ * 预渲染一枚**六角冰晶**（柔光晕 + 六条辐条 + 二级短枝）。
+ *
+ * 原来是一枚圆形径向渐变光点 —— 160 个圆点一起炸开，观感是「灰尘」不是「冰」。
+ * 冰晶的关键是**有棱**：中心亮核之外必须有放射状的硬边，才读得出「晶体」；
+ * 短枝（±60°、距心 55%）是雪晶的标志性结构，缺了就只是六角星。
+ *
+ * 每帧现算 createRadialGradient 是 160 次/帧，太贵 —— 所以只画一次、之后 drawImage。
+ */
 function makeSprite(rgb: string): HTMLCanvasElement {
   const s = document.createElement('canvas')
   s.width = SPRITE
   s.height = SPRITE
   const c = s.getContext('2d')
   if (!c) return s
-  const g = c.createRadialGradient(SPRITE / 2, SPRITE / 2, 0, SPRITE / 2, SPRITE / 2, SPRITE / 2)
-  g.addColorStop(0, `rgba(${rgb},1)`)
-  g.addColorStop(0.35, `rgba(${rgb},0.55)`)
+
+  const k = SPRITE / 2
+  const R = SPRITE / 2 - 1.5
+
+  // ① 柔光晕：让冰晶溶进背景，而不是硬贴在玻璃上
+  const g = c.createRadialGradient(k, k, 0, k, k, R)
+  g.addColorStop(0, `rgba(${rgb},0.95)`)
+  g.addColorStop(0.42, `rgba(${rgb},0.3)`)
   g.addColorStop(1, `rgba(${rgb},0)`)
   c.fillStyle = g
   c.beginPath()
-  c.arc(SPRITE / 2, SPRITE / 2, SPRITE / 2, 0, Math.PI * 2)
+  c.arc(k, k, R, 0, Math.PI * 2)
   c.fill()
+
+  // ② 棱：主线 + 短枝。lineCap round + 1.1 宽，在 48px 上刚好不糊
+  c.strokeStyle = `rgba(${rgb},0.9)`
+  c.lineWidth = 1.1
+  c.lineCap = 'round'
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2
+    const dx = Math.cos(a)
+    const dy = Math.sin(a)
+
+    c.beginPath()
+    c.moveTo(k, k)
+    c.lineTo(k + dx * R * 0.84, k + dy * R * 0.84)
+    c.stroke()
+
+    const bx = k + dx * R * 0.55
+    const by = k + dy * R * 0.55
+    for (const side of [-1, 1]) {
+      const a2 = a + side * (Math.PI / 3)
+      c.beginPath()
+      c.moveTo(bx, by)
+      c.lineTo(bx + Math.cos(a2) * R * 0.24, by + Math.sin(a2) * R * 0.24)
+      c.stroke()
+    }
+  }
+
+  // ③ 亮核：最后点一颗，压住六条线的交汇点（否则中心发灰）
+  c.fillStyle = `rgba(255,255,255,0.95)`
+  c.beginPath()
+  c.arc(k, k, 1.6, 0, Math.PI * 2)
+  c.fill()
+
   return s
 }
 
@@ -108,7 +155,8 @@ export function burst(ms = 620): void {
       angle: (i / MAX) * Math.PI * 2 + Math.random() * 0.07,
       r0: 0.72 + Math.random() * 0.36,
       r1: 0.06 + Math.random() * 0.2,
-      size: 6 + Math.random() * 16,
+      // 14~36：48px 上画的六棱缩到 6px 就只剩一个白点，冰晶等于白做
+      size: 14 + Math.random() * 22,
       warm: Math.random() < 0.22,
       phase: Math.random(),
     })
@@ -132,9 +180,12 @@ export function burst(ms = 620): void {
       const r = k * maxR
       const x = cx + Math.cos(gr.angle) * r
       const y = cy + Math.sin(gr.angle) * r * 0.82
-      const a = t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88
+      // 用 phase 把 160 颗的生死错开：原来的 a 只跟全局 t 走，整片冰晶会在
+      // 同一瞬间一起淡到 0，看着像"关灯"而不是"雾散"
+      const tp = Math.min(1, Math.max(0, t + (gr.phase - 0.5) * 0.18))
+      const a = tp < 0.12 ? tp / 0.12 : 1 - (tp - 0.12) / 0.88
       const s = gr.size * dpr * (1 - t * 0.25)
-      g.globalAlpha = Math.max(0, a) * 0.85
+      g.globalAlpha = Math.max(0, a) * 0.8
       g.drawImage(gr.warm ? warm : cool, x - s / 2, y - s / 2, s, s)
     }
 

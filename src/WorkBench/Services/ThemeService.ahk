@@ -38,14 +38,19 @@ class ThemeService {
         ; （光雾 / 霜 / 冰面 / 冰棱 / specular 都在 WebView2 里），AHK 只负责底色、
         ; 标题栏和原生窗的玻璃背衬（GlassPaint）。
         ;   style 是皮肤开关：前端据此把 html[data-style] 设成 glass，整套材质才启用。
-        ;   配色实测：底 #08222E、正文 #E9FBFF（Lc 101.8）、次级文字 #A3C9D9（Lc 67+）；
-        ;   最亮光斑 #1E5A6E 上正文只剩 Lc 86.3 —— 所以 scrim 是结构层，不是调参项。
-        ;   ⚠ 紫色一律用 #C9B6FF（Lc 67.8）；#A78BFA（Lc 47）只配做光斑装饰。
+        ;   v2.13 起**去色**：win / edBg / text / dim / accent 全部 r=g=b。
+        ;     玻璃的透明感来自「明暗层次 + 高光棱」，不来自色相 —— 带色只会
+        ;     读成「一块蓝色亚克力」。原来那版是深青 → 浅蓝，两版都还是「有色的板」。
+        ;   ⚠ 必须严格 r=g=b：Palette() 的 border / panel / codeBg 由这几个基色
+        ;     混合派生，输入带一点点偏色，派生结果就会被放大成可见的色偏。
+        ;   ⚠ 明度上限仍是 WCAG：正文 #F2F2F2 在 #1C1C1C 上约 15.8:1、
+        ;     次级 #B4B4B4 约 8.6:1 —— 中性底可以放心压暗，不需要为对比度提亮。
+        ;   ⚠ 强调色只做「装饰级」用途（焦点环 / 光标 / 光点）；正文一律用 text。
         ;   material 是材质参数的覆盖点（键名映射成 --sw-<key>）；缺省即
-        ;   tokens.css 里的「适中」档（blur 22 / sat 150% / tint .045 / edge .7 /
-        ;   frost .035 / spec 1）—— 默认值只写一处，这里不跟着抄一遍。
-        {name: "琉璃·极光霜", win: "061A24", edBg: "08222E", text: "E9FBFF", dim: "A3C9D9"
-            , accent: "67E8F9", style: "glass"}
+        ;   tokens.css 里的「薄透」档（blur 15 / sat 120% / tint .028 / edge .4 /
+        ;   frost .016 / spec .8）—— 默认值只写一处，这里不跟着抄一遍。
+        {name: "哑光灰", win: "242424", edBg: "2E2E2E", text: "F2F2F2", dim: "BABABA"
+            , accent: "E4E4E4", style: "glass"}
     ]
 
     static _current := 1

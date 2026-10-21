@@ -457,9 +457,10 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-/* 启动失败的模块：仍占一行，但名字偏红 —— 与「(失败)」两字一起提示 */
+/* 启动失败的模块：仍占一行，靠亮度下沉 + 「(失败)」两字提示。
+   ⚠ v2.13 去色后这里不再是红色 —— 全站只剩明度层次，识别靠文字不靠色相。 */
 .pitem.bad .pitem-name {
-  color: #e4877f;
+  color: var(--sw-dim);
 }
 
 .pitem-name {
@@ -563,13 +564,15 @@ onMounted(async () => {
   color: var(--sw-dim);
 }
 
+/* 提示块：v2.13 去色，不再是红色 —— 左侧 2px 亮边 + 略亮的底替代色相提示 */
 .pwarn {
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid rgba(228, 135, 127, 0.28);
+  border: 1px solid var(--sw-border);
+  border-left: 2px solid var(--sw-fg);
   border-radius: 8px;
-  background: rgba(180, 70, 60, 0.16);
-  color: #e8a9a2;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--sw-fg);
   font-size: 12px;
   line-height: 1.7;
 }
@@ -651,16 +654,20 @@ onMounted(async () => {
   color: var(--sw-dim);
 }
 
+/* 三态去色后靠「正常 / 更亮更粗 / 暗一档」分层。
+   ⚠ 可辨识性本来就不靠色相：每条状态都自带 ✓ / 「保存失败：」这类文字前缀
+     （见 setStatus 的调用点），色相只是锦上添花 —— 这里换成明度差。 */
 .pstatus.ok {
-  color: #6be39a;
+  color: var(--sw-fg);
 }
 
 .pstatus.err {
-  color: #ff8b80;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .pstatus.warn {
-  color: #f2c46b;
+  color: var(--sw-dim);
 }
 
 .pvault {

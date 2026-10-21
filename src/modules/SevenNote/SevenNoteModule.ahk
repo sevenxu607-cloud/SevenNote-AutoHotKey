@@ -86,7 +86,7 @@ class SevenNoteModule {
         ; 前端 onMounted 还会再 getTheme 一次，不会留旧色。
         if this._mounted
             WebHostService.Eval("window.__sevenwork&&window.__sevenwork.applyTheme("
-                . ThemeJson() . ")", g.Hwnd)
+                . NoteHostTheme() . ")", g.Hwnd)
     }
 
     static _AfterShown() {

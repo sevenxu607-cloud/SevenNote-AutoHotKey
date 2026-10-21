@@ -61,6 +61,13 @@ export interface Theme {
   /** 材质风格：glass = 琉璃；缺省或其它值 = flat（现有米黄外观） */
   style?: string
   /**
+   * 编辑区字体名（笔记模块的 FontService 给，如「楷体」）。
+   * 只作用于编辑区（--sw-ed-font）；面板那类网页仍用系统 UI 字体。
+   */
+  font?: string
+  /** 编辑区字号，单位是**磅（pt）** —— 与旧版 RichEdit 的 14pt 同源，别当 px 用 */
+  fontSize?: number
+  /**
    * 材质参数 —— 键名直接映射成 --sw-<key>，值是**可直接写进 CSS 的字符串**。
    * 例：{tint: "rgba(190,245,255,.055)", blur: "14px"}
    * AHK 侧只负责给值，不认识任何 DOM。缺字段就沿用 glass.css 的默认值。
@@ -101,6 +108,14 @@ export function applyTheme(t: Theme): void {
         if (typeof v === 'string' && v) r.setProperty(`--sw-${key}`, v)
       }
     }
+
+    // 编辑区字体 / 字号（笔记模块的 FontService 给）。
+    // ⚠ 字号必须原样按 pt 写：旧版 RichEdit 是 14pt，若换成 px（≈18.7px）再叠上
+    //   不同字体的字面差，观感就会「字变大」—— 这正是 Markdown 化之后用户报
+    //   「编辑区字体太大」的根因，别在这里再换一次单位。
+    // ⚠ 字体名可能带空格（华文行楷 / 微软雅黑），必须加引号。
+    if (t.font) r.setProperty('--sw-ed-font', `"${t.font}", KaiTi, "楷体", serif`)
+    if (t.fontSize) r.setProperty('--sw-ed-size', `${t.fontSize}pt`)
   }
 
   // 换主题走一次 View Transition：整窗交叉溶解，而不是逐个属性慢慢变。

@@ -364,9 +364,9 @@ h1 {
 }
 
 .warn {
-  color: #b45309;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+  color: var(--sw-fg);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--sw-border);
   border-radius: var(--sw-radius);
   padding: 8px 12px;
   font-size: 13px;

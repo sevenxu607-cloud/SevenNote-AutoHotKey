@@ -26,7 +26,14 @@ class UiPaint {
     ;    颜色是 COLORREF（0x00BBGGRR），正好复用 Bgr()。
     ; ⚠ Win10 上这三个属性不存在，DllCall 直接返回非 0 —— 静默丢掉、系统配色照旧，
     ;   所以不必写版本判断（上面那段 immersive dark mode 已经兜住了深浅）。
-    static TitleBar(hwnd, winHex, textHex) {
+    ;
+    ; caption 开关（v2.12）：
+    ;   true  = 整块染色。Win10 / 背板不生效时用它兜住观感（浅色主题也不会白得刺眼）。
+    ;   false = **只设文字色 36**，标题栏底色交给系统背板 —— 这是让 Win11 的
+    ;           mica / acrylic 真的透上来的关键：CAPTION_COLOR 是不透明实色，
+    ;           一调就把刚设好的背板整个盖掉（实测：标题栏变成纯主题深蓝，
+    ;           背板设置"成功"了却一点也看不见）。调用方先 Glass() 拿 mode 再决定。
+    static TitleBar(hwnd, winHex, textHex, caption := true) {
         if !hwnd
             return false
 
@@ -41,7 +48,9 @@ class UiPaint {
             }
         }
 
-        for it in [[35, winHex], [36, textHex], [34, winHex]] {
+        attrs := caption ? [[35, winHex], [36, textHex], [34, winHex]]
+                         : [[36, textHex]]
+        for it in attrs {
             cv := Buffer(4, 0)
             NumPut("uint", this.Bgr(it[2]), cv, 0)
             try DllCall("dwmapi\DwmSetWindowAttribute", "ptr", hwnd
@@ -75,7 +84,8 @@ class UiPaint {
             return GlassPaint.Clear(hwnd)
         }
         GlassPaint.Rounded(hwnd)
-        return GlassPaint.Apply(hwnd, tintHex, 0xB4)
+        ; 客户区交给 WebView2，accent 只染标题栏与边框 —— 浅染才像亚克力而不是色板。
+        return GlassPaint.Apply(hwnd, tintHex, 0x50)
     }
 
     ; ─── ListView 底色 ────────────────────────────────────────────────────

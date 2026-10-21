@@ -33,13 +33,18 @@ if (styleParam) document.documentElement.dataset.style = styleParam
    · 颜色归 CSS 的 --sw-aur-*（JS 不认色值），位置 / 尺寸 / 节奏归这里。
    ⚠ 光团必须是**独立的圆**：一个元素铺 N 层 radial-gradient 会平均成一片
      均匀暗青（S0 的病根，详见 glass.css 顶部那段）。
+   ⚠ v2.13 整体收小一档（72→54 / 30→26）：光团越大、blur 一抹越均匀，
+     去色之后就没有任何东西能撑起「雾」的形状了。收小 + 浓度更陡（见 glass.css
+     的 radial-gradient）才读得出「一团光在板后面」，而不是「整屏被提亮了一点点」。
+     尺寸三级是有意的：大团在角上=远、中团=中景、aur-5 那团最小最亮=近，
+     三档叠起来才有景深 —— 玻璃「透」的错觉就从这来。
    ═══════════════════════════════════════════════════════════════════════ */
 const ORBS: Record<string, string>[] = [
-  { '--c': 'var(--sw-aur-1)', width: '72vmin', height: '72vmin', left: '-8vmin', top: '-12vmin', '--dur': '44s', '--dx': '5vmin', '--dy': '4vmin' },
-  { '--c': 'var(--sw-aur-2)', width: '64vmin', height: '64vmin', right: '-10vmin', top: '-6vmin', opacity: '0.85', '--dur': '58s', '--delay': '-11s', '--dx': '-6vmin', '--dy': '5vmin' },
-  { '--c': 'var(--sw-aur-3)', width: '60vmin', height: '60vmin', right: '0', bottom: '-12vmin', '--dur': '51s', '--delay': '-23s', '--dx': '4vmin', '--dy': '-6vmin' },
-  { '--c': 'var(--sw-aur-4)', width: '54vmin', height: '54vmin', left: '-4vmin', bottom: '-14vmin', opacity: '0.8', '--dur': '66s', '--delay': '-31s', '--dx': '-5vmin', '--dy': '-4vmin' },
-  { '--c': 'var(--sw-aur-5)', width: '30vmin', height: '30vmin', left: '44%', top: '4%', opacity: '0.45', '--dur': '72s', '--delay': '-16s', '--dx': '3vmin', '--dy': '7vmin' },
+  { '--c': 'var(--sw-aur-1)', width: '46vmin', height: '46vmin', left: '-10vmin', top: '-14vmin', '--dur': '44s', '--dx': '5vmin', '--dy': '4vmin' },
+  { '--c': 'var(--sw-aur-2)', width: '40vmin', height: '40vmin', right: '-12vmin', top: '-8vmin', opacity: '0.75', '--dur': '58s', '--delay': '-11s', '--dx': '-6vmin', '--dy': '5vmin' },
+  { '--c': 'var(--sw-aur-3)', width: '38vmin', height: '38vmin', right: '-4vmin', bottom: '-14vmin', '--dur': '51s', '--delay': '-23s', '--dx': '4vmin', '--dy': '-6vmin' },
+  { '--c': 'var(--sw-aur-4)', width: '34vmin', height: '34vmin', left: '-6vmin', bottom: '-16vmin', opacity: '0.7', '--dur': '66s', '--delay': '-31s', '--dx': '-5vmin', '--dy': '-4vmin' },
+  { '--c': 'var(--sw-aur-5)', width: '28vmin', height: '28vmin', left: '44%', top: '0%', opacity: '0.9', '--dur': '72s', '--delay': '-16s', '--dx': '3vmin', '--dy': '7vmin' },
 ]
 
 const aurora = document.createElement('div')

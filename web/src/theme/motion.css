@@ -49,7 +49,7 @@ html[data-style='glass'].sw-revealing .note-head::after {
   background: linear-gradient(
     100deg,
     transparent 30%,
-    rgba(210, 250, 255, 0.34) 50%,
+    rgba(236, 236, 236, 0.34) 50%,
     transparent 70%
   );
   transform: translateX(-100%);

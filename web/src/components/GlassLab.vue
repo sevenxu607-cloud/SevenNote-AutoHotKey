@@ -286,7 +286,7 @@ const hotkeys = [
   min-width: 84px;
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 12px;
-  color: rgba(200 250 255 / 0.86);
+  color: rgba(242 242 242 / 0.86);
 }
 
 @media (max-width: 620px) {
