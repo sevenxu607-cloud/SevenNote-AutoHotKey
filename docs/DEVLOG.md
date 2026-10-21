@@ -10,11 +10,13 @@
 
 ## 当前状态
 
-- **版本 / 分支**：`2.8`（含 `v2.8.1` 修复）；`main` = 开发（配置 `%AppData%\SevenWork-Dev`），
-  `运行版` = 日常使用（配置 `%AppData%\SevenWork`，读旧单文件版那份）
+- **版本 / 分支**：`2.8`（含 `v2.8.1` 修复）；**`main` = 日用 / 稳定**（主目录启动，配置 `%AppData%\SevenWork`），
+  **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
+- **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
+  **两分支源码零差异**，合并 / cherry-pick 不再挑提交
 - **最近一次改动**：修「输入法组字时视口闪空白」—— `SyncScrollAfterShrink` 的脱节阈值
   **2px → 64px**，另加 IME 组合守卫与「不满一屏」守卫（探针：正常偏差 4~24px、真 drift 148~164px）
-- **正在处理**：`运行版` 上实打实用几天，收集回归问题（该修复已 cherry-pick 到运行版）
+- **正在处理**：`main` 上实打实用几天，收集回归问题（修复已在 main，日用实例跑的就是它）
 - **下一步**：继续 P1（`PandocService.Convert` 失败静默、`SearchFeature` 的 DPI 单位混用待探针实测），
   再 P2（pandoc 移出 `Critical`、MD 出口补 `atx`）
 
@@ -82,8 +84,10 @@
 - [ ] 代码审查 P1：`SearchFeature.Show/Hide` 用 `WinGetClientPos`（物理）喂 `Gui.Control.Move`（逻辑）—— 150% DPI 下疑似 ×1.5，待探针实测
 - [ ] 代码审查 P2：`SaveFeature` 把 `RunWait(pandoc)` 移出 `Critical(1)`；`PandocService` 补 `--markdown-headings=atx`
 - [ ] 代码审查 P2：三篇架构文档（`PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION` / `WORKBENCH-PLAN`）停在 v2.4.x
-- [x] 新增 `运行版` 分支：源码运行读写生产配置，配置从旧单文件版迁入（旧文件保留作回退）（2026-10-21）
-- [ ] 运行版用几天：保存 / 主题 / 搜索 / `Alt+C` / `Alt+X` / 提示词库，异常先看 `%AppData%\SevenWork\_error.log`
+- [x] 分支重构（2026-10-21）：`main` = 日用、`dev` = 开发；身份改由 `_dev.flag` 判定，两分支源码零差异
+- [x] 删 `运行版`（先打 tag `archive/run-branch-20261021`）与 `feature/groups`（相对 main 零独有提交）
+- [ ] main 日用几天：保存 / 主题 / 搜索 / `Alt+C` / `Alt+X` / 提示词库，异常看 `%AppData%\SevenWork\_error.log`
+- [ ] 新功能 / 修 bug 一律在 `D:\03-PersonalFiles\02-GitHubFiles\SevenWork-dev`（dev 工作树）里做，验证后合并回 main
 - [ ] 代码审查 P3：死代码 7 处（`FolderSlotService.GetAll/Describe`、`PromptStoreService.PathFor`、`ModuleRegistry.Unregister`、`ExplorerProbe.IsExplorerWindow`、`PeerCoordinator.GetLastNote/LastPeer`）
 
 ## 已放弃 / 已回退的方案（别重复踩）
@@ -99,6 +103,36 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 11:20　分支角色对调：main 成日用，开发挪进 dev 工作树
+
+**我说**（原话）
+> 可以,这样,将main作为运行版本,分支用来继续开发和修复bug,重构一下?
+
+**意图**
+`main` 就是日常使用的那一份（生产配置、真实笔记库），新功能与修 bug 在另一条分支上做；
+顺便消掉「两分支靠 `Config.ahk` 一处差异隔离」带来的合并税。
+
+**决定 / 过程**
+- 身份判据从「分支」改成「**目录**」：`Config.IsDev` 看工作树根有没有 `_dev.flag`
+  （`.gitignore`、未跟踪）。源码运行 + 有 flag = `SevenWork-Dev` 配置 + 工作树 `.logs\`；
+  无 flag / 编译版 = `SevenWork` 生产配置 —— **两分支源码因此完全一致**。
+- `main`（主目录）= 日用；`dev`（`..\SevenWork-dev` 工作树）= 开发。`git worktree` 让两个身份
+  各占一个目录，重启永远不会跑错；原来「切分支即切身份」改成「目录即身份」。
+- 先打 `archive/run-branch-20261021` 再删 `运行版`；`feature/groups` 相对 main 零独有提交，一并删。
+- 验证：三入口探针（`dev_src` / `main_root` / `dev_root`）—— `isDev` = 1 / 0 / 1，
+  `appData` = Dev / 生产 / Dev，`vault` = 测试库 / 真实库 / 测试库；方案 A `exit 0`；
+  主目录根启动器真机 6 秒单进程、`stderr` 空、生产 `_error.log` 无新增。
+
+**代价 / 风险**
+- 多一个工作树目录（几 MB，`.git` 共享）；VS Code 要把 `SevenWork-dev` 加进工作区才看得到 dev 的改动。
+- 两树共用同一套热键，仍不能同时运行（与之前一样）。
+- `_dev.flag` 若误建到主目录，主目录会变开发身份 —— 反向不会：开发树缺 flag 只会退回生产配置，
+  所以**开发树里固定保留 flag、主目录永不创建**。
+
+**待办**
+- [ ] main 日用几天：保存 / 主题 / 搜索 / `Alt+C` / `Alt+X` / 提示词库
+- [ ] 下次开发从 `SevenWork-dev` 起手，验证后 `git merge dev` 回 main
 
 ### 2026-10-21 10:05　输入法组字时视口闪空白：巡检的「脱节」阈值 2px 太紧
 

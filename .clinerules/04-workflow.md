@@ -11,7 +11,7 @@
 `src\SevenWork.ahk` 全转成裸 LF（4352 行），`git diff` 整文件变色、`CRLF=0`。
 
 ```powershell
-$src='d:\03-PersonalFiles\02-GitHubFiles\SevenNote-AutoHotKey\src\SevenWork.ahk'
+$src='d:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey\src\SevenWork.ahk'
 $b=[System.IO.File]::ReadAllBytes($src)
 'BOM=' + (($b[0] -eq 0xEF) -and ($b[1] -eq 0xBB))
 $t=[System.IO.File]::ReadAllText($src,[System.Text.Encoding]::UTF8)
@@ -52,8 +52,9 @@ $t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$src = 'd:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey\src\SevenWork.ahk'
-$dir = 'd:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey\src'   # 预检脚本必须与主脚本同目录，否则相对 #Include 找不到
+$tree = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-dev'   # 开发一律在 dev 工作树里验（主目录是日用/生产身份）
+$src  = "$tree\src\SevenWork.ahk"
+$dir  = "$tree\src"   # 预检脚本必须与主脚本同目录，否则相对 #Include 找不到
 $L   = [System.IO.File]::ReadAllLines($src)
 $tmp = "$dir\_syn_check.ahk"
 $out = @('#Requires AutoHotkey v2.0','ExitApp()') + $L[1..($L.Count-1)]
@@ -93,7 +94,7 @@ Remove-Item $tmp -Force
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$script = 'd:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey\SevenWork.ahk'   # 根启动器；会 #Include src\SevenWork.ahk
+$script = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-dev\SevenWork.ahk'   # 根启动器；会 #Include src\SevenWork.ahk（在 dev 工作树里验）
 $se = "$env:TEMP\SevenWorkDev\_run_err.txt"
 Remove-Item $se -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $exe -ArgumentList @('/ErrorStdOut', "`"$script`"") `
@@ -180,7 +181,10 @@ if ($t2 -eq $t) { throw 'anchor not found' }
 
 ⚠ 探针文件此时**放在 `src\`**（不是项目根，也不是 `%TEMP%`）：它要和
 `src\SevenWork.ahk` 的相对 `#Include` 同目录。直接跑 `src\SevenWork.ahk` / 探针时
-`A_ScriptDir` 是 `src\`，开发版日志落 **`src\.logs\`**（正常用根启动器时仍落项目根 `.logs\`）。
+`A_ScriptDir` 是 `src\`，开发身份的日志落 **`src\.logs\`**（从根启动器起手时落工作树根 `.logs\`）。
+⚠ **在主目录（日用、无 `_dev.flag`）里跑探针，身份就是「生产」** —— 日志落
+`%AppData%\SevenWork\`，启动时还会读写生产的 `_config.ini`。**开发验证一律在
+`SevenWork-dev` 工作树里做**（那里有 `_dev.flag`，读写 `SevenWork-Dev` 配置）。
 **验证完立刻删掉** `src\_probe.ahk` 与 `src\.logs\`，别留在仓库里（会进 `git status`，
 也会被 AHK++ 扫到）。
 

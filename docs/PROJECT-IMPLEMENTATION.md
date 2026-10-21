@@ -245,7 +245,7 @@ class SevenNoteModule {
 `Date.Changed`、`Date.JumpRequested`、`Launcher.Preparing` / `Launcher.Opened` /
 `Launcher.Failed`、`SevenNote.Move` / `Launcher.Move`。
 
-**配置落点**：`_config.ini` 按开发版 / 发布版隔离目录；`pandoc.exe` 跨版本共用（100+MB 不重复释放）。
+**配置落点**：`_config.ini` 按身份隔离（工作树根有 `_dev.flag` = 开发身份，走 `SevenWork-Dev`；否则走 `SevenWork`）；`pandoc.exe` 跨版本共用（100+MB 不重复释放）。
 ⚠ 缓存带来的代价：运行期手改 `_config.ini` 不生效，改完要重启。
 
 ---
@@ -267,8 +267,8 @@ class SevenNoteModule {
 ## 13. 用 `OnError` + 旋转日志，实现了「程序不倒」
 
 - `OnError(OnScriptError)`：未捕获异常 → 写日志（消息 / 文件 / 行 / 调用栈）→ `return 1` **继续跑**；
-- 落点：开发版 `<项目根>\.logs\_error.log`，编译版 `%AppData%\SevenWork\_error.log`，
-  项目目录不可写时自动回退；
+- 落点：开发身份（工作树根有 `_dev.flag`）`<工作树根>\.logs\_error.log`；
+  日用 / 编译版 `%AppData%\SevenWork\_error.log`，项目目录不可写时自动回退；
 - 超 **512KB** 自动轮转；
 - `#Warn VarUnset, OutputDebug`：未赋值变量警告不再弹模态框。
 

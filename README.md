@@ -368,20 +368,25 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 ```
 C:\Users\<用户名>\AppData\Roaming\SevenWork\
-└── pandoc.exe                    内嵌的 Pandoc（仅 EXE 版，100+MB，跨版本共用一份）
+├── pandoc.exe                    内嵌的 Pandoc（仅 EXE 版，100+MB，跨身份共用一份）
+├── _config.ini                   配置（几百字节）
+└── _error.log                    出错日志（只在真出错时才出现，超 512KB 自动轮转）
 
 C:\Users\<用户名>\AppData\Roaming\SevenWork-Dev\
-├── _config.ini                   配置（几百字节）
-└── _error.log                    出错日志（仅编译版；只在真出错时才出现，超 512KB 自动轮转）
+└── _config.ini                   开发身份的配置（Vault 通常指测试库）
 ```
 
-⚠️ **开发版（未编译）的报错日志不在这里**，而是落在**项目根的 `.logs\_error.log`**
-（`Config.LogPath` 按 `A_IsCompiled` 分流）—— 开发时一眼就能翻，`.gitignore` 已忽略
-`.logs/`；编译后 exe 可能在桌面 / U 盘 / `Program Files`，那里要么脏用户目录、要么
-没有写权限，所以仍回 AppData。项目目录不可写时会退回 AppData 再记一次。
+⚠️ **身份由「工作树根有没有 `_dev.flag`」决定**（`Config.IsDev`；该文件在 `.gitignore` 里、
+不入库）：**没有 = 日用 / 编译版**，读写 `SevenWork\`；**有 = 开发工作树**，读写 `SevenWork-Dev\`。
+所以两条分支的源码完全一致，身份跟着**目录**走，不跟分支走。
 
-⚠️ **`SevenWork-Dev` 是开发版的配置目录**（`Config.ConfigPath`）。`_config.ini` 存的是
-使用者状态（主题 / 字体 / Vault 路径），按版本隔离更安全：两版并存时各改各的、不互相覆盖。
+⚠️ **开发身份的报错日志不在这里**，而是落在**工作树根的 `.logs\_error.log`**
+（`Config.LogPath`）—— 开发时一眼就能翻，`.gitignore` 已忽略 `.logs/`；从 `src\SevenWork.ahk`
+起手（调试 / 探针）时落 `src\.logs\`。编译后 exe 可能在桌面 / U 盘 / `Program Files`，
+那里要么脏用户目录、要么没有写权限，所以编译版始终落 AppData。项目目录不可写时会退回 AppData 再记一次。
+
+⚠️ **`SevenWork-Dev` 是开发身份的配置目录**（`Config.ConfigPath`）。`_config.ini` 存的是
+使用者状态（主题 / 字体 / Vault 路径），按身份隔离更安全：两边各改各的、不互相覆盖。
 `pandoc.exe` 太大、又不随版本变，所以留在 `SevenWork\` 共用 —— 源码里
 `Config.PandocPath` 与 `Config.ConfigPath` 指向不同目录**不是笔误**。
 
@@ -458,7 +463,7 @@ RichEdit 只输出非标编码，Pandoc/Word 认的标准不同——**三方各
 | --- | --- | --- |
 | **代码** | `SevenWork.exe`（放哪都行） | ❌ 不需 |
 | **笔记数据** | Vault 目录（用户选的） | ✅ **只需备份这个** |
-| **程序配置** | `%AppData%\SevenWork-Dev\_config.ini`（发布版为 `%AppData%\SevenWork\`） | ⚠️ 可选 |
+| **程序配置** | `%AppData%\SevenWork\_config.ini`（开发工作树为 `%AppData%\SevenWork-Dev\`） | ⚠️ 可选 |
 | **内嵌 Pandoc** | `%AppData%\SevenWork\pandoc.exe` | ❌ 自动释放 |
 
 **备份策略**：只拷 Vault 目录，其他丢了都能重建。
@@ -507,13 +512,13 @@ Pandoc 不可用，走了降级路径。
 ### Q5：找不到 Vault 路径
 
 - `Alt+S` → 帮助窗口底部显示"当前笔记目录"
-- 或看 `%AppData%\SevenWork-Dev\_config.ini` 里的 `Vault=`（发布版路径为 `%AppData%\SevenWork\`）
+- 或看 `%AppData%\SevenWork\_config.ini` 里的 `Vault=`（开发工作树为 `%AppData%\SevenWork-Dev\`）
 
 **换 Vault**：编辑 `_config.ini` 改 `Vault=`，或删这行重启让程序弹框重选。
 
 ### Q6：改了主题/字体，重启后没保存
 
-`%AppData%\SevenWork-Dev\_config.ini`（发布版为 `%AppData%\SevenWork\`）没有写权限或被占用。
+`%AppData%\SevenWork\_config.ini`（开发工作树为 `%AppData%\SevenWork-Dev\`）没有写权限或被占用。
 
 **修复**：
 1. 关闭 SevenWork

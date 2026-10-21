@@ -73,9 +73,10 @@
 ├── _assets/2026-09-20/image1.png   ★ 图片统一收纳
 └── _tmp/                           Pandoc 临时目录（自动清理）
 
-%AppData%\SevenWork\                pandoc.exe（100+MB，两版共用）
-%AppData%\SevenWork\                _config.ini、_error.log（编译版）
-<项目根>\.logs\_error.log           开发版报错日志（已 gitignore）
+%AppData%\SevenWork\                pandoc.exe（100+MB，跨身份共用）
+%AppData%\SevenWork\                _config.ini、_error.log（日用 / 编译版）
+%AppData%\SevenWork-Dev\            _config.ini（开发身份：工作树根有 _dev.flag 时）
+<工作树根>\.logs\_error.log         开发身份的报错日志（已 gitignore）
 ```
 
 **双格式归档**：同一次保存产出 RTF(936) + RTF(65001) + Markdown —— 三方对编码的要求互相冲突，

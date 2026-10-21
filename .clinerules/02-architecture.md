@@ -48,8 +48,9 @@ Kernel 唯一的「回头出口」是**注入**：`EventBus` 不认识 `LogError
   跨模块协调在 `src/WorkBench/Coordinator/`；
 - `src/SevenWork.ahk` 内部的 `#Include WorkBench\...` / `modules\...` 是相对路径，
   以**该文件所在目录**为基准，别改成从项目根起算。
-- 正常双击根启动器时 `A_ScriptDir` 仍是项目根，开发版 `.logs\` 不变；直接运行
-  `src\SevenWork.ahk`（调试 / 探针）时 `.logs\` 会落到 `src\`，见 `.clinerules/04`。
+- 工作树根有 `_dev.flag` 时是**开发身份**（`Config.IsDev`），`.logs\` 落该工作树根；
+  直接运行 `src\SevenWork.ahk`（调试 / 探针）时落 `src\.logs\`，见 `.clinerules/04`。
+  主目录（日用、无 flag）不写 `.logs\`，日志随配置落 `%AppData%\SevenWork\`。
 
 ## 改动原则
 

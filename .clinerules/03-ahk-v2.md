@@ -47,8 +47,9 @@
 ## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
 
 - `OnError(OnScriptError)` —— 未捕获异常 → `Config.LogPath`
-  （**开发版 `<项目根>\.logs\_error.log`**；编译版 `%AppData%\SevenWork\_error.log`。
-  含消息 / 文件 / 行 / 调用栈，超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
+  （**开发身份（工作树根有 `_dev.flag`）`<工作树根>\.logs\_error.log`**；
+  日用 / 编译版 `%AppData%\SevenWork\_error.log`。含消息 / 文件 / 行 / 调用栈，
+  超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
 - `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
 - **事件订阅者的异常也进同一份 `_error.log`**（v2.4.5 起）—— `EventBus.Emit` 对每个订阅者
   `try`/`catch` 且**互相隔离**（一个抛错，同一事件后面的订阅者照常执行），循环结束后汇聚成
@@ -63,5 +64,5 @@
 - 新增异步回调（`SetTimer` / `OnMessage`）时，碰窗口或控件前仍要自己守卫
   （照 `AutoSaveFeature.Tick` 的写法）；「这个分支很少发生」不是不写的理由，
   它们最终都会以一个留在屏幕上的模态框收场；
-- 用户报「按了没反应」时，**先看 `_error.log`**（开发版在项目根 `.logs\`，
-  编译版在 `%AppData%\SevenWork\`），再去枚举 `#32770` 读正文。
+- 用户报「按了没反应」时，**先看 `_error.log`**（开发身份在工作树根 `.logs\`，
+  日用 / 编译版在 `%AppData%\SevenWork\`），再去枚举 `#32770` 读正文。
