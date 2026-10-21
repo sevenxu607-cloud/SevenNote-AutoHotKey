@@ -30,7 +30,7 @@
 | 第一次听说这个项目 | `README.md` → `PROJECT-OVERVIEW.md` | 5 分钟决定用不用 |
 | 要改代码的人 | `PROJECT-OVERVIEW.md` → `CAPABILITIES.md` → `.clinerules/02` | 先知道边界在哪 |
 | 要加功能 / 加模块的人 | `.clinerules/02` 的「加新模块 / 加新功能的标准步骤」+ 对应专题指南 | 只改两处 |
-| **新的 AI 会话** | `DEVLOG.md` 顶部三区（当前状态 / 待办 / 已放弃方案）→ `.clinerules/` 六份 | 不重复踩坑 |
+| **新的 AI 会话** | `DEVLOG.md` 顶部三区（当前状态 / 待办 / 已放弃方案）→ `.clinerules/` 全部规则 | 不重复踩坑 |
 | 想知道历史 | `CHANGELOG.md` → `DEVLOG.md` → `devlog/` | 考古 |
 
 ## 三、维护规则（改文档前先看这五条）
