@@ -51,11 +51,75 @@ const DEMO_MD = [
 const noteMd = ref(DEMO_MD)
 const saved = ref('')
 
+/* ── 宿主（AHK）入口 ───────────────────────────────────────────────
+   AHK 用 WebHostService.Eval('window.__swnote.setMarkdown("…")') 灌内容。
+   Eval 和组件的 onMounted 谁先到不确定：编辑器没建好时先把值挂起来，
+   @ready 之后补灌 —— 否则第一次载入会静默丢掉（画面还是演示内容）。 */
+const editorRef = ref<any>()
+let pendingMd = ''
+
+function onEditorReady() {
+  if (!pendingMd) return
+  const md = pendingMd
+  pendingMd = ''
+  try {
+    editorRef.value?.setMarkdown(md)
+  } catch (e) {
+    ;(window as any).__swnoteLastError = 'ready: ' + String(e)
+  }
+}
+
+function setMarkdown(md: string): string {
+  // ⚠ 必须有返回值：AHK 侧用 ExecuteScriptAsync 收结果，undefined 序列化成字符串
+  //   "null"，Eval 就判成失败，整次灌入看起来没执行。
+  // ⚠ 异常也要自己兜住并转成字符串 —— 抛出去的异常同样变成 "null"，
+  //   只剩「脚本返回 null」这句，查不出到底是哪一步坏的。
+  try {
+    noteMd.value = md
+    const r = String(editorRef.value?.setMarkdown(md))
+    if (r !== 'ok') {
+      pendingMd = md
+      return 'pending:' + r
+    }
+    return 'ok'
+  } catch (e) {
+    return 'ERR ' + String(e)
+  }
+}
+
 function save() {
   // S2a 只是「证明编辑器能产出 markdown」，真正落盘要等 S2b 接 AHK
   localStorage.setItem('sevenwork.note.preview', noteMd.value)
   saved.value = `已暂存 ${new Date().toLocaleTimeString()}`
 }
+
+onMounted(() => {
+  // 宿主入口只挂一次；重新导航页面会重建，不需要额外清理
+  // ⚠ 未捕获的 Promise 拒绝在 WebView2 里完全静默（不写 console、不弹窗），
+  //   而编辑器的 create() 是异步的 —— 它抛了就等于「DOM 出来了但变量是 null」
+  window.addEventListener('unhandledrejection', (e: any) => {
+    ;(window as any).__noteStage = 'reject: ' + String(e?.reason)
+  })
+  ;(window as any).__swnote = {
+    setMarkdown,
+    getMarkdown: () => editorRef.value?.getMarkdown() ?? noteMd.value,
+    getChars: () => noteMd.value.length,
+    // 临时诊断：ref 到底绑上没有、expose 出来的是不是我们要的那几个方法
+    diag: () => {
+      const r: any = editorRef.value
+      return JSON.stringify({
+        hasRef: !!r,
+        keys: r ? Object.keys(r) : [],
+        setMarkdown: typeof r?.setMarkdown,
+        getMarkdown: typeof r?.getMarkdown,
+        noteLen: noteMd.value.length,
+        pending: pendingMd.length,
+        dom: !!document.querySelector('.ProseMirror'),
+        stage: (window as any).__noteStage ?? '(none)',
+      })
+    },
+  }
+})
 
 onMounted(async () => {
   if (!hosted) {
@@ -139,7 +203,7 @@ onMounted(async () => {
       </header>
       <div class="note-body">
         <!-- v-model 是单向回吐：编辑器是唯一真源，不反向覆写它 -->
-        <NoteEditor v-model="noteMd" />
+        <NoteEditor ref="editorRef" v-model="noteMd" @ready="onEditorReady" />
       </div>
       <div v-if="saved" class="note-foot">{{ saved }}</div>
     </main>

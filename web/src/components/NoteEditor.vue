@@ -13,7 +13,7 @@ import { history } from '@milkdown/kit/plugin/history'
 import { upload, uploadConfig } from '@milkdown/kit/plugin/upload'
 import { dropCursor } from '@milkdown/kit/prose/dropcursor'
 import { gapCursor } from '@milkdown/kit/prose/gapcursor'
-import { getMarkdown } from '@milkdown/kit/utils'
+import { getMarkdown, replaceAll, $prose } from '@milkdown/kit/utils'
 import { storeImage, toDisplayMarkdown, toDisplayUrl, toStoredMarkdown } from '../ahk'
 import '@milkdown/kit/prose/gapcursor/style/gapcursor.css'
 
@@ -32,9 +32,12 @@ let disposed = false
 let lastStored = props.modelValue ?? ''
 
 onMounted(async () => {
+  const mark = (s: string) => { ;(window as any).__noteStage = s }
+  mark('mount')
   if (!host.value) return
   const el = host.value
-  const created = await Editor.make()
+  mark('make')
+  const builder = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, el)
       // 进来的 markdown 是存储态（./_assets/…），渲染前换成可加载的 URL
@@ -68,10 +71,21 @@ onMounted(async () => {
     .use(gfm)
     .use(listener)
     .use(history)
-    .use(dropCursor)
-    .use(gapCursor)
+    .use($prose(() => dropCursor()))
+    .use($prose(() => gapCursor()))
     .use(upload)
-    .create()
+  mark('built')
+  let created: any
+  try {
+    created = await Promise.race([
+      builder.create(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('create timeout 10s')), 10000)),
+    ])
+  } catch (e: any) {
+    mark('create-fail: ' + String(e) + ' @@ ' + String(e?.stack).slice(0, 500))
+    throw e
+  }
+  mark('created')
 
   // 卸载与创建赛跑：组件可能在 await 期间就被销毁了
   if (disposed) {
@@ -79,6 +93,7 @@ onMounted(async () => {
     return
   }
   editor = created
+  mark('ready')
   emit('ready')
 })
 
@@ -93,6 +108,26 @@ defineExpose({
     if (!editor) return props.modelValue ?? ''
     // 出编辑器就转回存储态 —— 这才是能写进 .md 的那一版
     return toStoredMarkdown(editor.action(getMarkdown()) as unknown as string)
+  },
+
+  /**
+   * 整体换文档：载入笔记 / 切日期都走这里。
+   * 只靠 props 换不动 —— defaultValueCtx 只在创建时读一次。
+   *
+   * flush = true 重建 EditorState，连带清掉撤销栈：换的是另一篇笔记，
+   * 让它还能 Ctrl+Z 回上一篇的内容是错的。返回 false 表示编辑器还没建好，
+   * 调用方需要先挂起来、等 ready 再灌。
+   */
+  setMarkdown(md: string): string {
+    if (!editor) return 'no-editor'
+    // ⚠ 必须先写 lastStored：markdownUpdated 是同步触发的，晚一步就会把旧值 emit 回去
+    lastStored = md
+    try {
+      editor.action(replaceAll(toDisplayMarkdown(md), true))
+      return 'ok'
+    } catch (e) {
+      return 'ERR ' + String(e)
+    }
   },
 })
 </script>
