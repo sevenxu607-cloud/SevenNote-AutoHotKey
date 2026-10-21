@@ -14,12 +14,11 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：S3a 只读验证通过 —— 生产库 36 篇 `.md` 全量载入 Milkdown，零失败
-  （详见 2026-10-21 20:05 条目；技术细节在 `_spike/webview2/S3A-RESULTS.md`）
-- **正在处理**：SevenNote 从 RichEdit + RTF 双格式迁到 WebView2 / Milkdown ——
-  **Markdown 升为母版**，RTF 退出保存路径
-- **下一步**：S3b（可写落盘：先保存到副本 + 全量差异核对；同时砍 11 条编辑热键、删 `SearchFeature`），
-  之后 S3c 补回 5 条编辑热键
+- **最近一次改动**：S3b 落地 —— 编辑区已是 WebView2 + Milkdown，加载 / 保存 / 脏标记全链路
+  真机验证通过（详见 2026-10-21 20:45 条目）
+- **正在处理**：S3 收尾 —— 搬回编辑快捷键（S3c）与外观对齐（S3d）
+- **下一步**：S3c（`Shift+Tab` 反缩进、列表内 `Tab` 走 `sinkListItem`），
+  然后 S3d（前端 `Alt+T` 主题循环）
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -28,10 +27,13 @@
 ## 待办与方向
 
 **S3 迁移（WebView2 / Milkdown）**
-- [ ] S3b：可写落盘 —— 先 `SaveAs` 副本，再全量核对「差异只有 CRLF→LF 与 `\#`→`#`」
-- [ ] S3b：砍 11 条编辑热键、删 `SearchFeature`（219 行）、`EditorService` 行操作（70 行）
-- [ ] S3c：补回 5 条编辑热键（`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` / `Shift+Tab`）
+- [x] ~~S3b：可写落盘 —— 先 `SaveAs` 副本，再全量核对「差异只有 CRLF→LF 与 `\#`→`#`」~~
+  —— 用户否掉副本方案，直接写真实库；脏标记承担「不改就不写」
+- [x] ~~S3b：砍 11 条编辑热键、删 `SearchFeature`~~ —— 实际热键 27 → 7，删 12 个文件
+- [ ] S3c：`Shift+Tab` 反缩进；列表内 `Tab` 改走 `sinkListItem`
+  （`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` 已在前端 keymap 就位）
 - [ ] S3d：外观对齐（`Alt+T` 循环主题、背景图主题是否随 RTF 一起退休待定）
+- [ ] 存量 `.md` 每行的 `**` 包裹要不要清洗
 
 **P1（代码审查遗留）**
 - [ ] `PandocService.Convert` 失败被静默吞掉（`SaveFeature` 丢弃返回值，状态栏仍报「已保存」）
@@ -76,6 +78,32 @@
 ## 会话记录
 
 （新的在最上面）
+### 2026-10-21 20:45　S3b 落地：编辑区换成 WebView2，热键 27 → 7
+
+**我说**（原话）
+> 没必要,目前的笔记没有什么高价值,直接动手
+
+（上一轮我推荐的是「先存副本 + 全量差异核对」，用户否掉了备份这一步。）
+
+**意图**
+不再花一轮做备份与副本验证，直接改 `src/` 与前端，把编辑区切到 WebView2。
+
+**决定 / 过程**
+- **不建副本**，直接写真实笔记库（36 篇，`.rtf` 原样留着不动）。
+- **脏标记落在 AHK 侧**：`SaveFeature` 取回 markdown 后先与磁盘文件逐字节比较，相同就一个字节都不写 —— 打开历史笔记看一眼不会改它。实测「不改内容，Alt+Z 收起再展开」，文件哈希与时间戳均不变。
+- 热键 **27 → 7**（不是原计划的 14）：撤销 / 行编辑 / 缩进 / 搜索 / 粘贴交给 Milkdown 原生行为；`Ctrl+T`、`Ctrl+H`、`Ctrl+Shift+H`、`Tab` 放前端 keymap（要光标上下文，AHK 只能对着 SendMessage 猜）。AHK 只留 `Alt+Z`、`Ctrl+S`、`Alt+↑↓`、`Alt+Home`、`Ctrl+G`、`Ctrl+Shift+T`。
+- 删 12 个文件：`SearchFeature` / `StatusBar` / `PasteFeature` / `LineEditFeature` / `UndoFeature` / `TimestampFeature` / `StatFeature` / `CaretFeature` / `ThemeFeature` / `FontFeature` / `BackdropFeature` / `ClipboardService`。`EditorService` / `ThemeService` / `FontService` 保留 —— Text 模块还在用。
+
+**代价 / 风险**
+- 首轮保存会把历史 `.md` 规范化：CRLF→LF + `\#`→`#`（实测 978 → 883 字节）。语义等价，但 `.md` 之外没有版本可回退 —— 用户已明确接受。
+- 旧 RTF→Pandoc 产出的 `.md` **每行都被 `**` 包裹**。在粗体行尾插字时，Milkdown 会把 `**` 拆到别的段落（测试时踩到，已手工还原）。新笔记没有这个问题；存量是否清洗待定。
+- `Alt+T` 主题循环、`Alt+±` 字号暂时没有热键，等 S3d。
+
+**待办**
+- [ ] S3c：`Shift+Tab` 反缩进；列表内 `Tab` 改走 `sinkListItem`
+- [ ] S3d：前端 `Alt+T` 主题循环；决定背景图主题是否退休
+- [ ] 存量 `.md` 的 `**` 包裹要不要清洗
+
 ### 2026-10-21 20:05　笔记迁到 WebView2 + Milkdown，放弃 RTF 双格式
 
 **我说**（原话）

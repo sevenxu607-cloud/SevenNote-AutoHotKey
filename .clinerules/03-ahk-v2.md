@@ -47,6 +47,10 @@
 | **`SetTimer(this.StaticMethod, -1000)` 报 `Invalid callback function`** | 类静态方法的函数对象看着干净（`Type(...)` = `Func`）但 `SetTimer` 不收 → 用箭头函数包一层 `SetTimer(() => T.StaticReset(), -300)`，并把闭包**存字段**（每次新建的箭头函数是新对象，`SetTimer(fn,0)` 认不出、停不掉）；从字段取出先放局部变量再传 |
 | **`ComboBox.Value := x` 抛 `Invalid value`** | 实测下拉已含该值照样抛 → 可编辑下拉**读写都别用 `.Value`**：对 `Hwnd` 发 `WM_SETTEXT(0x0C)` / `WM_GETTEXT(0x0D)` / `WM_GETTEXTLENGTH(0x0E)`。⚠ 内置 `SendMessage()` 第 4 参数是 **Control** 不是 WinTitle（传错位报 `Target window not found`） |
 | **`Gui.Control` 没有 `Destroy()` 方法** | `Destroy()` 是 `Gui` 对象的方法；写 `ctrl.Destroy()` 抛「方法不存在」并被外层 `try` 静默吞掉（实测面板切页后 3 个输入框仍挂着）→ 单个控件只能 `DllCall("DestroyWindow", "ptr", ctrl.Hwnd)`。**排查手段**：在这类 `try` 里数「成功几次」再记日志（`rows=3 destroyedCtrl=0` 一眼定位） |
+| **`Ord()` 在 v2 只收一个字符** | 照 v1 的习惯写 `Ord(s, i)` 抛 `Too many parameters passed to function. Specifically: Ord` → 先 `SubStr(s, i, 1)` 再 `Ord(ch)`。⚠ 逐字符遍历时 `SubStr` 按 UTF-16 单元取，emoji 会被拆成代理对的两个单元；只要判定后**原样追加**（不重新 `Chr` 组合），拼回去仍是原字 |
+| **WebView2 在窗口隐藏期挂载 → 编辑区一片纯底色** | 父窗口 `Show("Hide")` 时 `Mount`，Chromium 子窗口会停在 `SW_HIDE`（实测子窗口 `vis=False`、坐标 `-32000,-32000`），父窗口随后 `Show()` 也不回来 —— 表现是「窗口出来了、编辑区一片纯底色」，`stderr` 与 `_error.log` 都空。两个补丁都要：`ComCall(4, ctrl, "int", 1)`（见下一行）+ **父窗口可见后**再 `Fill()` 一次（隐藏时那次给的是 0×0） |
+| **`WebHostService` 的 `IsVisible` 只有 getter** | 库里 `IsVisible { get => ComCall(3, …) }`，没有 `put_IsVisible`。`ICoreWebView2Controller` 的 vtable 4 就是 putter，直接 `ComCall(4, this._ctrl, "int", 1)`；写成 `this._ctrl.IsVisible := 1` 抛「属性是只读的」，同样会被外层 `try` 吞掉 |
+
 
 ## 全局异常兜底（v2.4.2 起，注册点在组合根）
 
