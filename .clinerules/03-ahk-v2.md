@@ -3,66 +3,64 @@
 ## 版本与文件格式
 
 - 每个脚本首行必须有 `#Requires AutoHotkey v2.0`。
-- 本机解释器（64 位）：`D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe`
-  （同值见 `.vscode/settings.json` → `AHK++.v2.file.interpreterPath`）
-- 源码编码：**UTF-8 无 BOM**（`src\SevenWork.ahk` 实测首字节为 `23 52 65`，即 `#Re`）。
-- 换行：`.gitattributes` 规定 `*.ahk` 用 **CRLF**、`*.md` 用 **LF**。
-- **必须 64 位**运行/编译：32 位会导致 RichEdit 字符格式异常。
+- 本机解释器（64 位）：`D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe`（同值见 `.vscode/settings.json`）。
+- 源码编码：**UTF-8 无 BOM**；换行：`*.ahk` **CRLF**、`*.md` **LF**（`.gitattributes`）。
+- **必须 64 位**运行 / 编译：32 位会导致 RichEdit 字符格式异常。
 
 ## v2 语法要点（v1 写法一律不用）
 
-- 赋值用 `:=`；比较用 `=`（不区分大小写）/ `==`（区分大小写）。
-- 变量不加 `%` 包裹；只有旧式命令的参数才需要 `%var%`。
-- 函数调用必须带括号、字符串必须加引号：`MsgBox("hi")`。
-- `#HotIf` 取代 v1 的 `#If`。
+- 赋值 `:=`；`=` 不区分大小写、`==` 区分。变量不加 `%`。函数调用带括号、字符串加引号。
+- `#HotIf` 取代 v1 的 `#If`。`<` `>` 是数值比较，字符串比较用 `StrCompare`。
+- **没有内置 `JSON`** —— `JSON.Stringify` 是 v2.1 alpha 才有的，v2.0.27 上会被当成未赋值变量。
+- **没有 `Typeof()`** —— 用 `Type(x)`；写成 `Typeof` 抛出的错还会被外层 `try/catch` 染成看不懂的
+  `Invalid callback function`。
 
-## 本项目踩过的坑（README / src\SevenWork.ahk 头注释原文）
+## 命名：这些名字不能做变量名
 
-| 坑 | 说明 |
+| 类别 | 名单 | 报错 |
+| --- | --- | --- |
+| 内置函数 | `Clear` / `log` / `min` / `max` / `Indent` / `Edit` | `This Func cannot be used as an output variable. Specifically: edit` |
+| 内置类 | `Gui` / `Object` / `Map` / `Array` / `Buffer` / `Func` / `File` / `Clipboard` | `This Class cannot be used as an output variable. Specifically: Gui` |
+
+- 名字**不区分大小写**（`global LOG` 撞 `log`）。
+- 报这个错时脚本**一句都不执行**、输出为空，很容易误判成「探针没跑」；没加 `/ErrorStdOut`
+  还会弹模态框卡住不退（表现为平白多一个 `AutoHotkey64` 进程）。
+- 对策：变量名写长 —— `guiHwnd` / `idxMap` / `logPath`。
+
+## 本项目踩过的坑
+
+| 坑 | 症状 → 对策 |
 | --- | --- |
-| `Clear` / `log` / `min` / `max` / `Indent` / `Edit` 不能做变量名 | 它们是 AHK v2 内置函数名。`Edit` 是 Gui 控件创建函数 —— 实测在探针里写 `edit := WinExist(...)` 直接报 `This Func cannot be used as an output variable. Specifically: edit`，脚本一句都不执行、输出为空，很容易误判成「探针没跑」 |
-| **反引号在 AHK 字符串里是转义符，三连写不出来** | 想用正则匹配 markdown 代码块围栏时，直接写三个反引号会让字符串提前结束、报 `Missing """`（实测）。用 `Chr(96)` 拼出围栏再交给 `RegExReplace`（见 `PromptStoreService.Summary`） |
-| **`Gui` 也不能做变量名** | 它是内置**类**名（同类还有 `Object` / `Map` / `Array` / `Buffer` / `Func` / `File` / `Clipboard`）。实测 `gui := WinExist(...)` 直接报 `This Class cannot be used as an output variable. Specifically: Gui`；**没加 `/ErrorStdOut` 时会弹模态框并卡住不退出**，表现为平白多出一个 `AutoHotkey64` 进程。变量名写长一点最省事（`guiHwnd` / `idxMap`） |
-| AHK v2 的 `<` `>` 是数值比较 | 字符串比较用 `StrCompare` |
-| AHK v2 的 `<=` / `>=` 遇**空字符串**会抛错 | 报 `Expected a Number but got an empty string`；数值比较前先 `IsNumber()` 守卫（`State` 未初始化的记忆值就是 `""`，实测踩到） |
-| `EM_SETSEL` / `EM_GETSEL` 要用 DllCall | 内置 `SendMessage` 对 INT 参数有歧义 |
-| `FINDTEXTEXW` 读偏移 16/20（chrgText） | 误读 0/4 会导致搜索只找到 1 个 |
-| 32 位编译导致 RichEdit 字符格式异常 | **必须 64 位编译** |
-| `FileInstall` 必须写在一行 | 折行会导致打包出 0KB 空文件 |
-| `FileExist` 返回 `"A"` 不是 `true` | 断言需 `!!` 转换 |
-| **最小化窗口的 `IsWindowVisible` 仍是 `1`** | 判断“窗口是否在显示”必须用 `IsWindowVisible && !IsIconic`。最小化窗口的 `WinGetPos` 会返回 `-32000` 一类**屏幕外停放位**（按 DPI 缩放显示为 `-21333` 等）；把这种坐标记下来再 `WinMove`，窗口就被永久搬到看不见的地方，`Alt+Z` 再也呼不出。**记录窗口位置前必须校验它落在某个屏幕工作区内**（`MonitorGetWorkArea`），并给 `WinRestore` 兜底 |
-| **`WinMove` 收「物理像素」，而 `Config` 里的尺寸是「逻辑单位」** | 本机 150% 缩放（`A_ScreenDPI = 144`、`A_ScreenWidth = 2560`、`A_ScreenHeight = 1600`）下，`Gui` 控件坐标按 DPI 放大 1.5 倍，**窗口最小尺寸由控件固有尺寸决定**，`+MinSize450x300` 同样是逻辑值（物理 675x450）。把 `Config.WinW/WinH`（450/550）原样传给 `WinMove`：宽度撞上 `MinSize` 被拒绝、高度却通过，窗口被压矮（实测 `881` → `550`）。**尺寸交给 AHK 按 DPI 自行决定**（`WinMove` 的 `Width/Height` 留空即保持不变），位置则必须按 `WinGetPos` 读到的**实际**物理尺寸算——`A_ScreenWidth - Config.WinW - 220` 会让右边缘探出屏幕 27px。另注：同一份代码里 `g.Show("w450 h550")` 也压不住尺寸，仍会被控件撑到 697×881。⚠ `Config.WinW` / `Config.WinH` 这两个字段已作为死字段删除（`tests\user_journey_driver.ahk` 曾因继续引用它们而启动失败，同步修掉了 `Show("… w" . Config.WinW …)`）—— 此处只记历史教训，别再引回这两个字段 |
-| **别混用 `Gui.Move` 和 `WinMove` —— 前者收「逻辑单位」，后者收「物理像素」** | `g.Move()` 会**自动乘 DPI 比**（本机 1.5），`WinMove()` / `WinGetPos()` 一律物理像素。把 `WinGetPos` 读到的物理坐标喂给 `g.Move`，会被**二次放大**：实测 `g.Move(1629, 238)` 落到 `(2444, 357)`（1629×1.5≈2444、238×1.5=357），看起来像「Move 没生效」。**位置记忆这条链上必须全程 `WinMove`**，与 `WinGetPos` 配套 |
-| **`Gui.Show("Hide")` 过的窗口，`WinGetPos` 读不到** | 用 `Show("Hide")` 建好但未显示的窗口，`WS_VISIBLE` 仍是 `0`，而 `WinGetPos` / `WinMove` **默认忽略隐藏窗口**（直接抛错）。要先 `DetectHiddenWindows(true)`；用完恢复原值（`A_DetectHiddenWindows`）免得改变其它代码的可见性语义。`BackdropFeature._Apply` 为同一个原因也开过它 |
-| **异步定时器里操作窗口，窗口可能已经藏了** | AHK v2 的 `WinMove` / `WinGetPos` / `WinActivate` **默认忽略隐藏窗口**（对 `WinHide` 过的窗口抛 `Target window not found`），而 `SetTimer` 排下的复核回调跑起来时，用户很可能已经按热键把窗口收起。实测：`Alt+X` 呼出后排 350/950/1550/2150ms 四轮尺寸复核，用户在 350ms 内再按一次 → 回调里 `WinMove` 抛错 → 弹**模态框**、整个脚本卡死（热键全无反应，框还留在屏幕上）。**规则**：凡在异步回调里碰窗口，都先过一道闸 —— `DetectHiddenWindows(false)` + `WinExist` + `!DllCall("IsIconic", "ptr", hwnd, "int")`，不满足即 `return`；「窗口已被用户收起」这种判断还要**顺手停掉后续复核**（不再排下一轮 `SetTimer`），否则会反复重摆一个看不见的窗口 |
-| **先 `Show` 再 `WinMove` 会让窗口「飘一下」** | `g.Show()` 先让窗口在 AHK 的默认落点露面，随后 `WinMove` 才把它挪到目标位置，中间那一帧是**可见**的（实测 `+31ms` 出现在 `(924,357)`，`+219ms` 才跳到 `(1629,238)`）。**定位要在隐藏状态下完成**：`Show("Hide")` → 量尺寸 / `WinMove` → 最后 `g.Show()` 一次性露面，实测从诞生起就只有一个位置 |
-| **AHK v2 没有内置 `JSON` 对象** | `JSON.Stringify` 是 v2.1 alpha 才有的，v2.0.27 上会把它当**未赋值变量**。项目没写 `#Warn`，但 **v2 默认就开 `VarUnset` 警告且默认动作是弹模态框** —— 于是「Warning: This local variable appears to never be assigned a value. Specifically: JSON」直接卡死整个脚本，`Alt+Z` 全无反应，窗口标题是脚本名的 `#32770` 对话框挡住一切。**排查手段**：`DetectHiddenWindows(true)` 后枚举窗口找 `#32770`，再 `WinGetText` 读出正文 |
-| **未捕获异常默认弹模态框卡死（v2.4.2 起已有全局兜底）** | 未处理异常 + `SetTimer` 回调里的代码没有外层 try → 漏一处就弹 `#32770` 停摆、热键全无反应（`EventBus.Emit` 自 v2.4.5 起自己 `catch` 并写日志，不再算这一类）。v2.4.2 起在组合根注册了 `OnError`（写 `_error.log` 后 `return 1` 继续跑），`#Warn VarUnset` 的动作也从 MsgBox 改成 OutputDebug。⚠ **兜底只保证「程序不倒」，不保证「逻辑做对了」** —— 异步回调里碰窗口 / 控件前仍须自己过闸（见上一条） |
-| **`obj.prop(args)` 调不动属性里存的函数** | AHK v2 的 `obj.prop(...)` 走**方法查找**；属性值是 `Func` 时不会被调用，实测抛 `Too many parameters passed to function`。必须**先取到局部变量**再调：`fn := obj.prop` → `fn(args)`。v2.4.5 修 `EventBus` 时踩到：`this._sink(msg)` 一直抛、又被自己的 `try` 吞掉，表现为「日志一条都不写」而代码看着完全正确 —— 只有探针（`local-var-call-ok` vs `prop-call-threw`）能抓出来 |
-| **`SetTimer(this.StaticMethod, -1000)` 报 `Invalid callback function`** | AHK v2.0.27 里类静态方法的函数对象**看着是干净的**（`Type(T.StaticReset)` = `Func`），但 `SetTimer` 就是不收。三段对照实测：`A type=Func` / `B err=Invalid callback function` / `C ok`（`SetTimer(() => T.StaticReset(), -300)` 随后 `fired`）。**对策**：一律用箭头函数包一层，并把闭包**存到字段**（`this._delTimer := timerFn`）—— 每次新建的箭头函数是新对象，`SetTimer(fn, 0)` 认不出是同一个、停不掉。⚠ 从字段取出来先放局部变量：`timerFn := this._delTimer` 再 `SetTimer(timerFn, 0)` |
-| **`ComboBox.Value := x` 抛 `Invalid value`** | 不是「值不在列表里」那么简单 —— 实测下拉已填好 5 项（含 `Code`）再 `Value := "Code"` 照样抛。可编辑下拉的语义本来就是「值可以不在列表里」（目录被删、用户正要输新值），所以**读写都别用 `.Value`**：`WM_SETTEXT(0x0C)` / `WM_GETTEXT(0x0D)` / `WM_GETTEXTLENGTH(0x0E)` 直接对控件 `Hwnd` 发 `DllCall("SendMessage", ...)`，既不校验、也不依赖窗口可见性。⚠ 内置 `SendMessage()` 的第 4 参数是 **Control** 不是 WinTitle，传错位报 `Target window not found` |
-| **`log` 大小写都算内置函数名；v2 没有 `Typeof()`** | `global LOG := ...` 直接报 `This Func cannot be used as an output variable. Specifically: LOG`（`log` 是数学函数，变量名不区分大小写）。判类型用 `Type(x)` —— 写成 `Typeof(x)` 是未定义函数，抛出的错还会被外层 `try/catch` 染成一句看不懂的 `Invalid callback function` |
-| **`Gui.Control` 没有 `Destroy()` 方法** | `Destroy()` 是 **`Gui` 对象**的方法，控件对象上只有 `OnEvent` / `Opt` / `Move` / `Focus` / `Value` / `Enabled` / `Visible` / `Text` / `Hwnd` / `ClassNN` 等。写 `ctrl.Destroy()` 抛「方法不存在」，**被外面那句 `try` 一吞就完全没有痕迹** —— 实测 `Alt+S` 面板「切页销毁上一页设置字段」整段静默失效：从「文件夹」切到「文本」，三个 `Alt+1/2/3` 输入框照样挂在页上、保存按钮还是启用态，代码看着一点问题没有。真要销毁单个控件只能 `DllCall("DestroyWindow", "ptr", ctrl.Hwnd)`（GUI 与调用方同线程，安全；之后 `Gui.Destroy()` 会去销毁这些已失效的 hwnd，失败但不抛错）。**排查手段**：在这类 `try` 里数一下「成功了几次」再记日志 —— `rows=3 destroyedCtrl=0` 一眼定位 |
+| **反引号在 AHK 字符串里是转义符** | 三连反引号写不出来（正则匹配 markdown 围栏时报 `Missing """`）→ 用 `Chr(96)` 拼出围栏再交给 `RegExReplace`（见 `PromptStoreService.Summary`） |
+| **`<=` / `>=` 遇空字符串抛错** | `Expected a Number but got an empty string` → 数值比较前先 `IsNumber()` 守卫（`State` 未初始化的记忆值就是 `""`） |
+| **`FileExist` 返回 `"A"` 不是 `true`** | 断言 / 布尔判断需 `!!` 转换，否则 `= true` 判假 |
+| **`EM_SETSEL` / `EM_GETSEL` 要用 DllCall** | 内置 `SendMessage` 对 INT 参数有歧义 |
+| **`FINDTEXTEXW` 读偏移 16/20**（chrgText） | 误读 0/4 会导致搜索只找到 1 个 |
+| **`FileInstall` 必须写在一行** | 折行会打包出 0KB 空文件 |
+| **最小化窗口的 `IsWindowVisible` 仍是 `1`** | 判断「窗口在显示」必须 `IsWindowVisible && !IsIconic`；最小化窗口的 `WinGetPos` 返回 `-32000` 一类屏幕外停放位（150% 下 `-21333`），记下来再 `WinMove` 会把窗口搬到看不见的地方 → 记位置前校验它落在某个 `MonitorGetWorkArea` 内，并给 `WinRestore` 兜底 |
+| **`WinMove` 收物理像素，`Gui.Move` / `Gui.Show("w…")` 收逻辑单位** | 150% 缩放下混用会**二次放大**（实测 `g.Move(1629,238)` 落到 `(2444,357)`）；`Show("w450 h550")` 也压不住尺寸（被控件撑到 697×881）。对策：**位置记忆全程 `WinMove` + `WinGetPos`**（同一单位），尺寸别写死、交给 AHK（`WinMove` 的 `Width/Height` 留空即不变）。⚠ `Config.WinW/WinH` 已作为死字段删除，别再引回 |
+| **`Gui.Show("Hide")` 过的窗口 `WinGetPos` 读不到** | `WS_VISIBLE` 为 `0` 时 `WinGetPos` / `WinMove` 默认忽略隐藏窗口（抛错）→ 先 `DetectHiddenWindows(true)`，用完恢复 `A_DetectHiddenWindows` |
+| **先 `Show` 再 `WinMove` 会让窗口「飘一下」** | 实测 `+31ms` 出现在默认落点、`+219ms` 才跳到目标位置 → **定位在隐藏态完成**：`Show("Hide")` → 量尺寸 / `WinMove` → 最后 `Show()` |
+| **异步回调里碰窗口，窗口可能已经藏了** | `SetTimer` 排的复核跑起来时用户可能已按热键收窗 → `WinMove` 抛 `Target window not found` → 弹**模态框**、整个脚本卡死。**规则**：异步回调碰窗口前过闸 —— `DetectHiddenWindows(false)` + `WinExist` + `!DllCall("IsIconic", "ptr", hwnd, "int")`，不满足即 `return`；判断「用户已收起」时**顺手停掉后续复核**（不再排下一轮） |
+| **未捕获异常默认弹模态框卡死** | 默认动作是 `MsgBox` + 停摆，而 `SetTimer` 回调没有外层 `try`。v2.4.2 起组合根注册 `OnError`（写 `_error.log` 后 `return 1`）、`#Warn VarUnset` 改 `OutputDebug`。⚠ **兜底只保证不倒，不保证逻辑对** —— 异步回调碰窗口 / 控件前仍须自己过闸 |
+| **`obj.prop(args)` 调不动属性里存的函数** | 走**方法查找**、属性值是 `Func` 时抛 `Too many parameters passed to function`，还会被外层 `try` 吞掉（表现为「日志一条都不写」）→ **先取局部变量**：`fn := obj.prop` → `fn(args)` |
+| **`SetTimer(this.StaticMethod, -1000)` 报 `Invalid callback function`** | 类静态方法的函数对象看着干净（`Type(...)` = `Func`）但 `SetTimer` 不收 → 用箭头函数包一层 `SetTimer(() => T.StaticReset(), -300)`，并把闭包**存字段**（每次新建的箭头函数是新对象，`SetTimer(fn,0)` 认不出、停不掉）；从字段取出先放局部变量再传 |
+| **`ComboBox.Value := x` 抛 `Invalid value`** | 实测下拉已含该值照样抛 → 可编辑下拉**读写都别用 `.Value`**：对 `Hwnd` 发 `WM_SETTEXT(0x0C)` / `WM_GETTEXT(0x0D)` / `WM_GETTEXTLENGTH(0x0E)`。⚠ 内置 `SendMessage()` 第 4 参数是 **Control** 不是 WinTitle（传错位报 `Target window not found`） |
+| **`Gui.Control` 没有 `Destroy()` 方法** | `Destroy()` 是 `Gui` 对象的方法；写 `ctrl.Destroy()` 抛「方法不存在」并被外层 `try` 静默吞掉（实测面板切页后 3 个输入框仍挂着）→ 单个控件只能 `DllCall("DestroyWindow", "ptr", ctrl.Hwnd)`。**排查手段**：在这类 `try` 里数「成功几次」再记日志（`rows=3 destroyedCtrl=0` 一眼定位） |
 
-## 全局异常兜底（v2.4.2 起，注册点在主脚本组合根）
+## 全局异常兜底（v2.4.2 起，注册点在组合根）
 
-- `OnError(OnScriptError)` —— 未捕获异常 → `Config.LogPath`
-  （**开发身份（工作树根有 `_dev.flag`）`<工作树根>\.logs\_error.log`**；
-  日用 / 编译版 `%AppData%\SevenWork\_error.log`。含消息 / 文件 / 行 / 调用栈，
-  超 512KB 轮转）→ `return 1` 继续跑，不再弹模态框。
-- `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路（AHK++ 调试器里仍可见）。
-- **事件订阅者的异常也进同一份 `_error.log`**（v2.4.5 起）—— `EventBus.Emit` 对每个订阅者
-  `try`/`catch` 且**互相隔离**（一个抛错，同一事件后面的订阅者照常执行），循环结束后汇聚成
-  一条写入（`事件名 + 订阅者第 N 个 + 消息 + 文件/行`）。出口是组合根注入的 `_sink`
-  （`EventBus.SetErrorSink(LogError)`），没注入时只写 `OutputDebug`。
-  ⚠ 日志里是「订阅者第 N 个」= **注册顺序**，改了注册顺序序号就会变；没有名字标签（加名字要改
-  30 处 `On` 调用，不值）。
+- `OnError(OnScriptError)` → 写 `Config.LogPath` 后 `return 1` 继续跑，不再弹模态框。
+  日志位置：**开发身份（工作树根有 `_dev.flag`）`<工作树根>\.logs\_error.log`**；
+  日用 / 编译版 `%AppData%\SevenWork\_error.log`。含消息 / 文件 / 行 / 调用栈，超 512KB 轮转。
+- `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路。
+- **订阅者的异常也进同一份日志**（v2.4.5 起）：`EventBus.Emit` 对每个订阅者 `try`/`catch`
+  且**互相隔离**，循环后汇聚成一条（`事件名 + 订阅者第 N 个 + 消息 + 文件/行`）。
+  出口是组合根注入的 `_sink`（`EventBus.SetErrorSink(LogError)`）；没注入则只写 `OutputDebug`。
+  ⚠ 「第 N 个」= 注册顺序，改顺序序号就变；没加名字标签（要改 30 处 `On`，不值）。
 
-⚠ **别把兜底当挡箭牌**：
+⚠ **别把兜底当挡箭牌**：`OnError` 只保证「程序不倒」，出错那句会被跳过、后续可能拿到半成品状态；
+新增 `SetTimer` / `OnMessage` 回调时照 `AutoSaveFeature.Tick` 的写法自己守卫；
+用户报「按了没反应」时**先看 `_error.log`**，再枚举 `#32770` 读正文
+（`DetectHiddenWindows(true)` + `WinGetText`，标题是脚本名）。
 
-- `OnError` 只保证「程序不倒」—— 出错那句会被跳过，后续可能拿到半成品状态；
-- 新增异步回调（`SetTimer` / `OnMessage`）时，碰窗口或控件前仍要自己守卫
-  （照 `AutoSaveFeature.Tick` 的写法）；「这个分支很少发生」不是不写的理由，
-  它们最终都会以一个留在屏幕上的模态框收场；
-- 用户报「按了没反应」时，**先看 `_error.log`**（开发身份在工作树根 `.logs\`，
-  日用 / 编译版在 `%AppData%\SevenWork\`），再去枚举 `#32770` 读正文。

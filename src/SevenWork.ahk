@@ -15,59 +15,15 @@ Persistent()
 #Warn VarUnset, OutputDebug
 
 ; ═══════════════════════════════════════════════════════════════════════════
+; ═══════════════════════════════════════════════════════════════════════════
 ;  SevenWork —— v2.8
 ;  本地单文件速记工具。RichEdit 富文本编辑 + 双 RTF 存储 + Markdown 输出。
-;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+S 帮助窗口底部），改这里要一并改它。
-;
-;  【版本摘要】完整变更日志在 README「变更日志」表，这里只留一行一条的骨架。
-;    v2.8    Alt+M 把资源管理器里选中的文件转成同名 Markdown（挂 explorer 上下文，
-;            不抢别的程序的 Alt+M）；新增能力 PandocRunner / DocxHeadingFix ——
-;            后者把 docx 的自定义标题样式名（「三级标题」等）规范成 pandoc 认的
-;            `heading N`，否则整篇塌成嵌套有序列表、一个标题都出不来
-;    v2.7    新增 Folders 模块：Alt+1/2/3 三个文件夹槽位（热键写死、目录可换）；
-;            Alt+S 从纯文本帮助升级成侧栏式工作台面板 —— 模块可选实现
-;            GetSettingsSpec() 声明设置字段，平台只认 kind（folder / text）+ apply
-;    v2.6    新增 Text 模块：提示词库 Alt+P（目录即分类 / 文件名即标题 / 全文即正文）；
-;            HotkeyRouter 的上下文从写死三个改成遍历各模块 GetContexts() 报上来的名字
-;    v2.5    模块流水线修通：ModuleRegistry.InitAll / StartAll 逐模块 try，坏模块
-;            不带走别人；加模块只需 #Include + Register 相邻两行
-;    v2.4.5  事件总线不再吞异常：原先 `try fn(data)` 把订阅者的异常静默吃掉 ——
-;            到不了 OnError、也不进 _error.log，表现成「某个副作用没发生」而日志
-;            干干净净。现在逐个隔离执行（一个抛错不拖累后面的订阅者），循环结束
-;            后汇聚成一条写入日志；Kernel 不直接引用 LogError，改由组合根
-;            EventBus.SetErrorSink(LogError) 注入，没注入时退回 OutputDebug。
-;    v2.4.4  删空行后「画面慢半拍再猛跳」的修复：① StatFeature 巡检 500ms → 150ms
-;            —— 探针实测滑条本来就实时（nMax/nPos 当场变对），滞后且不自愈的是
-;            画面渲染位置（drift 341px）；② SyncScrollAfterShrink 补 SIF_TRACKPOS
-;            拖动守卫（GetScrollInfo 一直在请求它却从没读过）。与背景图 /
-;            WS_EX_COMPOSITED 无关。
-;    v2.4.3  一轮「去重与仓库卫生」：① 新增 Service `PeerLayoutService` —— 终端 / DeepSeek
-;            两处各自留底的「右下角落点公式 + 可摆性闸 + 矩形读取」收拢成一份（原先改
-;            一处要记着同步另一处；实测两版摆位逐项一致）；② 删掉全局覆盖键
-;            [Appearance] BackdropImage / BackdropOpacity（它会盖掉所有带 bg 的主题）
-;            —— 图的路径与浓淡只写在主题自己的 bg / bgAlpha 上；③ StatFeature.Tick
-;            补窗口可见性守卫；④ 加 .gitignore，演示测试产物出库。
-;    v2.4.2  补齐运行时兜底与三处实测到的浪费：① 注册 OnError —— 未捕获异常写
-;            _error.log（开发版落项目根 .logs\，编译版落 AppData）并**继续跑**，
-;            不再弹模态框停摆；
-;            同时把 VarUnset 警告动作改成 OutputDebug（同上，不再拦路）。
-;            ② pandoc 可用性探测缓存（原先每次保存都 RunWait 起一个 200MB 进程）、
-;            ConfigService 加进程内读缓存（GetVault 在保存链路上就要读 6 次盘）。
-;            ③ ListAllTags 冒泡 O(n²) 换内置 Sort；SetTimer 回调统一过一遍
-;            「窗口还在不在」守卫（照 AutoSaveFeature.Tick 的写法）
-;    v2.4.1  修复连按 Alt+C / Alt+X 弹模态框卡死（异步复核去摆一个已隐藏的窗口）；
-;            终端宽度与另外两个窗口统一，目标宽定 772（实测 Edge 会吸附 --window-size 的宽度）
-;    v2.4    主题表精简 8 → 5 套并做一次性旧下标迁移（[Appearance] ThemeSchema）；
-;            时间戳改为手动 Ctrl+T 插入（不再自动加）
-;    v2.3    修背景图主题拉伸时编辑区文字闪烁（_ScheduleRender 抖动合并 + _RenderNow 同矩形跳过）；
-;            编辑区滚动条随主题明暗；金克斯按「保留明暗 + 主体完整」重烘（-CropW 0.72 → 1.00）
-;    v2.2    主题扩到 8 套，末尾两套为**背景图主题**（星空 / 金克斯，都是「暗图 + 亮字」，
-;            裁剪与色调全烘进图片，运行时 bgAlpha 保持 0）；沉淀出 tools\rebake-backdrop.ps1
-;    v2.1    伴生窗口适配只在首次跑一次（与笔记原来待的地方相撞才摆位，随后冻结，归用户自己管）
-;    v2.0    Alt+X 呼出 / 隐藏 DeepSeek 网页；Alt+C 的窗口适配泛化成 Peer.* 通用契约
-;    v1.9    修 pandoc 打包 0KB 问题；PandocService 加文件有效性校验（> 1MB）
-;    v1.8    状态栏日期后显示星期（📅 2026-09-20 周日）
-;    v1.7    assets 统一收纳到 _assets/日期/；切日期 / 跳转 / 启动加载后光标到开头 + 视口到顶
+;  ⚠ 版本号以 Config.Version 为准（显示在 Alt+S 面板底部），改这里要一并改它。
+;  【版本摘要】只留最近三版；完整历史见 docs/CHANGELOG.md，判断与取舍见 docs/DEVLOG.md。
+;    v2.8    Alt+M 把资源管理器里选中的文件转 Markdown（挂 explorer 上下文，
+;            不抢别的程序的 Alt+M）；新增能力 PandocRunner / DocxHeadingFix
+;    v2.7    Folders 模块（Alt+1/2/3）+ Alt+S 升级成工作台面板（侧栏 + 内容区）
+;    v2.6    Text 模块：提示词库 Alt+P；热键上下文改由模块 GetContexts() 报
 ;
 ;  【用户旅程编号】组合根启动区与各模块 GetHotkeys / Feature 头部都用这套编号标注归属 ——
 ;    ① 唤起与关闭    Alt+Z 呼出 / 隐藏
@@ -76,53 +32,27 @@ Persistent()
 ;    ④ 查看与浏览    搜索 / 字数 / 光标记忆
 ;    ⑤ 组织与管理    日期切换 / 搜索跳转 / 标签 / 返回当天
 ;    ⚠ 全局热键只覆盖 ①②⑤；③④ 是编辑器内热键（见 src/WorkBench/HotkeyRouter.ahk），
-;      所以在全局那一段里编号看起来是跳着的（② 之后直接 ⑤），那是正常的。
+;      所以全局段里编号看着是跳的（② 之后直接 ⑤），正常。
 ;
-;  【整体架构 —— 四层 + 组合根】
-;    FEATURE 功能层（25 项，按用户旅程排列）→ SERVICE 服务层（10 项，纯能力）
-;     → KERNEL 骨架层（4 项：生命周期 / 状态 / 事件 / 配置）
-;     → 表示层 StatusBar → 组合根（装配 + 启动，在文件末尾）
-;    另有 CAPABILITY 平台能力（7 项，src/WorkBench/Capabilities/，只收 hwnd / 数字 / Rect）
+;  【整体架构 —— 四层 + 组合根】分层规则与依赖方向见 .clinerules/02-architecture.md
+;    FEATURE 功能层 → SERVICE 服务层 → KERNEL 骨架层 → OS（严禁反向）
+;    另有 CAPABILITY 平台能力（src/WorkBench/Capabilities/，只收 hwnd / 数字 / Rect）
 ;    与 Coordinator（跨模块协调，不算能力层）。
-;    Kernel 实现在 src/WorkBench/Kernel/；SevenNote 模块的 6 个 Service、StatusBar、
-;    18 个 Feature 与模块生命周期在 src/modules/SevenNote/。其余 4 个模块
-;    （Launcher / KeysInput / Text / Folders）合计 7 个 Feature、4 个 Service。
-;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册与帮助窗口已分别归
-;    src/WorkBench/HotkeyRouter.ahk 与 src/WorkBench/WorkBenchUI.ahk。
-;
-;  【依赖方向】Feature → Service → Kernel → OS（严禁反向）
+;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册在 HotkeyRouter，
+;    帮助 / 设置面板在 WorkBenchUI，其余实现分居 WorkBench/ 与 modules/<模块>/。
 ;
 ;  【核心技术决策】
-;    1. EM_STREAMOUT/EM_STREAMIN 直读直写 RTF
-;    2. Pandoc 转换 RTF → Markdown
-;    3. 双 RTF 输出（936 + 65001）
-;    4. 系统默认 Ctrl+V
-;    5. 空笔记不落盘
-;    6. 先查后存
-;    7. 标签写文件名
-;    8. 路径分离
-;    9. assets 统一收纳（v1.7）
-;   10. pandoc 文件大小检查（v1.9）
-;   11. 伴生窗口适配走 Launcher.* / SevenNote.Move 事件 —— 发布方只广播生命周期，
-;       摆位 / 记忆 / 失败兜底在 WindowFeature 与 PeerCoordinator 里，见 README「添加呼出外部窗口的功能」
-;   12. 背景图主题只是 Themes 数组里的普通成员（v2.2）—— 切到铺图、切走撤图，没有全局开关
-;   13. 编辑区滚动条与标题栏跟着主题明暗走（v2.3）
+;    1. EM_STREAMOUT/EM_STREAMIN 直读直写 RTF；Pandoc 转 RTF → Markdown（软依赖）
+;    2. 双 RTF 输出（936 + 65001）；空笔记不落盘；先查后存
+;    3. 标签写进文件名；assets 统一收纳到 _assets/日期/
+;    4. 伴生窗口适配走 Launcher.* / SevenNote.Move 事件（见 docs/LAUNCHER-GUIDE.md）
+;    5. 背景图主题只是 Themes 数组里的普通成员，没有全局开关（见 docs/THEME-IMAGES.md）
+;    6. 编辑区滚动条与标题栏跟着主题明暗走
 ;
-;  【已知坑点】全文见 .clinerules/03-ahk-v2.md（那里是单一事实源），这里只列最常踩的：
-;    · AHK v2 内置函数名不能做变量名（Clear/log/min/max/Indent）；
-;      ⚠ **Gui 也不能** —— 它是内置类名，`gui := WinExist(...)` 直接报错
-;    · AHK v2 的 < > 是数值比较，字符串比较用 StrCompare
-;    · AHK v2 的 <= / >= 遇空字符串会抛错，数值比较前先 IsNumber() 守卫
-;    · EM_SETSEL/EM_GETSEL 用 DllCall 4 参数版本
-;    · FINDTEXTEXW 读偏移 16/20（chrgText）
-;    · 32 位编译导致 RichEdit 字符格式异常——必须 64 位
-;    · FileInstall 必须一行，源路径不存在会打包 0KB 空文件（v1.9）
-;    · 最小化窗口的 IsWindowVisible 仍是 1 —— 判断「在显示」要 IsWindowVisible && !IsIconic
-;    · WinMove / WinGetPos 默认忽略隐藏窗口，对隐藏窗口直接抛 "Target window not found"；
-;      **凡在异步定时器回调里碰窗口，先过一道闸**（DetectHiddenWindows(false) + WinExist + !IsIconic）
-;    · 先 Show 再 WinMove 会让窗口「飘一下」：定位要在隐藏状态下做完（Show("Hide") → 摆好 → Show）
-;    · 启动终端别传 Run 的 "Hide"：隐藏启动会绕过 Windows Terminal 委派，终端退回
-;      conhost 默认（120x50 = 1488x1256、#012456 蓝底），拿不到 WT profile 的星空背景
+;  【已知坑点】单一事实源在 .clinerules/03-ahk-v2.md，这里只留最要命的三条：
+;    · 内置函数名 / 类名不能做变量名（Clear / log / Gui …），变量名写长最省事
+;    · 异步回调里碰窗口前必须过闸（DetectHiddenWindows(false) + WinExist + !IsIconic）
+;    · 定位要在隐藏态完成（Show("Hide") → 摆好 → Show），否则窗口会「飘一下」
 ;
 ;  依赖：pandoc.exe（软依赖，未安装则 MD 降级为纯文本）
 ; ═══════════════════════════════════════════════════════════════════════════

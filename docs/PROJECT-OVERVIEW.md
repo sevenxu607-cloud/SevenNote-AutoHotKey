@@ -22,7 +22,7 @@
 | --- | --- |
 | 源码 | 根 `SevenWork.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
 | 类 | 34 个 = Kernel 4 + Service 8 + StatusBar 1 + Feature 21 |
-| 文档 | `README.md` 1170 行（含 v2.2 → v2.4.4 版本历史） |
+| 文档 | `README.md` 约 740 行（手册正文）；版本历史拆到 `docs/CHANGELOG.md`，开发日志在 `docs/DEVLOG.md` |
 | 发行物 | 编译后约 250 MB（含内嵌 Pandoc 100+ MB） |
 
 ---
@@ -134,7 +134,11 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `src/modules/Launcher/` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 生命周期 |
 | `src/modules/KeysInput/` | 键位模块：`CapsLockFeature` + `Alt+Shift+C` 生命周期 |
 | `docs/legacy/` | Phase 2 拆分前的单文件快照，只作对照，不参与运行 |
-| `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 / 版本历史 |
+| `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 |
+| `docs/CHANGELOG.md` | 版本历史：每版的改动、踩坑与判据 |
+| `docs/THEME-IMAGES.md` | 背景图主题：参数、实测账、踩坑全文 |
+| `docs/LAUNCHER-GUIDE.md` | 外部窗口适配：三事件契约、调参、实测账 |
+| `docs/devlog/` | 归档的开发日志（2026-Q4 重构期 / 工作台化） |
 | `docs/PROJECT-OVERVIEW.md` | 一页纸全景：定位 / 规模 / 欠账 / 限制 |
 | `docs/PROJECT-IMPLEMENTATION.md` | 技术实现清单：15 个「用了什么手段 → 实现什么效果」 |
 | `docs/DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
