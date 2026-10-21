@@ -6,26 +6,37 @@ class Config {
     static AppName := "SevenWork"
     static Version := "2.8"
 
-    ; ⚠ 配置目录与 pandoc 目录**故意不同**，不是笔误：
-    ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按版本隔离 ——
-    ;     开发版走 SevenWork-Dev，发布版走 SevenWork，升级时不会互相覆盖配置。
-    ;   · pandoc.exe 是 100+MB 的内嵌可执行文件，跨版本共用一份，不随配置目录搬家。
-    ; ⚠ 用 `=>` 简写属性：A_IsCompiled 在取值时才求值，源码运行与编译版各走各的目录。
-    static AppDataDir => A_IsCompiled
-        ? A_AppData . "\SevenWork"
-        : A_AppData . "\SevenWork-Dev"
+    ; ═══ 身份判据：`_dev.flag`（目录即身份，与分支无关）═══
+    ; 项目根存在 `_dev.flag` = 开发身份；主目录（日用）不放它。
+    ; 该文件在 .gitignore 里、是**未跟踪**的本地标记 —— 因此 main 与 dev 两条分支的
+    ; 源码完全一致，合并零冲突；身份由「从哪个工作树启动」决定，重启也不会跑错。
+    ; 编译版永远算生产：exe 旁边误放 flag 也不该读测试配置。
+    ; ⚠ 两个 FileExist 覆盖两种入口：根启动器（A_ScriptDir = 树根）与
+    ;   `src\SevenWork.ahk`（调试 / 探针时 = `src\`）。
+    ; ⚠ 用 `=>` 简写属性：A_ScriptDir / A_IsCompiled 在取值时才求值，
+    ;   不在类加载期赌内置变量是否已就绪。
+    static IsDev => !A_IsCompiled
+        && (FileExist(A_ScriptDir . "\_dev.flag") || FileExist(A_ScriptDir . "\..\_dev.flag"))
+    ; 配置目录与 pandoc 目录**故意不同**，不是笔误：
+    ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按身份隔离 ——
+    ;     开发走 SevenWork-Dev（测试库），日用 / 编译版走 SevenWork（真实笔记库），
+    ;     两边各改各的，互不覆盖。
+    ;   · pandoc.exe 是 100+MB 的内嵌可执行文件，跨身份共用一份，不随配置目录搬家。
+    static AppDataDir => this.IsDev
+        ? A_AppData . "\SevenWork-Dev"
+        : A_AppData . "\SevenWork"
     static ConfigPath => this.AppDataDir . "\_config.ini"
     static PandocPath := A_AppData . "\SevenWork\pandoc.exe"
 
-    ; 报错日志落点：**开发版写项目根的 .logs\**，翻起来不用到处找；
-    ; 编译版仍回 AppData —— exe 可能在桌面 / U 盘 / Program Files，那里
-    ; 要么往用户目录里扔文件，要么根本没写权限。
-    ; ⚠ 用 `=>` 简写属性而不是 `:=`：A_IsCompiled / A_ScriptDir 在取值时才求值，
-    ;   不在类加载期赌内置变量是否已就绪。
+    ; 报错日志落点：开发身份写**当前工作树根 `.logs\`**（翻起来不用到处找；
+    ; 从 `src\SevenWork.ahk` 跑探针时落在 `src\.logs\`）；日用 / 编译版跟配置落 AppData
+    ; —— exe 可能在桌面 / U 盘 / Program Files，那里要么往用户目录里扔文件，
+    ; 要么根本没写权限。
+    ; ⚠ 用 `=>` 简写属性而不是 `:=`：A_ScriptDir 在取值时才求值。
     ; ⚠ 这两个身份别塞进上面的声明里 —— 它们依赖运行时内置变量。
-    static LogDir => A_IsCompiled
-        ? A_AppData . "\SevenWork"
-        : A_ScriptDir . "\.logs"
+    static LogDir => this.IsDev
+        ? A_ScriptDir . "\.logs"
+        : A_AppData . "\SevenWork"
     static LogPath => this.LogDir . "\_error.log"
 
     static GetVault() {

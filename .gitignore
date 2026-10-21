@@ -1,5 +1,9 @@
-# 开发版报错日志（Config.LogPath 落在项目根的 .logs\ 下）
+# 开发身份的报错日志（Config.LogPath 落在当前工作树根的 .logs\ 下）
 .logs/
+
+# 身份标记：存在于项目根 = 开发工作树（Config.IsDev 据此切 SevenWork-Dev 配置）
+# 只是本地标记，不入库 —— 两条分支的源码因此完全一致（见 Config.ahk 注释）
+_dev.flag
 
 # 系统 / 编辑器杂物
 Thumbs.db
