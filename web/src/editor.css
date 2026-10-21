@@ -1,0 +1,212 @@
+/* ═══════════════════════════════════════════════════════════════════════
+    Milkdown 编辑器样式 —— 必须全局（非 scoped）
+   Milkdown 在容器里运行时创建 .ProseMirror 及子节点，scoped 属性加不上去。
+   全部走 --sw-* 变量，主题一换自动跟随。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.sw-editor {
+  height: 100%;
+  overflow: auto;
+}
+
+.sw-editor .ProseMirror {
+  outline: none;
+  min-height: 100%;
+  padding: 18px 22px 40px;
+  color: var(--sw-fg);
+  font-size: 15px;
+  line-height: 1.75;
+  caret-color: var(--sw-accent);
+}
+
+.sw-editor .ProseMirror > * + * {
+  margin-top: 0.7em;
+}
+
+/* ── 标题：靠字号与留白分层，不加颜色 ───────────────────────────── */
+.sw-editor .ProseMirror h1,
+.sw-editor .ProseMirror h2,
+.sw-editor .ProseMirror h3,
+.sw-editor .ProseMirror h4 {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1.4em 0 0.5em;
+}
+
+.sw-editor .ProseMirror h1 { font-size: 1.7em; }
+.sw-editor .ProseMirror h2 { font-size: 1.4em; }
+.sw-editor .ProseMirror h3 { font-size: 1.18em; }
+.sw-editor .ProseMirror h4 { font-size: 1.05em; }
+
+.sw-editor .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+/* ── 正文元素 ───────────────────────────────────────────────────── */
+.sw-editor .ProseMirror a {
+  color: var(--sw-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sw-editor .ProseMirror ul,
+.sw-editor .ProseMirror ol {
+  padding-left: 1.5em;
+}
+
+.sw-editor .ProseMirror li > p {
+  margin: 0.15em 0;
+}
+
+.sw-editor .ProseMirror blockquote {
+  margin: 1em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--sw-border);
+  color: var(--sw-dim);
+}
+
+/* 引用块里同样是 <p>，默认 margin 会顶开两行 */
+.sw-editor .ProseMirror blockquote p {
+  margin: 0.2em 0;
+}
+
+.sw-editor .ProseMirror hr {
+  border: 0;
+  border-top: 1px solid var(--sw-border);
+  margin: 1.6em 0;
+}
+
+.sw-editor .ProseMirror code {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--sw-code-bg);
+  border-radius: 4px;
+  padding: 0.12em 0.36em;
+}
+
+.sw-editor .ProseMirror pre {
+  background: var(--sw-code-bg);
+  border: 1px solid var(--sw-border);
+  border-radius: var(--sw-radius);
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.sw-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.88em;
+}
+
+/* ── 图片：粘贴进来的图与手写 Markdown 的图同样处理 ─────────────── */
+.sw-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  display: block;
+  margin: 0.6em 0;
+}
+
+.sw-editor .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+}
+
+/* ── 任务列表（GFM）───────────────────────────────────────────────
+   Milkdown 不生成 <input type=checkbox>，而是：
+     <li data-item-type="task" data-checked="true|false">
+   勾选框纯 CSS 画。用 :has() 只把「含任务的 ul」去掉项目符号，
+   混排的普通列表不受影响。 */
+.sw-editor .ProseMirror ul:has(> li[data-item-type='task']) {
+  list-style: none;
+  padding-left: 0.2em;
+}
+
+.sw-editor .ProseMirror li[data-item-type='task'] {
+  position: relative;
+  padding-left: 1.7em;
+}
+
+.sw-editor .ProseMirror li[data-item-type='task']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.44em;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--sw-dim);
+  border-radius: 3px;
+  background: transparent;
+}
+
+.sw-editor .ProseMirror li[data-item-type='task'][data-checked='true']::before {
+  background: var(--sw-accent);
+  border-color: var(--sw-accent);
+}
+
+.sw-editor .ProseMirror li[data-item-type='task'][data-checked='true']::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 0.62em;
+  width: 4.5px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.sw-editor .ProseMirror li[data-item-type='task'][data-checked='true'] > p {
+  color: var(--sw-dim);
+}
+
+/* ── 表格（gfm）───────────────────────────────────────────────── */
+.sw-editor .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+  margin: 1em 0;
+}
+
+.sw-editor .ProseMirror td,
+.sw-editor .ProseMirror th {
+  border: 1px solid var(--sw-border);
+  padding: 6px 10px;
+  vertical-align: top;
+  position: relative;
+}
+
+/* ⚠ 单元格里是 <p>，浏览器默认 margin 1em 0 会把行高撑到两倍，
+   必须显式清零 —— 否则 1000x680 的窗口里一张 3 行表就把正文挤没了。 */
+.sw-editor .ProseMirror td p,
+.sw-editor .ProseMirror th p {
+  margin: 0;
+}
+
+/* 表头别用 --sw-bg-alt：主题里 win 与 edBg 常常同色，
+   那样表头和正文糊成一片。用 code-bg（按底色推出来的相邻档）才有层次。 */
+.sw-editor .ProseMirror th {
+  background: var(--sw-code-bg);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* ── 光标与选区 ────────────────────────────────────────────────── */
+.sw-editor .ProseMirror ::selection {
+  background: var(--sw-select);
+}
+
+.sw-editor .ProseMirror-gapcursor:after {
+  border-top-color: var(--sw-fg);
+}
+
+/* 空文档的占位提示 */
+.sw-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--sw-dim);
+}

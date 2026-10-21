@@ -7,7 +7,10 @@
 ; ─── NoteStoreService：笔记仓库管理员 ───
 class NoteStoreService {
     ; ─── 路径拼接 ───
-    static AssetsDir(date)  => Config.GetVault() . "\_assets\" . date
+    ; rootDir 只给探针 / 测试覆写根目录用（别让测试往真实笔记库里写文件）；
+    ; 生产留空即 Config.GetVault()。二参数版本与 PandocService / NoteImageService 共用，
+    ; 保证「文件落在哪」和「markdown 里怎么写」永远出自同一处。
+    static AssetsDir(date, rootDir := "") => (rootDir != "" ? rootDir : Config.GetVault()) . "\_assets\" . date
 
     static TempDir()        => Config.GetVault() . "\_tmp"
 

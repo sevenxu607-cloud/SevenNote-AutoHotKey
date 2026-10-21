@@ -8,3 +8,9 @@ _dev.flag
 # 系统 / 编辑器杂物
 Thumbs.db
 desktop.ini
+
+# S0 探针临时目录（验证完即删）
+_spike/
+
+# 前端依赖（web/dist 入库，node_modules 不入库）
+web/node_modules/

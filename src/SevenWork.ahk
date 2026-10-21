@@ -115,6 +115,10 @@ Persistent()
 #Include modules\SevenNote\Services\PandocService.ahk
 
 
+; 粘贴图片落盘（WebView2 → base64 → _assets/<date>/）—— 必须在 NoteStoreService 之后
+#Include modules\SevenNote\Services\NoteImageService.ahk
+
+
 #Include modules\SevenNote\Services\ThemeService.ahk
 
 

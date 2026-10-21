@@ -1,0 +1,191 @@
+#Requires AutoHotkey v2.0
+; ═══════════════════════════════════════════════════════════════════════
+;  WebHostService —— WebView2 宿主（平台能力 / Capability）
+; ═══════════════════════════════════════════════════════════════════════
+;  纯能力：只收 hwnd / 路径 / 字符串，返回 {ok, ...}；失败给 {ok:false, reason}。
+;  不读 Config / State、不发 EventBus、不认识 modules/*（见 .clinerules/02）。
+;
+;  为什么算能力而不是服务：它只做两件事 ——
+;    ① 把一个 Chromium 子窗口挂到给定 hwnd 上；
+;    ② 把一个目录映射成 https://<host>/。
+;  两件都跟工作台业务无关，任何模块都能用，所以归 Capability。
+;
+;  ⚠ 库目录结构不能动：WebView2.ahk 靠 A_LineFile\..\64bit\ 找 Loader，还靠末尾的
+;    #Include ..\ComVar.ahk / ..\Promise.ahk 找上一层的两个文件。三者必须按
+;    src\lib\ 的原样摆放；摆错时报的是 Missing ")" 这类假语法错，很容易误判成版本不兼容。
+;
+;  ⚠ 别用 Navigate("data:text/html,...#...")：data: URL 里未编码的 # 被当成 fragment
+;    分隔符，整段 HTML 被截断成白屏，而 ExecuteScriptAsync 照样能跑 ——
+;    表现是「日志全绿、画面全白」。要直接给 HTML 字符串就用 CoreWebView2.NavigateToString()。
+;
+;  ⚠ 报错一律返回 reason 而不是 LogError：日志归属由调用方（Feature / Module）决定。
+; ═══════════════════════════════════════════════════════════════════════
+#Include ..\..\..\lib\WebView2\WebView2.ahk
+
+class WebHostService {
+    static _ctrl := 0
+    static _core := 0
+    static _host := ""
+    static _hwnd := 0
+
+    ; ─── 挂载 ───────────────────────────────────────────────────────────
+    ; hwnd    父窗口（Gui.Hwnd）；同一个 hwnd 重复 Mount 只做 Fill，不重建 Chromium
+    ; distDir 前端构建产物目录（绝对路径）
+    ; host    虚拟主机名，缺省 app.local
+    ; bgColor 0xAARRGGBB 首帧底色（防白闪）
+    ; dataDir WebView2 user data 目录；缺省用 SevenWork 自己的，
+    ;         **不要**用库默认的 Edge 目录 —— 那里跟 Edge 浏览器共用，缓存/清理会互相影响
+    ; 返回 {ok:true, ctrl, core, reused} | {ok:false, reason}
+    static Mount(hwnd, distDir, host := "app.local", bgColor := 0xFF0B1624, dataDir := "") {
+        if !hwnd || !DllCall("user32\IsWindow", "ptr", hwnd, "int")
+            return {ok: false, reason: "父窗口无效: " . hwnd}
+
+        ; ⚠ 必须先规范化：SetVirtualHostNameToFolderMapping 不收含 .. 的路径，
+        ;   传进去表现为「导航成功但页面是 Edge 的『无法访问此页面』」——导航本身不报错，很难查。
+        distDir := this._NormPath(distDir)
+        if !DirExist(distDir)
+            return {ok: false, reason: "前端目录不存在: " . distDir}
+
+        ; 同一个父窗口 → 复用，只跟一次尺寸（面板反复开关时省掉 200ms 重建 + 内存抖动）
+        if this._ctrl && this._hwnd = hwnd {
+            this.Resize()
+            return {ok: true, ctrl: this._ctrl, core: this._core, reused: true}
+        }
+
+        this.Destroy()
+
+        try {
+            ctrl := WebView2.CreateControllerAsync(hwnd, 0, dataDir || (EnvGet("LOCALAPPDATA") . "\SevenWork\WebView2")).await()
+        } catch as e {
+            return {ok: false, reason: "创建 WebView2 失败: " . e.Message}
+        }
+
+        ; 首帧底色：Chromium 默认是白的，先在原地铺一层深色，页面到位前不闪白
+        try ctrl.DefaultBackgroundColor := bgColor
+        catch
+            ; Runtime 不支持 IID_2 时忽略 —— 只影响首帧观感
+            this._bgUnsupported := true
+
+        try {
+            core := ctrl.CoreWebView2
+            core.SetVirtualHostNameToFolderMapping(host, distDir, 1)
+        } catch as e {
+            try ctrl.Close()
+            return {ok: false, reason: "映射虚拟主机失败: " . e.Message}
+        }
+
+        this._ctrl := ctrl
+        this._core := core
+        this._host := host
+        this._hwnd := hwnd
+        return {ok: true, ctrl: ctrl, core: core, reused: false}
+    }
+
+    ; ─── 导航到虚拟主机下的路径 ─────────────────────────────────────────
+    ; ⚠ 虚拟主机映射**不做目录索引**：Navigate("https://app.local/") 会落到 Edge 的
+    ;   「无法访问此页面」，而 SetVirtualHostNameToFolderMapping 的 HRESULT 仍是 S_OK、
+    ;   导航也不抛错 —— 只有画面是错误页，是最难查的一类问题。根路径必须补成 index.html。
+    static Navigate(path := "/") {
+        if !this._core
+            return {ok: false, reason: "尚未挂载"}
+        if (path = "" || path = "/")
+            path := "/index.html"
+        try {
+            this._core.Navigate("https://" . this._host . path)
+            return {ok: true}
+        } catch as e {
+            return {ok: false, reason: e.Message}
+        }
+    }
+
+    ; ─── 再挂一个目录到另一个虚拟主机 ─────────────────────────────────
+    ; 页面在 app.local，笔记图片在 vault 下 —— markdown 里的 ./_assets/x.png
+    ; 会被解析成 app.local/_assets/x.png（404）。把 vault 也挂成一个主机，
+    ; 前端显示时加前缀、存盘时去掉，markdown 里就能保持可移植的相对路径。
+    ;
+    ; ⚠ 同一个 host 重复调用是覆盖语义（不报错），换 vault 不用先卸载 ✓
+    ; ⚠ 与 Mount 一样必须传规范化路径，含 .. 时导航不报错、只出「无法访问此页面」。
+    static MapHost(host, dir) {
+        if !this._core
+            return {ok: false, reason: "尚未挂载"}
+        if (host = "")
+            return {ok: false, reason: "主机名为空"}
+        dir := this._NormPath(dir)
+        if !DirExist(dir)
+            return {ok: false, reason: "目录不存在: " . dir}
+        try {
+            this._core.SetVirtualHostNameToFolderMapping(host, dir, 1)
+            return {ok: true, host: host, dir: dir}
+        } catch as e {
+            return {ok: false, reason: "映射虚拟主机失败: " . e.Message}
+        }
+    }
+
+    ; ─── 把 AHK 对象暴露成 JS 的 chrome.webview.hostObjects.<name> ─────
+    static Bind(name, obj) {
+        if !this._core
+            return {ok: false, reason: "尚未挂载"}
+        try {
+            this._core.AddHostObjectToScript(name, obj)
+            return {ok: true}
+        } catch as e {
+            return {ok: false, reason: e.Message}
+        }
+    }
+
+    ; ─── 在页面里执行 JS，同步等结果 ────────────────────────────────────
+    ; 返回 {ok:true, value}（value 是 ExecuteScriptAsync 的原样返回，含 JSON 引号）
+    ; ⚠ **JS 里抛异常不会让 ok 变 false**：ExecuteScriptAsync 对脚本异常只返回 null
+    ;   （HTML 规范如此），所以「选择器写错」与「页面确实没有这个元素」看起来一样。
+    ;   写断言时要么保证 JS 不抛错，要么在 JS 里自己 try/catch 后返回字符串。
+    static Eval(js) {
+        if !this._core
+            return {ok: false, reason: "尚未挂载"}
+        try {
+            raw := this._core.ExecuteScriptAsync(js).await()
+            if (raw = "" || raw = "null")
+                return {ok: false, reason: "脚本返回 null（JS 语法错 / 抛异常 / 表达式无值）"}
+            return {ok: true, value: raw}
+        } catch as e {
+            return {ok: false, reason: e.Message}
+        }
+    }
+
+    ; ─── 跟随父窗口尺寸 ─────────────────────────────────────────────────
+    ; ⚠ 必须由调用方在父窗口的 Size 事件里点名调用 —— 不做挂钩，保持能力层无副作用
+    static Resize() {
+        if !this._ctrl
+            return {ok: false, reason: "尚未挂载"}
+        try {
+            this._ctrl.Fill()
+            return {ok: true}
+        } catch as e {
+            return {ok: false, reason: e.Message}
+        }
+    }
+
+    static IsReady() {
+        return !!this._core
+    }
+
+    ; ─── 路径规范化（展开 . / ..）────────────────────────────────────────
+    static _NormPath(p) {
+        if !p
+            return p
+        buf := Buffer(65536, 0)
+        n := DllCall("kernel32\GetFullPathNameW", "wstr", p, "uint", 32767, "ptr", buf, "ptr", 0, "uint")
+        return n ? StrGet(buf) : p
+    }
+
+    ; ─── 销毁 ───────────────────────────────────────────────────────────
+    static Destroy() {
+        if this._ctrl {
+            try this._ctrl.Close()
+        }
+        this._ctrl := 0
+        this._core := 0
+        this._host := ""
+        this._hwnd := 0
+        return {ok: true}
+    }
+}
