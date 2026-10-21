@@ -15,8 +15,10 @@ class Config {
     ;   `src\SevenWork.ahk`（调试 / 探针时 = `src\`）。
     ; ⚠ 用 `=>` 简写属性：A_ScriptDir / A_IsCompiled 在取值时才求值，
     ;   不在类加载期赌内置变量是否已就绪。
-    static IsDev => !A_IsCompiled
-        && (FileExist(A_ScriptDir . "\_dev.flag") || FileExist(A_ScriptDir . "\..\_dev.flag"))
+    ; ⚠ 末尾 `!!` 归一成布尔：`FileExist` 返回的是 "A" / ""，直接透传的话
+    ;   `Config.IsDev = true` 这类比较会按字符串走而判假（AHK v2 不做隐式转换）。
+    static IsDev => !!(!A_IsCompiled
+        && (FileExist(A_ScriptDir . "\_dev.flag") || FileExist(A_ScriptDir . "\..\_dev.flag")))
     ; 配置目录与 pandoc 目录**故意不同**，不是笔误：
     ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按身份隔离 ——
     ;     开发走 SevenWork-Dev（测试库），日用 / 编译版走 SevenWork（真实笔记库），
