@@ -14,8 +14,8 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：文档地图 + `tools/check-docs.ps1` 校验脚本（详见 2026-10-21 15:40 条目）；
-  此前为文档瘦身（README 121.5KB → 38KB，四线收敛）
+- **最近一次改动**：删除 `docs/legacy/` 拆分前快照（v2.4.3 单文件，4209 行）并清理 3 处引用
+  （详见 2026-10-21 15:32 条目）；此前为文档地图 + `tools/check-docs.ps1` 校验脚本
 - **正在处理**：`main` 上实打实用几天，收集回归问题（修复已在 main，日用实例跑的就是它）
 - **下一步**：继续 P1（`PandocService.Convert` 失败静默、`SearchFeature` 的 DPI 单位混用待探针实测），
   再 P2（pandoc 移出 `Critical`、MD 出口补 `atx`）
@@ -60,12 +60,42 @@
 | 无条件 `EM_SETSCROLLPOS` 写回 | 用户正拖滚动条时被弹回，表现就是「滑条经常无法滑动」 |
 | `EM_SETEVENTMASK` + `EN_CHANGE` 通知 | 本机 `RichEdit50W` 上掩码设不上：读回恒为 `0x0`，`WM_COMMAND` 一次都不来 |
 | 50ms `SetTimer` 轮询 + 脱节守卫（`ScrollSyncFeature`） | 真机报错；我这边探针全绿、无法复现。备份在 `%TEMP%\SevenNoteDev2\reverted_20261018_113204\` |
+| 保留 v2.4.3 单文件快照作对照（`docs/legacy/`） | 重构已验证成功：旧版 30 个 `class` 全在当前 57 个里（只在旧版有的 = **0**），6 个顶层函数已转为类方法；文件可从 `git checkout a115ea3 -- docs/legacy` 取回。留着的坏处是「打包纯代码给 AI」时会误纳 4209 行，并让助手把两套架构混起来 |
 
 ---
 
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 15:32　删掉 docs/legacy：重构已证明成功，快照改成「按需从 git 取回」
+
+**我说**（原话）
+> legacy是我重构项目为多文件之前担心 不能顺利进行而保留的东西,现在项目重构成功,可以直接删了,毕竟可以回滚版本召回也?
+
+**意图**
+取消「留一份旧单文件作对照」这条保险 —— 重构已经在日用里跑，保险的维护成本超过了它的价值。
+推断：真正的触发点是上一轮发现「打包纯代码给 AI 时，这份 4209 行的旧版会被误纳，
+还会让助手把两套架构混成一锅」。
+
+**决定 / 过程**
+- 先验证「删了会不会丢东西」，三条证据：
+  ① 类名差集 —— v2.4.3 的 30 个 `class` **全部**在当前 57 个里，只在旧版有的 = **0**；
+  ② 顶层函数差集 6 个，5 个已变成方法（`ShowHelp` → `WorkBenchUI`、`BuildHotkeyHelpText`、
+     `OnSize` → `SevenNoteModule`、`SendMessage`），`HotkeyTable()` 被 v2.6 的
+     各模块 `GetHotkeys()`（37 处引用）取代 —— 是升级，不是丢失；
+  ③ git：两个文件均 tracked、远端在 GitHub，唯一包含它的提交是 `a115ea3`。
+- `git rm -r docs/legacy`，连带删 3 处目录表引用（`docs/README` 第 24 行、`README` 第 248 行、
+  `PROJECT-OVERVIEW` 第 137 行）—— 否则 `check-docs.ps1` 的链接检查会红。
+- **没有**改 `WORKBENCH-PLAN.md:184` 与 `docs/devlog/*`：那是历史记录，不是失效引用。
+
+**代价 / 风险**
+- 召回要记住 `git checkout a115ea3 -- docs/legacy`；若将来 rebase 重写历史，该提交可能消失。
+- ⚠ 召回**别**用 `git reset --hard a115ea3`（会连带抹掉后来的提交），也**别**用
+  `git show … > file`（PS 重定向 + 编码会毁掉中文源码，见 `.clinerules/04`）。
+
+**待办**
+- [ ] `dist/` + `tools/bundle-single.ps1`（派生单文件）尚未做 —— legacy 删掉后，它是唯一的「单文件出口」
 
 ### 2026-10-21 15:40　文档地图 + 校验脚本：把「过期可见」变成可执行检查
 

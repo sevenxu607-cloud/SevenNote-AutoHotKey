@@ -134,7 +134,6 @@ CAPABILITY 能力层  7 项  →  只收 hwnd / 数字 / Rect，不读 Config / 
 | `src/modules/SevenNote/` | 笔记模块：6 个 Service + `StatusBar` + 18 个 Feature + 生命周期 |
 | `src/modules/Launcher/` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 生命周期 |
 | `src/modules/KeysInput/` | 键位模块：`CapsLockFeature` + `Alt+Shift+C` 生命周期 |
-| `docs/legacy/` | Phase 2 拆分前的单文件快照，只作对照，不参与运行 |
 | `README.md` | 完整手册：特性 / 热键 / FAQ / 开发指南 |
 | `docs/CHANGELOG.md` | 版本历史：每版的改动、踩坑与判据 |
 | `docs/THEME-IMAGES.md` | 背景图主题：参数、实测账、踩坑全文 |

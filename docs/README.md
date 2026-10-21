@@ -21,7 +21,6 @@
 | 新加外部窗口怎么接 | [`LAUNCHER-GUIDE.md`](LAUNCHER-GUIDE.md) | 指针 |
 | **不能**怎么做（给 AI） | [`../.clinerules/`](../.clinerules/) | 指针 |
 | 半年前的判断（考古） | [`devlog/`](devlog/) | 只增不改 |
-| 拆分前的单文件 | [`legacy/`](legacy/) | 冻结，别在上面开发 |
 
 ## 二、按读者找
 
