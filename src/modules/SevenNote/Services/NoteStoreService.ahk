@@ -141,6 +141,24 @@ class NoteStoreService {
         return result
     }
 
+    ; ─── 笔记正文的空判定与日期头（v2.9 起归这里）───
+    ; 原先这两件事长在 EditorService（RichEdit 侧）。Markdown 升为母版后，
+    ; 「什么算空笔记」是笔记语义、不该跟着某个编辑器实现走，故上收到本服务。
+    static CLOCK := Chr(0x1F550)
+
+    ; 新建日期 / 切到空日期时写进编辑器的日期头。
+    ; ⚠ 只能从这里取 —— 多写一份就会与 IsEmptyNote 的剥离串脱钩，
+    ;   空笔记因「剥不干净」被判成非空，于是空笔记照样落盘。
+    static EmptyNoteHeader(date) => "# 📅 " . date . " 速记`n"
+
+    ; 只有日期头（+ 手动时间戳）与空白 → 视为空笔记，不落盘。
+    static IsEmptyNote(md, date) {
+        text := StrReplace("" . md, "# 📅 " . date . " 速记", "")
+        text := RegExReplace(text, "\s*" . this.CLOCK . "\s+\d{2}:\d{2}\s*", "")
+        text := RegExReplace(text, "\s+", "")
+        return (text = "")
+    }
+
     ; ─── 重命名 .rtf / .md 两个文件 ───
     static RenameWithTag(date, oldTag, newTag) {
         oldPrefix := (oldTag = "") ? date : date . "-" . oldTag

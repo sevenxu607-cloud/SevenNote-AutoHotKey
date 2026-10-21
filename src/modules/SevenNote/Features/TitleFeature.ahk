@@ -10,9 +10,9 @@ class TitleFeature {
         if (date = "")
             return
 
-        rtfPath := NoteStoreService.FindRtf(date)
-        currentTag := (rtfPath != "")
-            ? NoteStoreService.TagFromFileName(rtfPath) : ""
+        mdPath := NoteStoreService.FindMd(date)
+        currentTag := (mdPath != "")
+            ? NoteStoreService.TagFromFileName(mdPath) : ""
 
         dlg := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "日期标签")
         dlg.SetFont("s11", "Microsoft YaHei")
@@ -52,7 +52,7 @@ class TitleFeature {
         if (oldTag = newTag)
             return
         EventBus.Emit("Save.Requested")
-        if (newTag != "" && NoteStoreService.FindRtf(date) = "") {
+        if (newTag != "" && NoteStoreService.FindMd(date) = "") {
             EventBus.Emit("Error.Occurred"
                 , {msg: "空笔记无法设标签，请先写内容"})
             return

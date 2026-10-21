@@ -91,6 +91,12 @@ Persistent()
 ; 规范成 pandoc 认得的 `heading N` —— 不然整篇会被当成嵌套有序列表、一个标题都出不来。
 ; 只读源文件，改的是临时副本；tar.exe 缺失 / 解压失败时返回 {ok:false}，调用方转原件。
 #Include WorkBench\Capabilities\Document\DocxHeadingFix.ahk
+; WebHostService：把 WebView2 挂到任意 hwnd 上，并把目录映射成虚拟主机。
+; 笔记编辑区（v2.9 起）就是它 —— Mount / Navigate / Eval / Resize 全在这里。
+#Include WorkBench\Capabilities\Web\WebHostService.ahk
+; JsText：AHK 字符串 ↔ JS 字面量 / JSON 字符串。WebView2 的 Eval 两头都要它 ——
+; 送进去的正文要转义（含 NUL，StrReplace 处理不了），拿回来的结果要反解 JSON 转义。
+#Include WorkBench\Capabilities\Web\JsText.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  COORDINATION 跨模块协调 —— 读业务状态、发事件、算几何后交给能力层
@@ -104,9 +110,6 @@ Persistent()
 ; ═══════════════════════════════════════════════════════════════════════════
 
 #Include modules\SevenNote\Services\EditorService.ahk
-
-
-#Include modules\SevenNote\Services\ClipboardService.ahk
 
 
 #Include modules\SevenNote\Services\NoteStoreService.ahk
@@ -128,13 +131,6 @@ Persistent()
 ; BackdropService 已上收到 WorkBench\Capabilities\Graphics\（见上方 CAPABILITY 层）
 #Include modules\Launcher\Services\PeerLayoutService.ahk
 
-; ═══════════════════════════════════════════════════════════════════════════
-;  表示层组件
-
-; ═══════════════════════════════════════════════════════════════════════════
-
-; ─── StatusBar：状态栏 ───
-#Include modules\SevenNote\StatusBar.ahk
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  FEATURE 功能层 —— 用户要做什么
 ;
@@ -159,13 +155,9 @@ Persistent()
 ;  ② 输入与编辑
 ; ═══════════════════════════════════════════════════════════════════════════
 
-#Include modules\SevenNote\Features\PasteFeature.ahk
-
-
-#Include modules\SevenNote\Features\LineEditFeature.ahk
-
-
-#Include modules\SevenNote\Features\UndoFeature.ahk
+; 撤销 / 行编辑 / 缩进 / 纯文本粘贴：v2.9 起全部移交页面。
+; 这些操作都要看光标与选区，前端一套 keymap 天然有上下文；
+; AHK 这边从前只能对着 RichEdit 发 SendMessage 猜。
 
 
 ; CapsLockFeature 归 src\modules\KeysInput\（Phase 4），见下方 MODULE 模块层。
@@ -184,27 +176,18 @@ Persistent()
 #Include modules\SevenNote\Features\AutoSaveFeature.ahk
 
 
-; ⚠ 时间戳**一律手动**（v2.4 起）：只在用户按下 Ctrl+T 时插入，程序任何时候都不自作主张。
-;   原先的两条自动路径已删除 ——
-;     · 启动时 CheckAndAppend()：无戳就塞一个；
-;     · 切日期时同一函数：距上一戳 ≥ Config.TimestampInterval（60 分钟）再补一个。
-;   它们会在用户只想随手记两笔时也往笔记里加时间戳，还得靠「保存前剥掉空戳」来兜底。
-;   现在连带 StripIfEmpty 一起去掉：用户手动加的戳就是他想要的，程序不擅自删。
-;   想恢复自动：在组合根按需调 TimestampFeature.Append()，或把 CheckAndAppend 加回来。
-#Include modules\SevenNote\Features\TimestampFeature.ahk
+; 时间戳 / 分隔线 / 分段标题：v2.9 起移交页面（Ctrl+T / Ctrl+H / Ctrl+Shift+H）。
+; 三条命令都要在光标处插字，前端拿 ProseMirror 的 transaction 直接做即可，
+; 比在 AHK 里拼 SendMessage 再算偏移准得多。
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  ④ 查看与浏览
 ; ═══════════════════════════════════════════════════════════════════════════
 
-#Include modules\SevenNote\Features\SearchFeature.ahk
-
-
-#Include modules\SevenNote\Features\StatFeature.ahk
-
-
-#Include modules\SevenNote\Features\CaretFeature.ahk
+; 搜索 / 字数 / 光标记忆：v2.9 起移交页面。
+; 搜索走浏览器原生 Ctrl+F（已通过 IID_3 关掉 AreBrowserAcceleratorKeysEnabled 之外的键），
+; 字数由前端按 markdown 算，光标由 Milkdown 自己记。
 
 
 ; ═══════════════════════════════════════════════════════════════════════════
@@ -227,17 +210,9 @@ Persistent()
 ;  横切 · 美观
 ; ═══════════════════════════════════════════════════════════════════════════
 
-#Include modules\SevenNote\Features\ThemeFeature.ahk
-
-
-#Include modules\SevenNote\Features\FontFeature.ahk
-
-
-; ─── BackdropFeature：带背景图的主题（星空）───
-; 背景图不是「全局贴一张」，而是主题自带的属性：ThemeService.Themes 里带 bg 字段的
-; 主题（目前只有「星空」）才铺图，切到别的主题自动撤掉、回到纯底色。
-; 文字浮在图上、图铺满整个编辑区（终端式，非相框式）。
-#Include modules\SevenNote\Features\BackdropFeature.ahk
+; 主题 / 字体 / 背景图：v2.9 起由页面自己管（CSS 变量，Alt+T 在前端实现，见 S3d）。
+; ThemeService / BackdropService / FontService 仍在 —— Text 模块的提示词窗口还在用它们。
+#Include modules\SevenNote\HostBridge.ahk
 #Include modules\SevenNote\SevenNoteModule.ahk
 
 

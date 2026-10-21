@@ -99,17 +99,10 @@ class DateJumpFeature {
 
     static JumpTo(dateStr) {
         EventBus.Emit("Save.Requested")   ; 跳走之前先把当前这篇落盘
-        State.SetDate(dateStr)
+        ; 换文档由 LoadFeature 统一负责（v2.9）—— 这里不再直接碰编辑器
         State.ResetCaret()
-        hwnd := State.GetEd()
-
-        rtfPath := NoteStoreService.FindRtf(dateStr)
-        if (rtfPath != "") {
-            EditorService.LoadRTFFromFile(hwnd, rtfPath)
-        } else {
-            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(dateStr))
-        }
-        EditorService.EmptyUndo(hwnd)
+        if !LoadFeature.LoadDate(dateStr)
+            return
         EventBus.Emit("Date.Switched", {date: dateStr})
     }
 }

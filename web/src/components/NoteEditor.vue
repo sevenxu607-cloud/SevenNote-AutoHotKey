@@ -5,7 +5,7 @@
    · 图片粘贴 / 拖入由 upload 插件接管，uploader 里换成自己的落盘逻辑
    ═══════════════════════════════════════════════════════════════════════ */
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core'
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/kit/core'
 import { commonmark } from '@milkdown/kit/preset/commonmark'
 import { gfm } from '@milkdown/kit/preset/gfm'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
@@ -104,6 +104,23 @@ onBeforeUnmount(() => {
 })
 
 defineExpose({
+  /**
+   * 在光标处插入一段文本（时间戳 / 分隔线 / 缩进都走它）。
+   *
+   * ⚠ 必须走 ProseMirror 的 transaction：直接改 DOM 会被下一次状态同步抹掉，
+   *   而且不进历史栈 —— Ctrl+Z 撤不回来。
+   */
+  insertText(text: string): string {
+    if (!editor) return 'no-editor'
+    try {
+      const view = editor.ctx.get(editorViewCtx)
+      view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.text(text)).scrollIntoView())
+      return 'ok'
+    } catch (e) {
+      return 'ERR ' + String(e)
+    }
+  },
+
   getMarkdown(): string {
     if (!editor) return props.modelValue ?? ''
     // 出编辑器就转回存储态 —— 这才是能写进 .md 的那一版

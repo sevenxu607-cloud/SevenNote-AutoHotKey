@@ -151,6 +151,23 @@ class WebHostService {
         }
     }
 
+    ; ─── 轮询等待页面里的条件成立 ─────────────────────────────────────
+    ; js 要返回真值（`window.x && ...` 这种即可）；超时返回 false。
+    ; ⚠ 用 Sleep 轮询而不是等某个事件：WebView2 没有「页面脚本就绪」的回调，
+    ;   而 ExecuteScriptAsync 在页面尚未加载时同样会正常返回，
+    ;   只能靠反复问「那个对象有了吗」。
+    static WaitFor(js, timeoutMs := 5000, intervalMs := 60) {
+        t0 := A_TickCount
+        loop {
+            r := this.Eval(js)
+            if (r.ok && r.value != "" && r.value != "false" && r.value != "null")
+                return true
+            if (A_TickCount - t0 >= timeoutMs)
+                return false
+            Sleep intervalMs
+        }
+    }
+
     ; ─── 跟随父窗口尺寸 ─────────────────────────────────────────────────
     ; ⚠ 必须由调用方在父窗口的 Size 事件里点名调用 —— 不做挂钩，保持能力层无副作用
     static Resize() {
@@ -158,6 +175,12 @@ class WebHostService {
             return {ok: false, reason: "尚未挂载"}
         try {
             this._ctrl.Fill()
+            ; ⚠ 库只实现了 IsVisible 的 getter（ComCall 3），没有 putter。
+            ;   而「在窗口隐藏期挂载」时 Chromium 会把自己留在隐藏状态：父窗口后来
+            ;   重新显示也不回来（实测子窗口 vis=False、坐标 -32000,-32000）。
+            ;   表现是「窗口出来了、编辑区一片纯底色」，看起来像 WebView2 根本没显示。
+            ;   vtable 4 = put_IsVisible，这里补一次 TRUE。
+            ComCall(4, this._ctrl, "int", 1)
             return {ok: true}
         } catch as e {
             return {ok: false, reason: e.Message}

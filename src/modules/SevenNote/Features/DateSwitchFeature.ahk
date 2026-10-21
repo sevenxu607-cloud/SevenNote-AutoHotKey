@@ -16,17 +16,11 @@ class DateSwitchFeature {
         target := DateAdd(ymd, offset, "Days")
         targetStr := FormatTime(target, "yyyy-MM-dd")
 
-        State.SetDate(targetStr)
+        ; 换文档由 LoadFeature 统一负责（v2.9）：编辑器不再由 AHK 直接灌字，
+        ; 这边只管算日期、发事件。
         State.ResetCaret()
-
-        hwnd := State.GetEd()
-        rtfPath := NoteStoreService.FindRtf(targetStr)
-        if (rtfPath = "") {
-            EditorService.SetText(hwnd, EditorService.EmptyNoteHeader(targetStr))
-        } else {
-            EditorService.LoadRTFFromFile(hwnd, rtfPath)
-        }
-        EditorService.EmptyUndo(hwnd)
+        if !LoadFeature.LoadDate(targetStr)
+            return false
         EventBus.Emit("Date.Switched", {date: targetStr})
         return true
     }

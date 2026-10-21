@@ -225,21 +225,16 @@ class WindowFeature {
         g.Hide()
     }
 
-    ; ─── 呼出：暂停重绘 → 定位 → 还原光标 → 恢复重绘 → 激活 ───
+    ; ─── 呼出：定位 → 激活 ───
+    ; v2.9：编辑区换成 WebView2 后，这里不再有 RichEdit 的「暂停重绘 / 还原光标」——
+    ; 光标由页面自己管（Milkdown 会记住选区），重绘由 Chromium 合成。
+    ; ⚠ 别把 _PlaceWindow 包进 try：它前后曾经挂着 SendMessage(0x000B)，而
+    ;   GetEd() 现在恒为 0，那条 SendMessage 会抛错、把定位整段跳过 ——
+    ;   表现是「按 Alt+Z 什么窗口都不出来」，而且日志里只有一句 Target window not found。
     static Show() {
         g := State.GetGui()
-        hwnd := State.GetEd()
         ghwnd := g.Hwnd
-        try {
-            this._SuspendRedraw(hwnd)
-            this._PlaceWindow(g, ghwnd)
-            this._RestoreCaret(hwnd)
-            this._ResumeRedraw(hwnd)
-            DllCall("RedrawWindow", "ptr", hwnd, "ptr", 0, "ptr", 0
-                , "uint", 0x0001 | 0x0100)
-        } finally {
-            try this._ResumeRedraw(hwnd)
-        }
+        this._PlaceWindow(g, ghwnd)
         WinActivate("ahk_id " . ghwnd)
         ; Phase 3b：把「笔记已落位」交给平台协调器记录。放在 Window.Shown 之前，
         ; 让订阅者拿到的是最终矩形；事件本身不改变窗口行为。
@@ -457,19 +452,8 @@ class WindowFeature {
     }
 
     ; ═══ 光标与重绘 ═══
-
-    ; 还原光标：隐藏前记录的位置优先，没有记录就落到正文末尾
-    static _RestoreCaret(hwnd) {
-        if State.HasCaret() {
-            caret := State.GetCaret()
-            totalLen := SendMessage(0x000E, 0, 0, hwnd)
-            EditorService.SetSel(hwnd, Min(caret.min, totalLen), Min(caret.max, totalLen))
-        } else {
-            EditorService.MoveCaretToEnd(hwnd)
-        }
-    }
-
-    ; WM_SETREDRAW：批量改动期间关掉重绘，避免中间态闪烁
-    static _SuspendRedraw(hwnd) => SendMessage(0x000B, 0, 0, hwnd)
-    static _ResumeRedraw(hwnd) => SendMessage(0x000B, 1, 0, hwnd)
+    ; v2.9：编辑器换成 WebView2 后这两件事都不在 AHK 侧了 ——
+    ;   · 光标：S3a 起由 Milkdown 自己维护，切日期时 replaceAll 会重置到文首；
+    ;   · 重绘：Chromium 合成，没有 WM_SETREDRAW 这回事。
+    ; 留个空段只为说明「不是漏掉了」。
 }

@@ -87,6 +87,46 @@ function setMarkdown(md: string): string {
   }
 }
 
+/* ── 编辑器内快捷键（v2.9：从 AHK 的 editor 上下文搬进来）──────────────
+   这几条都要在光标处插字，前端拿 ProseMirror 的 transaction 一次就够；
+   从前在 AHK 里对着 RichEdit 算偏移，既不准，还得维护两套状态。
+   ⚠ Ctrl+S / Ctrl+G / Ctrl+Shift+T 不在这里 —— 那三条由 AHK 的 editor 上下文
+     热键拦下（要碰文件与对话框），前端抢走反而打不通。
+   ⚠ 监听用捕获阶段：ProseMirror 自己会处理 Tab 等键，冒泡阶段轮不到我们。 */
+function onKeydown(e: KeyboardEvent) {
+  if (view.value !== 'note') return
+  const el = editorRef.value
+  if (!el) return
+  const k = e.key.toLowerCase()
+
+  // Ctrl+T：追加时间戳（另起一段，前面空一行，与旧版排版一致）
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && k === 't') {
+    e.preventDefault()
+    const now = new Date()
+    const hh = String(now.getHours()).padStart(2, '0')
+    const mm = String(now.getMinutes()).padStart(2, '0')
+    el.insertText(`\n\n🕐 ${hh}:${mm}\n`)
+    return
+  }
+  // Ctrl+H：动态分隔线
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && k === 'h') {
+    e.preventDefault()
+    el.insertText('\n\n---\n\n')
+    return
+  }
+  // Ctrl+Shift+H：分段标题
+  if (e.ctrlKey && !e.altKey && e.shiftKey && k === 'h') {
+    e.preventDefault()
+    el.insertText('\n\n## 新分段\n\n')
+    return
+  }
+  // Tab：缩进四空格（与旧 RichEdit 版一致；Markdown 里缩进就是空格）
+  if (!e.ctrlKey && !e.altKey && e.key === 'Tab') {
+    e.preventDefault()
+    el.insertText('    ')
+  }
+}
+
 function save() {
   // S2a 只是「证明编辑器能产出 markdown」，真正落盘要等 S2b 接 AHK
   localStorage.setItem('sevenwork.note.preview', noteMd.value)
@@ -100,6 +140,7 @@ onMounted(() => {
   window.addEventListener('unhandledrejection', (e: any) => {
     ;(window as any).__noteStage = 'reject: ' + String(e?.reason)
   })
+  window.addEventListener('keydown', onKeydown, true)
   ;(window as any).__swnote = {
     setMarkdown,
     getMarkdown: () => editorRef.value?.getMarkdown() ?? noteMd.value,
@@ -142,8 +183,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="shell">
-    <aside class="side">
+  <div class="shell" :class="{ solo: view === 'note' }">
+    <aside v-if="view !== 'note'" class="side">
       <div class="brand">
         <span class="dot" />SevenWork
       </div>
@@ -215,6 +256,12 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: 232px 1fr;
   height: 100%;
+}
+
+/* 笔记视图是「纯编辑器」：侧栏退场，整块客户区交给 Milkdown。
+   ⚠ 不写这条的话 grid 仍留着 232px 空列 —— 右边全空，看着像编辑器没铺满。 */
+.shell.solo {
+  grid-template-columns: 1fr;
 }
 
 .side {

@@ -1,7 +1,8 @@
 #Requires AutoHotkey v2.0
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  SevenNoteModule —— 笔记模块生命周期
-;  GUI 创建 / OnSize / Feature 挂载 / 启动，Phase 2 从组合根原样搬入，行为未改。
+;  v2.9 起编辑区是 WebView2 + Milkdown：AHK 只负责建窗口、挂宿主、注册热键，
+;  内容与界面全在 web/ 里。Init → 热键 → Start 的顺序未变。
 ; ═══════════════════════════════════════════════════════════════════════════
 
 class SevenNoteModule {
@@ -12,150 +13,147 @@ class SevenNoteModule {
     ; 平台级界面（Alt+S 帮助、启动提示、报错框）仍用 Config.AppName。
     static Title := "SevenNote"
 
+    ; WebView2 是否已挂上（OnSize 据此决定要不要 Fill —— 没挂上时 Fill 会抛错）
+    static _mounted := false
+
     ; 创建主窗口 + 挂载 Feature（原组合根 3901-3997）
     static Init() {
         ; ─── 创建主窗口 ───
         g := Gui(, this.Title)
-        ; +E0x02000000 = WS_EX_COMPOSITED：整个窗口走「离屏双缓冲」重绘。
-        ; 编辑区（RichEdit）自己不带双缓冲，滚动时它会先把客户区擦一遍再画文字，那一帧的空档
-        ; 就是「上下滑动时略微频闪」的来源。开了合成重绘，父子控件的绘制顺序由系统统一保证，
-        ; 滚动不再闪（代价是重绘走离屏缓冲，拖动窗口时 CPU 略高，肉眼无感）。
-        g.Opt("+AlwaysOnTop +Resize +MinSize450x300 +E0x02000000")
+        ; +E0x02000000 = WS_EX_COMPOSITED 已不需要：整个客户区交给 WebView2，
+        ; 合成由 Chromium 自己做，没有 RichEdit 那种「先擦后画」的频闪。
+        g.Opt("+AlwaysOnTop +Resize +MinSize450x300")
+        ; 首帧底色：Chromium 起来前不铺东西会露白。取当前主题的窗底色同档。
         g.SetFont("s14", "楷体")
-        g.BackColor := "FFF8E7"
+        g.BackColor := ThemeService.Themes[ThemeService.GetCurrent()].win
 
-        ; ─── 顶部控件：字数 + 标签 + 主题标签 ───
-        stat := g.AddText("x8 y8 w60 h20 Left", "0 字")
-        stat.SetFont("s10 c9CA3AF", "楷体")
-
-        tagCtrl := g.AddText("x72 y8 w190 h20 Left cA89880", "")
-        tagCtrl.SetFont("s10", "楷体")
-
-        themeLabel := g.AddText("x266 y8 w176 h20 Right", "")
-        themeLabel.SetFont("s10 c3D2B1F", "楷体")
-
-        ; ─── RichEdit 编辑区 ───
-        ed := g.AddCustom("ClassRichEdit50W x8 y32 w434 h440 +0x201004")
-        SendMessage(0x0443, 0, 0xE7F8FF, ed.Hwnd)
-        ed.SetFont("s14 c3D2B1F", "楷体")
-        SendMessage(0x0453, 100, 0, ed.Hwnd)
-
-        ; ─── 搜索条控件（初始隐藏）───
-        searchBarBg := g.AddText("x8 y32 w220 h32 Background" . SearchFeature.BAR_BG, "")
-        searchBarBg.SetFont("s1", "楷体")
-        searchBarBg.Visible := false
-
-        searchIcon := g.AddText("x12 y38 w22 h20 Background" . SearchFeature.BAR_BG . " c" . SearchFeature.BAR_DIM, "🔍")
-        searchIcon.SetFont("s11", "楷体")
-        searchIcon.Visible := false
-
-        searchEdit := g.AddEdit("x36 y36 w130 h24 Background" . SearchFeature.EDIT_BG . " c" . SearchFeature.EDIT_TEXT, "")
-        searchEdit.SetFont("s12", "楷体")
-        searchEdit.Visible := false
-
-        searchCount := g.AddText("x170 y39 w44 h20 Background" . SearchFeature.BAR_BG . " c" . SearchFeature.BAR_DIM . " Left", "")
-        searchCount.SetFont("s10", "楷体")
-        searchCount.Visible := false
-
-        ; ─── 底部控件：日期 + 提示 ───
-        dateCtrl := g.AddText("x8 y520 w180 h22 Left cA89880", "")
-        dateCtrl.SetFont("s10", "楷体")
-
-        msgCtrl := g.AddText("x162 y520 w280 h22 Right cA89880", "")
-        msgCtrl.SetFont("s10", "楷体")
+        ; ─── 客户区整个交给 WebView2 ───
+        ; 字数 / 标签 / 主题名 / 日期 / 提示原本是 6 个 Text 控件，现在全在页面里
+        ; （前端拿到 markdown 自己算字数、自己显示日期）。AHK 侧不再持有任何子控件 ——
+        ; 少一层「AHK 控件 vs 页面元素」的双份状态，就不会出现两边不一致。
 
         ; ─── 注册到 State ───
         State.SetGui(g)
-        State.SetEd(ed.Hwnd)
-        State.SetStat(stat)
-        State.SetDateCtrl(dateCtrl)
-        State.SetMsgCtrl(msgCtrl)
-        State.SetThemeLabel(themeLabel)
-        State.SetTagCtrl(tagCtrl)
+        ; RichEdit 退场：State.GetEd() 从此恒为 0。
+        ; 骨架层冻结，setter 保留（别的模块仍可调用，只是拿不到控件）。
+        State.SetEd(0)
 
         ; ─── 窗口事件 ───
         g.OnEvent("Close", (*) => (g.Hide(), true))
         g.OnEvent("Size", (guiObj, mm, w, h) => SevenNoteModule.OnSize(guiObj, mm, w, h))
 
         ; ═══ 挂载 Feature ═══
-        ; 最先挂 —— 它订阅「外部窗口（PowerShell / DeepSeek）要出现了」，
-        ; 得赶在第一次 Alt+C / Alt+X 之前注册好
+        ; v2.9 起只剩四件：窗口 / 保存 / 自动保存 / 日期跳转。
+        ; 搜索、撤销、行编辑、纯文本粘贴、光标记忆、字数、背景图全部由页面接管 ——
+        ; 它们本来就是「编辑器内部」的事，从前借着 RichEdit 的 SendMessage 硬做；
+        ; 现在 Milkdown 自己就是编辑器，前端一套 keymap 就够。
         WindowFeature.Init()
-        StatusBar.Init(dateCtrl, tagCtrl, msgCtrl)
-        SearchFeature.Init(searchBarBg, searchIcon, searchEdit, searchCount, stat, themeLabel, ed)
-        AutoSaveFeature.Init(Config.AutoSaveInterval)
         SaveFeature.Init()
-        CaretFeature.Init()
-        StatFeature.Init(Config.StatInterval)
+        AutoSaveFeature.Init(Config.AutoSaveInterval)
         DateJumpFeature.Init()
-        BackdropFeature.Init(g)
+
+        ; 每次露面后补一次 Fill：Chromium 子窗口的尺寸只在父窗口可见时才有意义，
+        ; 而 Mount 发生在隐藏态（见 _Mount）。不补的话窗口出来了、编辑区仍是 0×0 ——
+        ; 画面一片纯底色，看起来像「WebView2 根本没显示」。
+        EventBus.On("Window.Shown", (*) => SevenNoteModule._AfterShown())
+    }
+
+    static _AfterShown() {
+        if this._mounted
+            WebHostService.Resize()
+    }
+
+    ; ─── 启动：挂 WebView2 → 载入当天 ───
+    ; ⚠ 必须晚于热键注册（Router 先 RegisterAll 再 StartAll），否则用户按 Alt+Z
+    ;   时窗口先露面、热键还没就位，表现成「按了没反应」。
+    static Start() {
+        if !this._Mount()
+            return
+        ; ⚠ 不在 Start() 里同步等编辑器：WaitFor 最长 8 秒，会把整个启动流程卡住
+        ;   （StartAll 是同步遍历，别的模块得陪着等）。排到后台，热键先就位。
+        SetTimer(() => SevenNoteModule._FirstLoad(), -50)
+    }
+
+    static _FirstLoad() {
+        try LoadFeature.Load()
+        catch as e
+            LogError("首次载入失败：" . e.Message)
+    }
+
+    ; 把 WebView2 挂到主窗口上。
+    ; ⚠ 全程在隐藏态完成（Show("Hide") → Mount → Navigate）：先 Show 再摆位会让
+    ;   窗口在默认落点闪一下（实测 +31ms 出现在错误位置、+219ms 才跳过去）。
+    static _Mount() {
+        g := State.GetGui()
+        try
+            g.Show("Hide")
+        catch as e {
+            LogError("笔记窗口创建失败：" . e.Message)
+            return false
+        }
+
+        dist := this._DistDir()
+        if (dist = "") {
+            LogError("前端产物不存在，先到 web\ 下 npm run build")
+            return false
+        }
+
+        r := WebHostService.Mount(g.Hwnd, dist)
+        if !r.ok {
+            LogError("WebView2 挂载失败：" . r.reason)
+            return false
+        }
+
+        ; 笔记图片在 vault 下，markdown 里写的是 ./_assets/<date>/x.png；
+        ; 相对 app.local 会解析成 app.local/_assets/… → 404。把 vault 另挂一个主机，
+        ; 前端显示时加前缀、存盘时剥掉（见 web/src/ahk.ts 的路径双态）。
+        m := WebHostService.MapHost("vault.local", Config.GetVault())
+        if !m.ok
+            LogError("vault 映射失败：" . m.reason)
+
+        WebHostService.Bind("ahk", NoteHostHandlers())
+
+        n := WebHostService.Navigate("/index.html?view=note")
+        if !n.ok {
+            LogError("导航失败：" . n.reason)
+            return false
+        }
+        this._mounted := true
+        ; 隐藏态也铺一次：给 Chromium 一个初始尺寸，免得首次显示时先闪一帧空白。
+        ; 真正的尺寸要等父窗口可见（Window.Shown → _AfterShown）。
+        WebHostService.Resize()
+        return true
+    }
+
+    ; 前端产物目录：开发态在 <repo>\web\dist（src\ 的同级）；
+    ; 编译版与 exe 同级（打包时把 dist 一起放过去即可）。
+    static _DistDir() {
+        for p in [A_ScriptDir . "\..\web\dist", A_ScriptDir . "\web\dist"] {
+            if DirExist(p)
+                return p
+        }
+        return ""
     }
 
     static OnSize(guiObj, MinMax, Width, Height) {
         ; 最小化时 Width/Height 是图标尺寸（实测约 158x26），
-        ; 控件按它算会得到负尺寸，直接跳过
+        ; Fill() 会把 Chromium 压成一条，直接跳过
         if (MinMax = -1)
             return
-        try State.GetStat().Move(8, 8, 60, 20)
-        try State.GetTagCtrl().Move(72, 8, 190, 20)
-        try State.GetThemeLabel().Move(Width - 184, 8, 176, 20)
-        SearchFeature.Layout(Width, Height)
-        edCtrl := GuiCtrlFromHwnd(State.GetEd())
-        if SearchFeature.IsVisible() {
-            try edCtrl.Move(8, 72, Width - 16, Height - 110)
-        } else {
-            try edCtrl.Move(8, 32, Width - 16, Height - 70)
-        }
-        try State.GetDateCtrl().Move(8, Height - 30, 180, 22)
-        try State.GetMsgCtrl().Move(Width - 288, Height - 30, 280, 22)
-        ; 背景图跟着编辑区一起缩放（未开启时内部直接返回，无额外开销）
-        BackdropFeature.Layout(Width, Height)
+        if this._mounted
+            WebHostService.Resize()
     }
 
-    static Start() {
-        ; ═══ 启动 ═══
-        LoadFeature.Load()
-        StatusBar.RefreshTag()
-
-        ThemeFeature.LoadFromConfig()
-        FontFeature.LoadFromConfig()
-        ; CapsLock 配置由 KeysInputModule.Start() 恢复（Phase 4：模块各管各的状态）。
-        ; 背景图不必在这里初始化：ThemeService.Apply 会 Emit "Theme.Changed"，
-        ; 而 BackdropFeature 在 Init 时就挂上了这个事件 —— 启动与换主题都自动重铺。
-    }
-
-    ; ─── 笔记模块的热键（Phase 5：从组合根搬入）───
+    ; 笔记模块的热键
+    ; v2.9：27 条 → 7 条。编辑器内部的键（撤销 / 行编辑 / 缩进 / 纯文本粘贴 /
+    ; 时间戳 / 分隔线 / 分段标题 / 搜索）统统交给页面 —— 那些操作都要看光标与选区，
+    ; 前端一套 keymap 天然有上下文；AHK 这边从前只能对着 RichEdit SendMessage 猜。
     ; 平台热键（Alt+S / Alt+Shift+Z）不在这里，见 WorkBench.GetHotkeys()。
     static GetHotkeys() {
         return [
             ; ── 【窗口】──
             {ctx: "global", key: "!z", group: "窗口", line: "   Alt+Z            呼出 / 隐藏"
                 , fn: (*) => WindowFeature.Toggle()},
-
-            ; ── 【外观】──
-            {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            切换主题（含带背景图的「星空 / 金克斯」）"
-                , fn: (*) => ThemeFeature.Next()},
-            {ctx: "global", key: "!+t", group: "外观", line: "   Shift+Alt+T      切换字体"
-                , fn: (*) => FontFeature.NextFont()},
-            {ctx: "global", key: "!=", group: "外观", line: "   Alt+=            调大字号"
-                , fn: (*) => FontFeature.BiggerSize()},
-            {ctx: "global", key: "!-", group: "外观", line: "   Alt+-            调小字号"
-                , note: "                      （外观设置自动保存）"
-                , fn: (*) => FontFeature.SmallerSize()},
-
-            ; ── 【输入增强】──
-            ; Alt+Shift+C 由 KeysInputModule.GetHotkeys() 提供；
-            ; Alt+C / Alt+X 由 LauncherModule.GetHotkeys() 提供。
-
-            ; ── 【搜索】──
-            {ctx: "editor", key: "$^f", group: "搜索", line: "   Ctrl+F           打开搜索栏"
-                , fn: (*) => SearchFeature.Show()},
-            {ctx: "search", key: "Enter", group: "搜索", line: "   Enter            下一个匹配"
-                , fn: (*) => SearchFeature.Next()},
-            {ctx: "search", key: "+Enter", group: "搜索", line: "   Shift+Enter      上一个匹配"
-                , fn: (*) => SearchFeature.Prev()},
-            {ctx: "search", key: "Esc", group: "搜索", line: "   Esc              关闭搜索栏"
-                , fn: (*) => SearchFeature.Hide()},
 
             ; ── 【保存】──
             {ctx: "editor", key: "$^s", group: "保存", line: "   Ctrl+S           手动保存"
@@ -171,35 +169,7 @@ class SevenNoteModule {
             {ctx: "editor", key: "$^g", group: "日期与标签", line: "   Ctrl+G           搜索跳转（日期 / 标签）"
                 , fn: (*) => DateJumpFeature.ShowDialog()},
             {ctx: "editor", key: "$^+t", group: "日期与标签", line: "   Ctrl+Shift+T     为当前日期设置标签"
-                , fn: (*) => TitleFeature.ShowDialog()},
-
-            ; ── 【编辑】──
-            {ctx: "editor", key: "$^z", group: "编辑", line: "   Ctrl+Z           撤销"
-                , fn: (*) => UndoFeature.Undo()},
-            {ctx: "editor", key: "$^+z", group: "编辑", line: "   Ctrl+Shift+Z     重做"
-                , fn: (*) => UndoFeature.Redo()},
-            {ctx: "editor", key: "$^y", group: "编辑", line: "   Ctrl+Y           删除当前行"
-                , fn: (*) => LineEditFeature.DeleteLine()},
-            {ctx: "editor", key: "$^d", group: "编辑", line: "   Ctrl+D           复制当前行到下方"
-                , fn: (*) => LineEditFeature.DuplicateLine()},
-            {ctx: "editor", key: "$^+Up", group: "编辑", line: "   Ctrl+Shift+↑     上移当前行"
-                , fn: (*) => LineEditFeature.MoveUp()},
-            {ctx: "editor", key: "$^+Down", group: "编辑", line: "   Ctrl+Shift+↓     下移当前行"
-                , fn: (*) => LineEditFeature.MoveDown()},
-            {ctx: "editor", key: "Tab", group: "编辑", line: "   Tab              增加缩进（4 空格）"
-                , fn: (*) => LineEditFeature.Indent()},
-            {ctx: "editor", key: "+Tab", group: "编辑", line: "   Shift+Tab        减少缩进"
-                , fn: (*) => LineEditFeature.Outdent()},
-            {ctx: "editor", key: "$^+v", group: "编辑", line: "   Ctrl+Shift+V     粘贴为纯文本"
-                , fn: (*) => PasteFeature.PastePlain()},
-
-            ; ── 【分段】──
-            {ctx: "editor", key: "$^t", group: "分段", line: "   Ctrl+T           追加时间戳"
-                , fn: (*) => TimestampFeature.Append()},
-            {ctx: "editor", key: "$^h", group: "分段", line: "   Ctrl+H           插入动态分隔线"
-                , fn: (*) => TimestampFeature.Separator()},
-            {ctx: "editor", key: "$^+h", group: "分段", line: "   Ctrl+Shift+H     插入 ## 分段标题"
-                , fn: (*) => TimestampFeature.Heading()}
+                , fn: (*) => TitleFeature.ShowDialog()}
         ]
     }
 
@@ -208,11 +178,10 @@ class SevenNoteModule {
             , hotkeys: this.GetHotkeys()}
     }
 
-    ; 笔记模块负责 editor / search 两个上下文；Router 不再引用模块内部类
+    ; 只剩一个上下文：笔记窗口在前台。
+    ; 搜索条退场后 editor / search 二选一收敛成一条 ——
+    ; ⚠ 声明了却没人提供实现的 ctx，它的热键一条都不注册（见 .clinerules/02）。
     static GetContexts() {
-        return {
-            editor: (*) => WinActive("ahk_id " . State.GetGuiHwnd()) && !SearchFeature.IsVisible(),
-            search: (*) => WinActive("ahk_id " . State.GetGuiHwnd()) && SearchFeature.IsVisible()
-        }
+        return {editor: (*) => WinActive("ahk_id " . State.GetGuiHwnd())}
     }
 }
