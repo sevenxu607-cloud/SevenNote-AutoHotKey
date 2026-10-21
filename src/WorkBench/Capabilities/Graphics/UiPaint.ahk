@@ -10,10 +10,9 @@
 ;  日期对话框 / 提示词的列表 / 启动提示都要），而且都靠 DllCall + Windows 消息，
 ;  散在 Feature 里既容易写错、也没法统一改。
 ;
-;  ⚠ 深色主题下的 Edit / ComboBox 还需要 WM_CTLCOLOREDIT（要 OnMessage 全局分发
-;    + CreateSolidBrush/DeleteObject 成对管理）。那是 P2 单独做的一块，届时加
-;    EditColors() / ComboColors() 到这里 —— 不要半成品地只改背景不改文字
-;    （白底黑字 → 深底黑字，比不改还糟）。
+;  ⚠ 深色主题下 Edit / ComboBox 走 EditColors()（WM_CTLCOLOREDIT 全局分发 +
+;    CreateSolidBrush/DeleteObject 成对管理）—— 见下方的「Edit / ComboBox 底色」段。
+;    别半成品地只改背景不改文字（白底黑字 → 深底黑字，比不改还糟）。
 class UiPaint {
     ; ─── 窗口标题栏 ───────────────────────────────────────────────────────
     ; 深色主题连标题栏一起变深 —— Windows 默认画白标题栏，压在深色窗口上很扎眼。
@@ -79,12 +78,161 @@ class UiPaint {
         bg := this.Bgr(bgHex)
         fg := this.Bgr(fgHex)
         try {
-            SendMessage(0x1001, 0, bg, "ahk_id " . hwnd)
-            SendMessage(0x1024, 0, fg, "ahk_id " . hwnd)
-            SendMessage(0x1025, 0, bg, "ahk_id " . hwnd)
-            SendMessage(0x1036, 0x00010000, 0x00010000, "ahk_id " . hwnd)
+            this._Lvm(hwnd, 0x1001, 0, bg)
+            this._Lvm(hwnd, 0x1024, 0, fg)
+            this._Lvm(hwnd, 0x1025, 0, bg)
+            this._Lvm(hwnd, 0x1036, 0x00010000, 0x00010000)
+            ; 改完立刻重画：调用点通常在 Show() 之前，不重画会先看到一帧系统白
+            DllCall("user32\InvalidateRect", "ptr", hwnd, "ptr", 0, "int", 1)
         }
         return true
+    }
+
+    ; 直接对控件 hwnd 发消息（同步等结果，`SendMessageW` 本身是同步的）。
+    ; ⚠ 别用内置 SendMessage(0x1001, 0, bg, "ahk_id " . hwnd)：它**第 4 个参数是
+    ;   Control 不是 WinTitle**（见 .clinerules/03），要靠 "last found window" 兜底 ——
+    ;   实测窗口一多就落空，症状是"列表还是系统白、代码看着明明调了"。
+    static _Lvm(hwnd, msg, wParam, lParam) {
+        return DllCall("SendMessageW", "ptr", hwnd, "uint", msg, "ptr", wParam, "ptr", lParam, "ptr")
+    }
+
+    ; ─── Edit / ComboBox 底色 ─────────────────────────────────────────────
+    ; Edit / ComboBox **也不吃** Gui.BackColor —— 系统在 WM_CTLCOLOREDIT 里问
+    ; 「用哪个刷子擦底、用哪个颜色写字」。所以这里做两件事：
+    ;   ① EditColors() 登记「这个 hwnd 用这两个色」，顺手建一个 SolidBrush；
+    ;   ② _Hook() 只挂**一次** OnMessage，按 lParam（控件 hwnd）查表回答。
+    ;
+    ; ⚠ 为什么要登记而不是全局一个色：同一个进程里可能同时开着深色窗口与浅色控件
+    ;   （控制面板就是刻意例外），只能一个控件一个答案；而 OnMessage 全进程挂一次
+    ;   就够 —— 挂多次会叠加，回调跑多遍。
+    ; ⚠ brush 必须自己管生命周期：每换一次主题就建一个新 brush，**旧的必须
+    ;   DeleteObject**，否则切 20 次主题就漏 20 个 GDI 对象（任务管理器里
+    ;   「GDI 对象」一列只涨不落）。Sweep() 顺手清掉已销毁控件的条目。
+    ; ⚠ 只改背景不改文字 = 白底黑字变深底黑字，比不改更糟 —— 所以这两个色
+    ;   永远成对传，别加只收 bg 的重载。
+    static _ctl := ""
+    static _hooked := false
+    static _msgEdit := ""      ; OnMessage 回调的引用（必须声明，类对象不能凭空加属性）
+
+    static EditColors(hwnd, bgHex, fgHex) {
+        ok := this._Register(hwnd, bgHex, fgHex)
+        ; ⚠ 可编辑 ComboBox 是**两层窗口**：控件本身 + 内部的 Edit 子窗口。
+        ;   实测 WM_CTLCOLOREDIT 的 lParam 是**内部 Edit**（parent = ComboBox），
+        ;   只登记 ComboBox 的 hwnd 会让编辑区继续是系统白 —— 深色主题下"分类"那一栏
+        ;   白得刺眼，浅色主题下则是一块和列表不同色的白板。顺藤摸瓜一起登记。
+        inner := this._ComboInnerEdit(hwnd)
+        if inner
+            this._Register(inner, bgHex, fgHex)
+        return ok
+    }
+
+    ; ComboBox 内部 Edit 的 hwnd；不是 ComboBox（或不可编辑的 dropdownlist）返回 0。
+    ; ⚠ 别改用 GetComboBoxInfo：本机实测它一直返回 0（cbSize / 结构对齐踩坑），
+    ;   FindWindowEx 找 "Edit" 子窗口更直白，拿不到就是 0、没有副作用。
+    static _ComboInnerEdit(hwnd) {
+        cls := Buffer(64, 0)
+        if !DllCall("GetClassNameW", "ptr", hwnd, "ptr", cls, "int", 32)
+            return 0
+        if (StrGet(cls, "UTF-16") != "ComboBox")
+            return 0
+        return DllCall("FindWindowExW", "ptr", hwnd, "ptr", 0, "wstr", "Edit", "ptr", 0, "ptr")
+    }
+
+    static _Register(hwnd, bgHex, fgHex) {
+        if !hwnd || !DllCall("user32\IsWindow", "ptr", hwnd, "int")
+            return false
+
+        ctl := this._ctl
+        if !IsObject(ctl)
+            ctl := this._ctl := Map()
+
+        ; 同色重复登记（每次呼出窗口都会调一次）就别白建 brush
+        if ctl.Has(hwnd) {
+            e := ctl[hwnd]
+            if (e.bg = bgHex && e.fg = fgHex) {
+                this._Repaint(hwnd)
+                return true
+            }
+            try DllCall("gdi32\DeleteObject", "ptr", e.brush)
+            ctl.Delete(hwnd)
+        }
+
+        brush := DllCall("gdi32\CreateSolidBrush", "uint", this.Bgr(bgHex), "ptr")
+        ctl[hwnd] := {bg: bgHex, fg: fgHex, brush: brush}
+        this._Hook()
+        this.Sweep()
+        this._Repaint(hwnd)
+        return true
+    }
+
+    ; 控件被销毁前主动放掉（可选 —— 不调也能被下一次 Sweep() 清掉）。
+    static ReleaseColors(hwnd) {
+        ctl := this._ctl
+        if !IsObject(ctl) || !ctl.Has(hwnd)
+            return false
+        try DllCall("gdi32\DeleteObject", "ptr", ctl[hwnd].brush)
+        ctl.Delete(hwnd)
+        return true
+    }
+
+    ; 清掉 hwnd 已失效的条目，返回清掉的个数（探针 / 排障用）。
+    static Sweep() {
+        ctl := this._ctl
+        if !IsObject(ctl)
+            return 0
+        dead := []
+        for h, e in ctl {
+            if !DllCall("user32\IsWindow", "ptr", h, "int")
+                dead.Push(h)
+        }
+        for h in dead {
+            try DllCall("gdi32\DeleteObject", "ptr", ctl[h].brush)
+            ctl.Delete(h)
+        }
+        return dead.Length
+    }
+
+    ; 本进程当前 GDI 对象数（与任务管理器「GDI 对象」同口径）—— 探针用它证明没漏。
+    static GdiCount() {
+        hProc := DllCall("kernel32\GetCurrentProcess", "ptr")
+        return DllCall("user32\GetGuiResources", "ptr", hProc, "uint", 0, "uint")
+    }
+
+    ; 只挂一次；回调存成字段 —— OnMessage 不去重，重复挂会叠加，且要能记住引用。
+    static _Hook() {
+        if this._hooked
+            return
+        this._hooked := true
+        ; ⚠ 类静态方法不能裸传（this 绑不上，见 .clinerules/03）：包一层箭头函数。
+        this._msgEdit := (w, l, m, h) => UiPaint._CtlColor(w, l, m, h)
+        fn := this._msgEdit
+        OnMessage(0x0133, fn)      ; WM_CTLCOLOREDIT      Edit / ComboBox 的编辑区
+        OnMessage(0x0134, fn)      ; WM_CTLCOLORLISTBOX   ComboBox 的下拉列表
+        ; 0x0138 是防御性挂的（ComboBox 外框那块偶尔走它）；**它并没有修好 ComboBox** ——
+        ; 实测加了 0x0138 编辑区照样是系统白，真正的原因在 EditColors() 里：
+        ; 可编辑 ComboBox 的编辑区是**它自己的内部 Edit 子窗口**，lParam 给的是那个子窗口。
+        OnMessage(0x0138, fn)      ; WM_CTLCOLORSTATIC
+    }
+
+    ; 消息处理：wParam = 控件 DC，lParam = 控件 hwnd。返回 brush 即"已处理"。
+    ; 表里没有的控件返回空 —— 让系统按默认画（别去动别人的控件）。
+    static _CtlColor(wParam, lParam, msg, hwnd) {
+        ctl := this._ctl
+        if !IsObject(ctl) || !ctl.Has(lParam)
+            return
+        e := ctl[lParam]
+        try {
+            DllCall("gdi32\SetTextColor", "ptr", wParam, "uint", this.Bgr(e.fg))
+            DllCall("gdi32\SetBkColor", "ptr", wParam, "uint", this.Bgr(e.bg))
+        }
+        return e.brush
+    }
+
+    static _Repaint(hwnd) {
+        try {
+            DllCall("user32\InvalidateRect", "ptr", hwnd, "ptr", 0, "int", 1)
+            DllCall("user32\UpdateWindow", "ptr", hwnd)
+        }
     }
 
     ; ─── 颜色工具 ─────────────────────────────────────────────────────────

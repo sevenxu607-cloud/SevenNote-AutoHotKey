@@ -443,14 +443,18 @@ EnsureVaultConfigured() {
 ; ═══════════════════════════════════════════════════════════════════════════
 
 ShowStartupTip() {
+    ; 启动提示也跟主题走：WorkBench.Init() 里已 LoadFromConfig()，此处拿到的一定是最新一套。
+    ; 平台级窗口只读色板、不订阅 Theme.Changed —— 它只活 1.5 秒，没必要为它挂订阅。
+    p := ThemeService.Palette()
     tip := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "提示")
     tip.SetFont("s14", "楷体")
-    tip.BackColor := "E4E9EE"
+    tip.BackColor := p.win
     ; 平台级提示只指向平台级热键：Alt+S 打开工作台（里面才有模块热键 Alt+Z 等）。
     ; 上下两行：一行要 314 逻辑像素、横条太宽观感差；拆开后每行 ≤153，窗口回到窄条 w240。
     ; 控件 h48 是两行高度（单行约 18.7），窗口 h80 容得下（y16 + 48 = 64）。
-    tip.AddText("x20 y16 w200 h48 Center c3D5166"
+    tip.AddText("x20 y16 w200 h48 Center c" . p.text
         , Config.AppName . " 已启动！`nAlt+S 打开工作台")
+    UiPaint.TitleBar(tip.Hwnd, p.win, p.text)
     tipY := A_ScreenHeight * 0.65
     tip.Show("w240 h80 y" . tipY)
     ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，

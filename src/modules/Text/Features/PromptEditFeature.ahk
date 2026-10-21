@@ -93,8 +93,11 @@ class PromptEditFeature {
     ; ═══ 建窗 ═══
 
     static _Build() {
+        ; 建窗时按当期主题上色；之后按 Alt+T 走 OnThemeChanged() 重刷。
+        p := ThemeService.Palette()
+
         g := Gui("+AlwaysOnTop +OwnDialogs -MinimizeBox -MaximizeBox", Config.AppName . " · 提示词")
-        g.BackColor := PromptWindowFeature.BgColor
+        g.BackColor := p.win
         g.SetFont("s11", "楷体")
 
         g.AddText("x12 y16 w44 h20", "标题")
@@ -115,7 +118,7 @@ class PromptEditFeature {
 
         ; 提示行兼作「删除待确认 / 保存失败」的提示位，所以宽度给足（w420）
         this._hint := g.AddText("x12 y416 w420 h20", "分类可从列表选，也可手输（多级：Work/会议）")
-        this._hint.SetFont("s9 c" . PromptWindowFeature.DimColor, "楷体")
+        this._hint.SetFont("s9 c" . p.dim, "楷体")
 
         ; 宽 96 是为了放下「确认删除」四个字（w80 会挤成省略号）
         this._del := g.AddButton("x12 y442 w96 h26", "删除")
@@ -132,6 +135,37 @@ class PromptEditFeature {
         g.OnEvent("Close", (*) => this.Hide())
 
         this._gui := g
+
+        ; 标题栏 / 滚动条 / 原生控件跟着主题明暗
+        UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+        UiPaint.WindowTheme(g.Hwnd, p.dark)
+        ; 三个输入控件：Edit / ComboBox 都不吃 BackColor，走 WM_CTLCOLOREDIT 登记
+        ; （ComboBox 的输入区与下拉列表分别发 0x0133 / 0x0134，同一份登记够用）
+        UiPaint.EditColors(this._title.Hwnd, p.codeBg, p.text)
+        UiPaint.EditColors(this._cat.Hwnd, p.codeBg, p.text)
+        UiPaint.EditColors(this._body.Hwnd, p.codeBg, p.text)
+    }
+
+    ; 换主题（Alt+T）：整窗重刷。窗口没建 / 已销毁就直接返回 ——
+    ; 下次 Open() 重建时会读当期色板。
+    static OnThemeChanged() {
+        hwnd := this.Hwnd()
+        if !hwnd
+            return
+        p := ThemeService.Palette()
+        try this._gui.BackColor := p.win
+        UiPaint.TitleBar(hwnd, p.win, p.text)
+        UiPaint.WindowTheme(hwnd, p.dark)
+        try UiPaint.EditColors(this._title.Hwnd, p.codeBg, p.text)
+        try UiPaint.EditColors(this._cat.Hwnd, p.codeBg, p.text)
+        try UiPaint.EditColors(this._body.Hwnd, p.codeBg, p.text)
+        ; 提示行可能正停在"确认删除"（红字）状态：_ResetDelete 会把它写回常规措辞 + dim
+        this._ResetDelete()
+    }
+
+    ; 警示红：C0392B 压在深色底上几乎看不见，深色主题换亮一档的红。
+    static _WarnColor() {
+        return ThemeService.Palette().dark ? "FF7B72" : "C0392B"
     }
 
     ; ─── 分类框读写（走 Win32 消息，绕开 ComboBox.Value）───
@@ -200,7 +234,7 @@ class PromptEditFeature {
         if IsObject(this._hint)
             try {
                 this._hint.Value := "再点一次「确认删除」· 3 秒内有效"
-                this._hint.SetFont("s9 cC0392B", "楷体")
+                this._hint.SetFont("s9 c" . this._WarnColor(), "楷体")
             }
         ; ⚠ 这里**只能**用箭头函数：AHK v2.0.27 的 SetTimer 不接受类静态方法的
         ;   函数对象（实测 `T.Reset` 的 Type 是 Func，传给 SetTimer 却报
@@ -228,7 +262,7 @@ class PromptEditFeature {
         if IsObject(this._hint)
             try {
                 this._hint.Value := "分类可从列表选，也可手输（多级：Work/会议）"
-                this._hint.SetFont("s9 c" . PromptWindowFeature.DimColor, "楷体")
+                this._hint.SetFont("s9 c" . ThemeService.Palette().dim, "楷体")
             }
     }
 
@@ -262,7 +296,7 @@ class PromptEditFeature {
         if IsObject(this._hint)
             try {
                 this._hint.Value := "⚠ " . StrSplit(this._Explain(res), "`n")[1]
-                this._hint.SetFont("s9 cC0392B", "楷体")
+                this._hint.SetFont("s9 c" . this._WarnColor(), "楷体")
             }
         if res.HasProp("error")
             LogError("提示词操作失败：" . res.reason . " / " . res.error)

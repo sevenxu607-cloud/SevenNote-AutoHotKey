@@ -215,7 +215,15 @@ Feature，也不需要改组合根或帮助函数。
 `dim`）就够 —— `accent` / `border` / `panel` / `codeBg` 由 `Palette()` 按明暗派生；
 要覆盖就在条目里自带同名字段。派生只写一处，前端 `--sw-*` 与 AHK 窗口拿的是同一份结果。
 
+⚠ **主题表目前只有「纯米黄」一套**（护眼绿 / 纸白 / 星空 / 金克斯暂时下线）。只有一套时
+`ThemeService.Next()` 是**空操作**：不写配置、不发 `Theme.Changed`；表里有第二套就自动恢复。
+老配置的下标由 `_MigrateIndex()` 一次性归 1 并写回（`[Appearance] ThemeSchema=3`）。
+
 ### 带背景图的主题
+
+> ⚠ **当前暂缓**：主题表里没有带 `bg` 的条目（星空 / 金克斯已下线），铺图机制
+> （`BackdropService` / `BackdropFeature`）代码仍在。要接回来就按本节加一条 —— 别只在表里
+> 塞 `bg` 而不管前端：`bg` / `bgAlpha` / `bgFit` 已推到前端，前端消费仍在打磨。
 
 多一组可选字段：`bg`（图片绝对路径）、`bgAlpha`（压暗遮罩 0–100）、`bgFit`（可选，缺省 `cover`）。
 

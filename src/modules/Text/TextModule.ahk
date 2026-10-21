@@ -28,6 +28,12 @@ class TextModule {
         ; 只碰磁盘：`_prompts\` + 首次运行播种 Chat / Code / Work。
         ; 放在 Init 里而不是 Start：这是「内部就绪」，不涉及任何窗口。
         PromptStoreService.EnsureRoot()
+
+        ; 换主题（Alt+T）：两个提示词窗口各自重刷自己的颜色。
+        ; 订阅放在模块 Init 里 —— 窗口是懒建的（Alt+P 才建），建窗时再订阅就晚了；
+        ; 而 Feature 之间零调用，由模块内部转发不算越界。
+        EventBus.On("Theme.Changed", (*) => PromptWindowFeature.OnThemeChanged())
+        EventBus.On("Theme.Changed", (*) => PromptEditFeature.OnThemeChanged())
     }
 
     ; ─── 上下文 ───

@@ -11,16 +11,21 @@
 ;   双击        → 直接复制到剪贴板 + 窗口立即收起（复制是高频动作：一发拿到就走）
 ;   Esc         → 隐藏
 ;
-; 配色：**第一版写死米黄**，不订阅 Theme.Changed。
-; 后续「界面美观优化」阶段再接主题（届时需要 ThemeService 在载荷里带上色值，
-; 现在只有 {name, idx}，跨模块取色会违反「Feature 之间零调用」）。
+; 配色：读**平台主题**（ThemeService.Palette()）并订阅 Theme.Changed 跟着换。
+; 主题在 v2.9 上收到 WorkBench\Services 之后是平台服务、不是「别的模块」——
+; 所以 Feature 读它不违反「Feature 之间零调用」。
+; （第一版写死米黄的注释留在这里作历史：那时主题还在笔记模块里，
+;   跨模块取色确实只能靠 EventBus 载荷带色值。）
 
 class PromptWindowFeature {
-    ; ─── 米黄配色（与帮助窗口 / 笔记窗口同族，都是 #FFF8E7 一系）───
-    static BgColor    := "FFF8E7"   ; 窗口底
-    static PanelColor := "FDF3D9"   ; 列表底（比窗口底稍深，层次分明）
-    static TextColor  := "3D2B1F"   ; 正文（与笔记编辑区同色）
-    static DimColor   := "8A7458"   ; 次要文字
+    ; ─── 色板映射（语义 → 用在哪）─────────────────────────────────────────
+    ;   win     窗口底
+    ;   codeBg  列表 / 搜索框底
+    ;           ⚠ 不用 edBg：纯米黄 / 星空 / 金克斯三套主题里 win == edBg，
+    ;             列表会和窗口糊成一片、看不出边界。codeBg 恒比 edBg 偏 8–12 档。
+    ;   text    正文
+    ;   dim     状态行
+    ; ⚠ 别再写死颜色 —— 换主题时整窗要跟着变，写死就成了"一块不听话的米黄"。
 
     ; 首屏落点：工作区右上角，右边距 Config.PlaceRight，顶边下移 120 物理像素
     static PlaceTop := 120
@@ -256,8 +261,11 @@ class PromptWindowFeature {
     ; ═══ 建窗（首次呼出时才建，启动时不多一个隐藏窗口）═══
 
     static _Build() {
+        ; 建窗时就按当期主题上色；之后按 Alt+T 走 OnThemeChanged() 重刷。
+        p := ThemeService.Palette()
+
         g := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", Config.AppName . " · 提示词库")
-        g.BackColor := this.BgColor
+        g.BackColor := p.win
         g.SetFont("s11", "楷体")
 
         ; 第一版固定尺寸（620x520 逻辑）：不做 Resize。
@@ -274,7 +282,7 @@ class PromptWindowFeature {
         this._lv.OnEvent("DoubleClick", (ctrl, row) => this._OnItemActivate(row))
 
         this._status := g.AddText("x10 y456 w580 h20", "")
-        this._status.SetFont("s10 c" . this.DimColor, "楷体")
+        this._status.SetFont("s10 c" . p.dim, "楷体")
 
         ; 点标题栏 X = 隐藏。若 AHK 仍按默认销毁窗口，Hwnd() 会返回 0，
         ; 下次 Show() 自动重建（位置重落一次），不会留下「按了没反应」的死窗口。
@@ -282,39 +290,44 @@ class PromptWindowFeature {
 
         this._gui := g
 
+        ; 标题栏 / 滚动条 / 原生控件跟着主题明暗
+        ; （Win11 连标题栏一起染；Win10 没有那几个属性，静默退回系统色 —— 见 UiPaint）
+        UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+        UiPaint.WindowTheme(g.Hwnd, p.dark)
+        ; 搜索框：Edit 不吃 BackColor，必须走 WM_CTLCOLOREDIT 登记
+        UiPaint.EditColors(this._search.Hwnd, p.codeBg, p.text)
+
         ; 列宽：分类 110 / 标题 180 / 摘要 270 —— 合计 560，留 20 给纵向滚动条
         this._lv.ModifyCol(1, 110)
         this._lv.ModifyCol(2, 180)
         this._lv.ModifyCol(3, 270)
 
-        this._PaintList()
+        this._PaintList(p)
     }
 
-    ; 列表配色：ListView 不吃 Gui.BackColor，必须走 Windows 消息单独上色
-    static _PaintList() {
+    ; 换主题（Alt+T）：整窗重刷。
+    ; 窗口没建 / 已被销毁就直接返回 —— 下次 Show() 重建时会读当期色板，不差这一次。
+    static OnThemeChanged() {
+        hwnd := this.Hwnd()
+        if !hwnd
+            return
+        p := ThemeService.Palette()
+        try this._gui.BackColor := p.win
+        try this._status.SetFont("s10 c" . p.dim, "楷体")
+        this._PaintList(p)
+        UiPaint.TitleBar(hwnd, p.win, p.text)
+        UiPaint.WindowTheme(hwnd, p.dark)
+        try UiPaint.EditColors(this._search.Hwnd, p.codeBg, p.text)
+    }
+
+    ; 列表配色：ListView 不吃 Gui.BackColor，走 Windows 消息单独上色（见 UiPaint.ListView）
+    static _PaintList(p := 0) {
+        p := IsObject(p) ? p : ThemeService.Palette()
         hwnd := 0
         try hwnd := this._lv.Hwnd
         if !hwnd
             return
-        bg := this._Bgr(this.PanelColor)
-        fg := this._Bgr(this.TextColor)
-        try {
-            ; LVM_SETBKCOLOR / LVM_SETTEXTCOLOR / LVM_SETTEXTBKCOLOR
-            SendMessage(0x1001, 0, bg, "ahk_id " . hwnd)
-            SendMessage(0x1024, 0, fg, "ahk_id " . hwnd)
-            SendMessage(0x1025, 0, bg, "ahk_id " . hwnd)
-            ; LVM_SETEXTENDEDLISTVIEWSTYLE + LVS_EX_DOUBLEBUFFER：
-            ; 每敲一个字就整表重填，不双缓冲会看到闪白
-            SendMessage(0x1036, 0x00010000, 0x00010000, "ahk_id " . hwnd)
-        }
-    }
-
-    ; "RRGGBB" → COLORREF（0x00BBGGRR）：Win32 的颜色是**反着**存的
-    static _Bgr(hex) {
-        r := Integer("0x" . SubStr(hex, 1, 2))
-        g := Integer("0x" . SubStr(hex, 3, 2))
-        b := Integer("0x" . SubStr(hex, 5, 2))
-        return (b << 16) | (g << 8) | r
+        UiPaint.ListView(hwnd, p.codeBg, p.text)
     }
 
     ; 首次落位：隐藏态下量尺寸 → 摆到工作区右上角 → 交给调用方 Show()

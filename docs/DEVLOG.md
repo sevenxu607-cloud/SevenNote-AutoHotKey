@@ -14,10 +14,12 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：主题上收到平台 + `Alt+T` 恢复 —— 5 套主题现在覆盖笔记主窗
-  （窗口底色 / 标题栏 / 前端 `--sw-*` 全套），真机验证通过（详见 2026-10-21 21:20 条目）
-- **正在处理**：主题平台化 P2 —— 其余窗口（提示词库 / 日期对话框 / 启动提示）接 `Palette()`
-- **下一步**：P2 深色 Edit / ComboBox（`WM_CTLCOLOREDIT`）；控制面板留到 P2 之后单独打磨
+- **最近一次改动**：P2 收口 —— 提示词库 / 编辑窗 / 日期对话框 / 启动提示全接 `Palette()`，
+  深色 Edit / ComboBox 上色（`WM_CTLCOLOR*` + `FindWindowExW` 找 ComboBox 内部 Edit）；
+  **主题表砍到只剩「纯米黄」**，图主题（星空 / 金克斯）与护眼绿 / 纸白暂时下线
+  （详见 2026-10-21 23:44 条目）
+- **正在处理**：无（P2 已收口）
+- **下一步**：P3 背景图接前端；控制面板（`Alt+S`）接主题留到最后单独打磨
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -33,7 +35,7 @@
   （`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` 已在前端 keymap 就位）
 - [x] ~~S3d：`Alt+T` 循环主题~~ —— 主题服务上收到 `WorkBench\Services`，热键归平台
   （2026-10-21 21:20 条目）
-- [ ] S3d 余项：背景图主题是否随 RTF 一起退休（`bg` 字段保留，前端尚未消费）
+- [ ] S3d 余项：背景图主题**已下线待打磨**（4 条定义只在 git 历史里；`bg` 字段保留，前端尚未消费）
 - [ ] 存量 `.md` 每行的 `**` 包裹要不要清洗
 
 **P1（代码审查遗留）**
@@ -56,7 +58,8 @@
 - [ ] 三篇架构文档（`PROJECT-OVERVIEW` / `PROJECT-IMPLEMENTATION` / `WORKBENCH-PLAN`）停在 v2.4.x
 - [ ] 死代码 7 处：`FolderSlotService.GetAll/Describe`、`PromptStoreService.PathFor`、`ModuleRegistry.Unregister`、`ExplorerProbe.IsExplorerWindow`、`PeerCoordinator.GetLastNote/LastPeer`
 - [ ] `Alt+M` 失败提示偏笼统：退出码只进 `_error.log`，ToolTip 只有「转换失败：pandoc 报错」
-- [ ] 提示词库接主题色 / 搜索框占位提示 / 可拉伸窗口
+- [x] ~~提示词库 / 编辑窗接主题色~~ —— 2026-10-21 23:44 条目（含深色 Edit / ComboBox）
+- [ ] 提示词库：搜索框占位提示 / 可拉伸窗口
 - [ ] 文件夹槽位进阶（可选）：同目录多窗口合并 / 记住上次窗口位置
 
 **已知未解决**
@@ -73,12 +76,42 @@
 | 保留 v2.4.3 单文件快照作对照（`docs/legacy/`） | 重构已验证成功：旧版 30 个 `class` 全在当前 57 个里（只在旧版有的 = **0**），6 个顶层函数已转为类方法；文件可从 `git checkout a115ea3 -- docs/legacy` 取回。留着的坏处是「打包纯代码给 AI」时会误纳 4209 行，并让助手把两套架构混起来 |
 | RTF 双格式存档（`.rtf` 母版 + `.md` 副本） | 生产库 36 篇 `.rtf` / `.md` **已 1:1 全配对、rtf-only = 0** —— 双写只是维护成本。Markdown 升为母版后，Pandoc 退回「导出」一角（`Alt+M`） |
 | AHK 侧 11 条编辑热键（撤销 / 重做 / 删行 / 复制行 / 上下移行 / 搜索 / 回车 / 退出等） | 编辑器自带 + Obsidian 能做的都不重复实现；`Ctrl+Y` 让出来正好给原生重做。`Ctrl+T` 时间戳不可替代，保留 |
+| 主题表挂 5 套（护眼绿 / 纸白 / **星空** / **金克斯**） | **暂缓，非放弃**：两套图主题的前端消费（`bg` / `bgAlpha` / `bgFit`）还没打磨完，切过去只有一块纯底色。4 条定义见 git 历史（`b707a0f` 之前），接回时往 `Themes` **末尾**追加即可 |
 
 ---
 
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 23:44　P2 收口：其余窗口跟主题走；主题表砍到只剩米黄
+
+**我说**（原话）
+> 仅保留米黄一个主题颜色,后续背景图主题都稍后打磨?
+
+**意图**
+P2 让提示词库 / 编辑窗 / 日期对话框 / 启动提示都接上 `Palette()`；同时**不再挂着半成品的图主题** ——
+切换能切、切过去却是一块纯底色，不如先只留一套，等铺法打磨完再接回来。
+
+**决定 / 过程**
+- 提示词库、提示词编辑窗、日期对话框、启动提示全部改读 `ThemeService.Palette()`，各自订阅
+  `Theme.Changed` 重刷；`UiPaint` 补 `EditColors` / `ReleaseColors` / `Sweep` / `GdiCount`。
+- ComboBox 一度仍是系统白：`WM_CTLCOLOREDIT` 的 `lParam` 是它**内部的 Edit 子窗口**
+  （`parent = ComboBox`），只登记 ComboBox 白搭。用 `FindWindowExW(hwnd, 0, "Edit", 0)`
+  顺带登记内部 Edit 才修好（浅色实测 `F7F0DF`，深色 `172230`）。
+- `Themes` 删到只留「纯米黄」；`Next()` 只有一套时**空操作**（不写配置、不发事件）；
+  `_MigrateIndex()` 把老配置的 1–8 一律归 1 并写回，`ThemeSchema=3`（本机实测 `ThemeIndex=3 → 1`）。
+- 控制面板（`Alt+S`）按上一轮口径**仍未接主题**。
+
+**代价 / 风险**
+- `Alt+T` 现在按下去毫无反应（也没有提示）—— 用户可能以为它坏了；热键与帮助条目先留着，
+  主题表里出现第二套即自动恢复。
+- 图主题的 4 条定义只剩 git 历史；`docs/THEME-IMAGES.md` 的配方与实测账仍在，接回不用重调参。
+- 深色路径本轮验完就随主题下线，**没有持续回归** —— 再接深色主题时要重验 Edit / ComboBox / 红色提示行。
+
+**待办**
+- [ ] P3：背景图接前端（`bg` / `bgAlpha` / `bgFit` 已推、前端尚未消费）
+- [ ] 控制面板接主题（刻意留到最后）
 
 ### 2026-10-21 21:20　主题上收到平台，`Alt+T` 恢复（P0 + P1）
 

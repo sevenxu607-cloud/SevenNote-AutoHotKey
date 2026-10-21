@@ -20,19 +20,29 @@ class DateJumpFeature {
 
         dlg := Gui("+Resize +AlwaysOnTop", winTitle)
         dlg.SetFont("s11", "Microsoft YaHei")
-        dlg.BackColor := "FFF8E7"
+        ; 配色跟着平台主题走（对话框是短命的：打开时取一次当期色板即可，
+        ; 开着的时候按 Alt+T 不追 —— 下次打开就是新色）
+        p := ThemeService.Palette()
+        dlg.BackColor := p.win
 
         dlg.AddText("x14 y16 w60", "搜索：")
         searchEdit := dlg.AddEdit("x72 y12 w480 h26")
         searchEdit.SetFont("s11", "Microsoft YaHei")
+        ; Edit 不吃 BackColor，走 WM_CTLCOLOREDIT 登记（见 UiPaint.EditColors）
+        UiPaint.EditColors(searchEdit.Hwnd, p.codeBg, p.text)
 
-        dlg.AddText("x14 y46 w560 c808080"
+        dlg.AddText("x14 y46 w560 c" . p.dim
             , "支持模糊搜索：日期（2026-09）或标签（机器学习），空格分隔多条件")
 
         lv := dlg.AddListView("x14 y74 w538 h360", ["日期", "标签"])
         lv.ModifyCol(1, 130)
         lv.ModifyCol(2, 400)
         lv.SetFont("s10", "Microsoft YaHei")
+        UiPaint.ListView(lv.Hwnd, p.codeBg, p.text)
+
+        ; 标题栏 / 滚动条跟着主题明暗（Show 之前调，避免露面后再变一次）
+        UiPaint.TitleBar(dlg.Hwnd, p.win, p.text)
+        UiPaint.WindowTheme(dlg.Hwnd, p.dark)
 
         allItems := NoteStoreService.ListAllTags()
 
