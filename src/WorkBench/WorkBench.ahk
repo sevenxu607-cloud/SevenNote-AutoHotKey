@@ -28,7 +28,7 @@ class WorkBench {
 
         ; Phase 3b：先挂上 Launcher.Opened / SevenNote.WindowReady 的监听。
         PeerCoordinator.Init()
-        WorkBenchUI.Init()
+        WebPanelUI.Init()
     }
 
     ; ─── 平台级热键：工作台面板 + 主题 + 保存退出 ───
@@ -39,7 +39,7 @@ class WorkBench {
     static GetHotkeys() {
         return [
             {ctx: "global", key: "!s", group: "平台", line: "   Alt+S            工作台面板（帮助 + 设置）"
-                , fn: (*) => WorkBenchUI.ShowHelp()},
+                , fn: (*) => WebPanelUI.ShowHelp()},
             {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            循环切换界面主题"
                 , fn: (*) => ThemeService.Next()},
             {ctx: "global", key: "!+z", group: "平台", line: "   Alt+Shift+Z      保存并退出"

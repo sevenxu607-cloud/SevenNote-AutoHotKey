@@ -105,7 +105,7 @@ class FolderWindowFeature {
     ; ═══ 槽位没配好 ═══
 
     ; 不弹模态框（会挡住热键、只能手动关）：ToolTip 说明 + 请平台把面板开到文件夹页。
-    ; 平台类不在这里直接调 —— 发事件，WorkBenchUI 订阅后负责打开。
+    ; 平台类不在这里直接调 —— 发事件，WebPanelUI 订阅后负责打开。
     static _ReportUnusable(slot, state) {
         label := FolderSlotService.HotkeyLabel(slot)
         if (state.reason = "missing")

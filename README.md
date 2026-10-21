@@ -13,7 +13,7 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 > 📋 **版本历史** [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) ｜ 🗓 **决策日志** [`docs/DEVLOG.md`](./docs/DEVLOG.md)
 > 🎨 **主题出图** [`docs/THEME-IMAGES.md`](./docs/THEME-IMAGES.md) ｜ 🪟 **外部窗口适配** [`docs/LAUNCHER-GUIDE.md`](./docs/LAUNCHER-GUIDE.md)
 
-![version](https://img.shields.io/badge/version-2.8-blue)
+![version](https://img.shields.io/badge/version-2.10-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
@@ -118,10 +118,11 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 
 ### 🎨 主题
 
-- **主题**：纯米黄（`FFF8E7` 底 / `3D2B1F` 字）—— `Alt+T` 循环切换、自动记忆、重启保留
+- **主题**：「琉璃 · 极光霜」—— 深色冰面 + 六层材质（光雾 / 霜 / 冰棱 / specular），
+  `Alt+T` 循环切换、自动记忆、重启保留
 - 主题是**平台级**的（`WorkBench\Services\ThemeService.ahk`）：笔记窗口、标题栏、提示词库、
-  日期对话框、启动提示一起跟着变。`Alt+S` 工作台面板是**刻意的例外** —— 它有自己的配色，
-  方便和内容区区分
+  日期对话框、启动提示、`Alt+S` 工作台面板**一起**跟着变 —— 面板 v2.9 起也是 WebView2
+  页面，与笔记窗穿同一套玻璃材质，不再有自己的配色
 - ⚠ 护眼绿 / 纸白 / 星空 / 金克斯**暂时下线**，等背景图铺法打磨完再接回来（往 `Themes`
   **末尾追加**，四套的历史定义见 git）。下线期间只有一套，`Alt+T` 是**空操作** ——
   不写配置、不触发重绘
@@ -226,7 +227,7 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 | --- | --- |
 | `SevenWork.ahk` | 根目录启动器：把入口转给 `src\`，并保持 `A_ScriptDir` 指向项目根 |
 | `src\SevenWork.ahk` | 组合根：装配 + 启动 |
-| `src\WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 统一帮助 / 伙伴协调 |
+| `src\WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / WebView2 窗口骨架（`WebWindow`）/ 工作台面板（`WebPanelUI` + `PanelHostBridge`）/ 伙伴协调 |
 | `src\modules\SevenNote\` | 笔记模块：6 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
 | `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
@@ -554,17 +555,18 @@ class ExportFeature {
     , fn: (*) => ExportFeature.ExportHtml()},
 ```
 
-`group` 取 `WorkBenchUI._GroupOrder` 里的组名之一（平台 / 窗口 / 外观 / 输入增强 /
+`group` 取 `PanelData._GroupOrder` 里的组名之一（平台 / 窗口 / 外观 / 输入增强 /
 搜索 / 文本 / 文件夹 / 保存 / 日期与标签 / 编辑 / 分段）。新组不在表里也没关系，会按首次出现顺序
 自动追加到帮助末尾 —— 不用改显示函数。
 
-**完成**，不需要改任何其他 Feature，也不用再去帮助窗口里补文本：
-`HotkeyRouter` 注册与 `WorkBenchUI` 面板读的是同一份模块数据。
+**完成**，不需要改任何其他 Feature，也不用再去面板里补文本：
+`HotkeyRouter` 注册与 `WebPanelUI` 面板读的是同一份模块数据。
 
 ### 给模块加一项可调设置（`Alt+S` 面板里可改）
 
 模块**可选**实现 `GetSettingsSpec()`，面板就会在它的页面多出一块设置区。
-平台只认「怎么渲染」，不认识字段的业务含义 —— 所以加设置**不用碰 `WorkBenchUI`**。
+平台只认「怎么渲染」，不认识字段的业务含义 —— 所以加设置**不用碰 `WebPanelUI`
+和 `PanelView.vue`**。
 
 ```ahk
 class MyModule {
@@ -688,6 +690,7 @@ class MyModule {
 
 | 版本 | 日期 | 一句话 |
 | --- | --- | --- |
+| **v2.9** | 2026-10-22 | `Alt+S` 工作台面板搬进 WebView2，与笔记窗共用一套玻璃材质；`WorkBenchUI`（853 行原生控件）退役 |
 | **v2.8** | 2026-10-21 | `Alt+M` 把资源管理器里选中的 docx 转成 Markdown（含自定义标题样式修复） |
 | **v2.7** | 2026-10-20 | Folders 模块 `Alt+1/2/3` + `Alt+S` 升级为工作台面板 |
 | **v2.6** | 2026-10-20 | 提示词库 `Alt+P`（Text 模块），热键上下文从写死改为表驱动 |

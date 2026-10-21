@@ -25,15 +25,27 @@
 ;  带图的主题 bg / bgAlpha 必须成对（bgFit 可选，cover / contain）；
 ;  完整烘焙配方见 docs/THEME-IMAGES.md。
 class ThemeService {
-    ; ⚠ 主题表**现在只留「纯米黄」一套**：护眼绿 / 纸白 / 星空 / 金克斯
-    ;   全部暂时下线 —— 背景图主题的铺法（bg / bgAlpha / bgFit + 前端消费）还在打磨，
-    ;   留着半成品比不留更糟（切换能切、切过去是一块纯底色）。历史版本见 git。
+    ; ⚠ 主题表只剩**琉璃·极光霜**一套。纯米黄（flat 基线）在 v2.10 彻底下线：
+    ;   整套 UI 只走材质设计，留着一条 flat 路径等于留一条「永远没人回归的岔路」。
+    ;   护眼绿 / 纸白 / 星空 / 金克斯仍然下线（背景图主题的铺法还没打磨完），
+    ;   历史版本见 git。
     ;
-    ;   接回来时**只追加到末尾**，别插到前面：ThemeIndex 存的是下标。
-    ;   条目的字段照旧：win / edBg / text / dim 四个基色，其余由 Palette() 派生；
+    ;   要再加主题**只追加到末尾**，别插到前面：ThemeIndex 存的是下标。
+    ;   条目的字段：win / edBg / text / dim 四个基色，其余由 Palette() 派生；
     ;   带图的再补 bg + bgAlpha（成对，bgFit 可选）—— 配方见 docs/THEME-IMAGES.md。
     static Themes := [
-        {name: "纯米黄", win: "FFF8E7", edBg: "FFF8E7", text: "3D2B1F", dim: "A89880"}
+        ; 琉璃：纯代码主题，**故意不带 bg** —— 观感全部由前端 glass.css 的材质层做
+        ; （光雾 / 霜 / 冰面 / 冰棱 / specular 都在 WebView2 里），AHK 只负责底色、
+        ; 标题栏和原生窗的玻璃背衬（GlassPaint）。
+        ;   style 是皮肤开关：前端据此把 html[data-style] 设成 glass，整套材质才启用。
+        ;   配色实测：底 #08222E、正文 #E9FBFF（Lc 101.8）、次级文字 #A3C9D9（Lc 67+）；
+        ;   最亮光斑 #1E5A6E 上正文只剩 Lc 86.3 —— 所以 scrim 是结构层，不是调参项。
+        ;   ⚠ 紫色一律用 #C9B6FF（Lc 67.8）；#A78BFA（Lc 47）只配做光斑装饰。
+        ;   material 是材质参数的覆盖点（键名映射成 --sw-<key>）；缺省即
+        ;   tokens.css 里的「适中」档（blur 22 / sat 150% / tint .045 / edge .7 /
+        ;   frost .035 / spec 1）—— 默认值只写一处，这里不跟着抄一遍。
+        {name: "琉璃·极光霜", win: "061A24", edBg: "08222E", text: "E9FBFF", dim: "A3C9D9"
+            , accent: "67E8F9", style: "glass"}
     ]
 
     static _current := 1
@@ -70,7 +82,15 @@ class ThemeService {
             codeBg: this._Shift(t.edBg, dark ? 12 : -8),
             bg:     t.HasProp("bg") ? t.bg : "",
             bgAlpha: t.HasProp("bgAlpha") ? t.bgAlpha : 0,
-            bgFit:  t.HasProp("bgFit") ? t.bgFit : "cover"
+            bgFit:  t.HasProp("bgFit") ? t.bgFit : "cover",
+            ; ── 材质（glass）────────────────────────────────────────────────
+            ; style 为空 = flat（米黄的默认行为，前端一个字节都不改）；
+            ; 给了 "glass" 才启用 glass.css 整套材质（前端把 html[data-style] 设成它）。
+            ; material 是**可选**的手动覆盖：键名直接映射成 --sw-<key>，
+            ; 值必须是可直接写进 CSS 的字符串（"14px" / "rgba(...)"）。
+            ; 缺省时前端用 glass.css 里的默认值 —— 默认值只写一处，这里不抄一遍。
+            style:  t.HasProp("style") ? t.style : "",
+            material: t.HasProp("material") ? t.material : ""
         }
         return p
     }
@@ -122,17 +142,17 @@ class ThemeService {
     }
 
     ; ─── 旧下标迁移 ───────────────────────────────────────────────────────
-    ; 主题表被精简过两次，而配置里存的始终是**下标**：
+    ; 主题表被精简过三次，而配置里存的始终是**下标**：
     ;   schema 1 = 8 套（v2.4 之前）   schema 2 = 5 套（v2.4–v2.8）
-    ;   schema 3 = 1 套（只留纯米黄，背景图主题等打磨完再接）
+    ;   schema 3 = 1 套（v2.9：只留纯米黄）   schema 4 = 1 套（v2.10：只留琉璃）
     ; 现在只有 1 套，所以**老配置的 1–8 一律归 1**，逐条映射已无意义。
     ; ⚠ 迁移只能做一次，并且**必须把新值写回配置** —— 否则每次启动都拿 ThemeIndex=5
     ;   去撞越界兜底，配置里永远躺着一个不存在的下标。
     static _MigrateIndex(idx) {
-        if (ConfigService.ReadInt("Appearance", "ThemeSchema", 1) >= 3)
+        if (ConfigService.ReadInt("Appearance", "ThemeSchema", 1) >= 4)
             return idx
         ConfigService.Write("Appearance", "ThemeIndex", 1)
-        ConfigService.Write("Appearance", "ThemeSchema", 3)
+        ConfigService.Write("Appearance", "ThemeSchema", 4)
         return 1
     }
 

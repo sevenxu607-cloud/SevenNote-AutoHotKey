@@ -25,7 +25,11 @@ class SevenNoteModule {
         g.Opt("+AlwaysOnTop +Resize +MinSize450x300")
         ; 首帧底色：Chromium 起来前不铺东西会露白。取当前主题的窗底色同档。
         g.SetFont("s14", "楷体")
-        g.BackColor := ThemeService.Palette().win
+        pInit := ThemeService.Palette()
+        g.BackColor := pInit.win
+        ; 玻璃背衬（只有玻璃主题给）。主窗客户区被 WebView2 整块盖住，这里要的是
+        ; **非客户区**（标题栏 / 边框）与圆角 —— 那正是 DWM 背板真正生效的地方。
+        UiPaint.Glass(g.Hwnd, pInit.style, pInit.win)
 
         ; ─── 客户区整个交给 WebView2 ───
         ; 字数 / 标签 / 主题名 / 日期 / 提示原本是 6 个 Text 控件，现在全在页面里
@@ -75,17 +79,29 @@ class SevenNoteModule {
         p := ThemeService.Palette()
         g.BackColor := p.win
         UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+        ; 玻璃背衬跟着主题走：切到 glass 时铺、切回 flat 时由 UiPaint.Glass 撤掉
+        UiPaint.Glass(g.Hwnd, p.style, p.win)
 
         ; 前端：--sw-* 全套一次推过去。页面没起来时 Eval 返回 {ok:false}，忽略即可 ——
         ; 前端 onMounted 还会再 getTheme 一次，不会留旧色。
         if this._mounted
             WebHostService.Eval("window.__sevenwork&&window.__sevenwork.applyTheme("
-                . NoteHostThemeJson() . ")")
+                . ThemeJson() . ")", g.Hwnd)
     }
 
     static _AfterShown() {
-        if this._mounted
-            WebHostService.Resize()
+        if !this._mounted
+            return
+        ; ⚠ 显式传 hwnd：WebHostService v2.10 起多实例，无参会落到「最近挂载的窗口」上 ——
+        ;   面板一开，这里就会把笔记窗的尺寸补给面板（笔记窗自己反而还是 0×0）。
+        hwnd := State.GetGuiHwnd()
+        if !hwnd
+            return
+        WebHostService.Resize(hwnd)
+        ; 玻璃主题的入场编排：必须在窗口**已经可见**之后调 ——
+        ; 隐藏态下 WebView2 不合成，动画等于在后台跑完，用户看到的第一帧就是终态。
+        if ThemeService.Palette().style
+            WebHostService.Eval("window.__swfx&&window.__swfx.reveal()", hwnd)
     }
 
     ; ─── 启动：挂 WebView2 → 载入当天 ───
@@ -143,13 +159,13 @@ class SevenNoteModule {
         ; 笔记图片在 vault 下，markdown 里写的是 ./_assets/<date>/x.png；
         ; 相对 app.local 会解析成 app.local/_assets/… → 404。把 vault 另挂一个主机，
         ; 前端显示时加前缀、存盘时剥掉（见 web/src/ahk.ts 的路径双态）。
-        m := WebHostService.MapHost("vault.local", Config.GetVault())
+        m := WebHostService.MapHost("vault.local", Config.GetVault(), g.Hwnd)
         if !m.ok
             LogError("vault 映射失败：" . m.reason)
 
-        WebHostService.Bind("ahk", NoteHostHandlers())
+        WebHostService.Bind("ahk", NoteHostHandlers(), g.Hwnd)
 
-        n := WebHostService.Navigate("/index.html?view=note")
+        n := WebHostService.Navigate("/index.html?view=note", g.Hwnd)
         if !n.ok {
             LogError("导航失败：" . n.reason)
             return false
@@ -157,19 +173,13 @@ class SevenNoteModule {
         this._mounted := true
         ; 隐藏态也铺一次：给 Chromium 一个初始尺寸，免得首次显示时先闪一帧空白。
         ; 真正的尺寸要等父窗口可见（Window.Shown → _AfterShown）。
-        WebHostService.Resize()
+        WebHostService.Resize(g.Hwnd)
         return true
     }
 
-    ; 前端产物目录：开发态在 <repo>\web\dist（src\ 的同级）；
-    ; 编译版与 exe 同级（打包时把 dist 一起放过去即可）。
-    static _DistDir() {
-        for p in [A_ScriptDir . "\..\web\dist", A_ScriptDir . "\web\dist"] {
-            if DirExist(p)
-                return p
-        }
-        return ""
-    }
+    ; 前端产物目录：开发态在 <repo>\web\dist（src\ 的同级）；编译版与 exe 同级。
+    ; 实现搬进 WebHostService —— 面板也要同一个目录，谁都不该是「标准的来源」。
+    static _DistDir() => WebHostService.DistDir()
 
     static OnSize(guiObj, MinMax, Width, Height) {
         ; 最小化时 Width/Height 是图标尺寸（实测约 158x26），
@@ -177,7 +187,7 @@ class SevenNoteModule {
         if (MinMax = -1)
             return
         if this._mounted
-            WebHostService.Resize()
+            WebHostService.Resize(guiObj.Hwnd)
     }
 
     ; 笔记模块的热键

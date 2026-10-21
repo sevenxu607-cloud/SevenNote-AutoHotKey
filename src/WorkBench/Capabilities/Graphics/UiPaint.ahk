@@ -65,11 +65,26 @@ class UiPaint {
         return true
     }
 
+    ; ─── 玻璃背衬 ─────────────────────────────────────────────────────────
+    ; 转调 GlassPaint（同领域纯能力）：style 为空（flat 主题）时**什么都不做** ——
+    ; 米黄的窗口一个像素都不该变；圆角也只在玻璃主题下给（flat 保持直角，与旧版一致）。
+    ; ⚠ 只收「字符串 / 数字」，不收 Palette 对象 —— 能力层不认识业务色板。
+    static Glass(hwnd, style, tintHex) {
+        if (style != "glass") {
+            ; 从玻璃主题切回扁平：撤掉背板与圆角，否则窗口还挂着半透明那层
+            return GlassPaint.Clear(hwnd)
+        }
+        GlassPaint.Rounded(hwnd)
+        return GlassPaint.Apply(hwnd, tintHex, 0xB4)
+    }
+
     ; ─── ListView 底色 ────────────────────────────────────────────────────
     ; ListView **不吃** Gui.BackColor，必须整块走 Windows 消息单独上色。
     ;   0x1001 LVM_SETBKCOLOR        控件底
     ;   0x1024 LVM_SETTEXTCOLOR      正文
-    ;   0x1025 LVM_SETTEXTBKCOLOR    文字底（必须与控件底一致，否则行间夹白条）
+    ;   0x1026 LVM_SETTEXTBKCOLOR    文字底（必须与控件底一致，否则整块行区仍是系统白）
+    ;          ⚠ 写成 0x1025 是 **GET**TEXTBKCOLOR —— 不报错、只是什么也没设，
+    ;          症状是「控件底变深了、每一行还是白的」（2026-10-22 实测踩到）。
     ;   0x1036 LVM_SETEXTENDEDLISTVIEWSTYLE + LVS_EX_DOUBLEBUFFER：
     ;          每敲一个字就整表重填，不双缓冲会看到闪白。
     static ListView(hwnd, bgHex, fgHex) {
@@ -77,10 +92,14 @@ class UiPaint {
             return false
         bg := this.Bgr(bgHex)
         fg := this.Bgr(fgHex)
+        ; ⚠ 必须先摘掉视觉样式：带主题的 ListView 会**忽略** LVM_SETBKCOLOR，
+        ;   白底照旧 —— 「侧栏导航白底写白字」就是这么来的（2026-10-22 实测）。
+        ;   DarkMode_Explorer 顺带把滚动条与选中行一起带进深色；浅色主题走 Explorer。
+        this.WindowTheme(hwnd, this.IsDark(bgHex))
         try {
             this._Lvm(hwnd, 0x1001, 0, bg)
             this._Lvm(hwnd, 0x1024, 0, fg)
-            this._Lvm(hwnd, 0x1025, 0, bg)
+            this._Lvm(hwnd, 0x1026, 0, bg)
             this._Lvm(hwnd, 0x1036, 0x00010000, 0x00010000)
             ; 改完立刻重画：调用点通常在 Show() 之前，不重画会先看到一帧系统白
             DllCall("user32\InvalidateRect", "ptr", hwnd, "ptr", 0, "int", 1)

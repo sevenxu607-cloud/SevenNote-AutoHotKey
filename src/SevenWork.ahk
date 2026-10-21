@@ -39,7 +39,7 @@ Persistent()
 ;    另有 CAPABILITY 平台能力（src/WorkBench/Capabilities/，只收 hwnd / 数字 / Rect）
 ;    与 Coordinator（跨模块协调，不算能力层）。
 ;    本文件只保留组合根：首次引导、模块装配、启动提示；热键注册在 HotkeyRouter，
-;    帮助 / 设置面板在 WorkBenchUI，其余实现分居 WorkBench/ 与 modules/<模块>/。
+;    帮助 / 设置面板在 WebPanelUI（WebView2），其余实现分居 WorkBench/ 与 modules/<模块>/。
 ;
 ;  【核心技术决策】
 ;    1. EM_STREAMOUT/EM_STREAMIN 直读直写 RTF；Pandoc 转 RTF → Markdown（软依赖）
@@ -68,7 +68,9 @@ Persistent()
 #Include WorkBench\Kernel\State.ahk
 #Include WorkBench\ModuleRegistry.ahk
 #Include WorkBench\HotkeyRouter.ahk
-#Include WorkBench\WorkBenchUI.ahk
+#Include WorkBench\PanelHostBridge.ahk
+#Include WorkBench\WebWindow.ahk
+#Include WorkBench\WebPanelUI.ahk
 
 ; ═══════════════════════════════════════════════════════════════════════════
 ;  CAPABILITY 平台能力层 —— 纯平台能力，不认识业务模块
@@ -81,6 +83,7 @@ Persistent()
 #Include WorkBench\Capabilities\Graphics\BackdropService.ahk
 ; UiPaint：Win32 染色原语（标题栏 / 滚动条主题 / ListView 底色）。
 ; 只收 hwnd + 颜色字符串，不认主题、不读 Config —— 主题是业务策略，在 WorkBench\Services。
+#Include WorkBench\Capabilities\Graphics\GlassPaint.ahk
 #Include WorkBench\Capabilities\Graphics\UiPaint.ahk
 ; ExplorerProbe：按**真实路径**找资源管理器窗口（读 Shell.Application.Windows）。
 ; 不用窗口标题 —— 标题是文件夹名，重名 / 本地化都靠不住。Folders 模块用它做显隐定位。
@@ -244,6 +247,7 @@ Persistent()
 ; 顺序有意义：#Include 的先后就是类的可用性，模块类必须最后引入。
 
 #Include modules\Text\Services\PromptStoreService.ahk
+#Include modules\Text\HostBridge.ahk
 #Include modules\Text\Features\PromptWindowFeature.ahk
 #Include modules\Text\Features\PromptEditFeature.ahk
 #Include modules\Text\TextModule.ahk
@@ -455,6 +459,8 @@ ShowStartupTip() {
     tip.AddText("x20 y16 w200 h48 Center c" . p.text
         , Config.AppName . " 已启动！`nAlt+S 打开工作台")
     UiPaint.TitleBar(tip.Hwnd, p.win, p.text)
+    ; 启动提示也吃玻璃：它活在桌面上，背衬比底色更显眼
+    UiPaint.Glass(tip.Hwnd, p.style, p.win)
     tipY := A_ScreenHeight * 0.65
     tip.Show("w240 h80 y" . tipY)
     ; ⚠ 1.5 秒内用户可能自己把这扇提示窗关掉 —— 再 Destroy() 一次会抛异常，

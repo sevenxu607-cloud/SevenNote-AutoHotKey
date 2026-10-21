@@ -48,7 +48,7 @@ class LauncherModule {
             LogError("伙伴窗口移动失败：" . res.reason)
     }
 
-    ; 由 HotkeyRouter / WorkBenchUI 聚合 —— 注册与 Alt+S 帮助共用这一份数据。
+    ; 由 HotkeyRouter / WebPanelUI 聚合 —— 注册与 Alt+S 帮助共用这一份数据。
     static GetHotkeys() {
         return [
             {ctx: "global", key: "!c", group: "输入增强"

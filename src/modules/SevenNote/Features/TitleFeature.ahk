@@ -16,14 +16,21 @@ class TitleFeature {
 
         dlg := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "日期标签")
         dlg.SetFont("s11", "Microsoft YaHei")
-        dlg.BackColor := "FFF8E7"
-        dlg.AddText("x14 y12 w340", "为 " . date . " 设置标签：")
+        ; 这一扇从前写死米黄 —— 深色主题下就是「白底 + 黑字」的孤岛
+        p := ThemeService.Palette()
+        dlg.BackColor := p.win
+        UiPaint.TitleBar(dlg.Hwnd, p.win, p.text)
+        UiPaint.WindowTheme(dlg.Hwnd, p.dark)
+        UiPaint.Glass(dlg.Hwnd, p.style, p.win)
+        dlg.AddText("x14 y12 w340 c" . p.text, "为 " . date . " 设置标签：")
         edit := dlg.AddEdit("x14 y38 w340 h26", currentTag)
         edit.SetFont("s11", "Microsoft YaHei")
+        ; Edit 不吃 BackColor，走 WM_CTLCOLOREDIT 登记
+        UiPaint.EditColors(edit.Hwnd, p.codeBg, p.text)
         btnOk := dlg.AddButton("Default x14 y76 w100", "确定")
         btnClear := dlg.AddButton("x122 y76 w100", "清除")
         btnCancel := dlg.AddButton("x230 y76 w100", "取消")
-        dlg.AddText("x14 y112 w340 c808080"
+        dlg.AddText("x14 y112 w340 c" . p.dim
             , "示例：2026-09-19-机器学习`n标签会写进文件名，黑曜石里一眼可见")
 
         OnSubmit(*) {

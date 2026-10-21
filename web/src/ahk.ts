@@ -57,28 +57,79 @@ export interface Theme {
   dark?: boolean // 是否深色（AHK 判，避免两边公式不一致）
   bg?: string // 背景图绝对路径（P3 背景图主题用，当前不消费）
   bgAlpha?: number // 背景图遮罩 0-100（P3）
+
+  /** 材质风格：glass = 琉璃；缺省或其它值 = flat（现有米黄外观） */
+  style?: string
+  /**
+   * 材质参数 —— 键名直接映射成 --sw-<key>，值是**可直接写进 CSS 的字符串**。
+   * 例：{tint: "rgba(190,245,255,.055)", blur: "14px"}
+   * AHK 侧只负责给值，不认识任何 DOM。缺字段就沿用 glass.css 的默认值。
+   */
+  material?: Record<string, string>
 }
 
-/** AHK 推主题：__sevenwork.applyTheme({name, win, edBg, text, dim, accent, ...}) */
+/** AHK 推主题：__sevenwork.applyTheme({name, win, edBg, text, dim, accent, style, material}) */
 export function applyTheme(t: Theme): void {
-  const r = document.documentElement.style
+  const root = document.documentElement
+  const r = root.style
   const hex = (v: string) => (v.startsWith('#') ? v : '#' + v)
 
-  r.setProperty('--sw-bg', hex(t.edBg))
-  r.setProperty('--sw-bg-alt', hex(t.win))
-  r.setProperty('--sw-fg', hex(t.text))
-  r.setProperty('--sw-dim', hex(t.dim))
+  const paint = () => {
+    r.setProperty('--sw-bg', hex(t.edBg))
+    r.setProperty('--sw-bg-alt', hex(t.win))
+    r.setProperty('--sw-fg', hex(t.text))
+    r.setProperty('--sw-dim', hex(t.dim))
 
-  // accent / border / codeBg / dark 全部由 AHK 的 ThemeService.Palette() 派生后推来。
-  // 从前这几个前端自己算（border 干脆一直用 CSS 里那支米黄 #d8cdb0）—— 深色主题下
-  // 既不像分隔线也不像强调色。派生只写一处，网页与 AHK 窗口才对得上。
-  // 缺字段时退回本地推导：`npm run dev` 在浏览器里跑，没有 AHK 推值。
-  const dark = t.dark ?? luminance(t.edBg) < 128
-  r.setProperty('--sw-accent', hex(t.accent ?? (dark ? '7FB4D8' : '4A7C9E')))
-  r.setProperty('--sw-border', hex(t.border ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -14))))
-  r.setProperty('--sw-code-bg', hex(t.codeBg ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -8))))
-  r.setProperty('--sw-select', hexToRgba(t.accent ?? t.dim, 0.26))
-  document.documentElement.dataset.theme = t.name
+    // accent / border / codeBg / dark 全部由 AHK 的 ThemeService.Palette() 派生后推来。
+    // 从前这几个前端自己算（border 干脆一直用 CSS 里那支米黄 #d8cdb0）—— 深色主题下
+    // 既不像分隔线也不像强调色。派生只写一处，网页与 AHK 窗口才对得上。
+    // 缺字段时退回本地推导：`npm run dev` 在浏览器里跑，没有 AHK 推值。
+    const dark = t.dark ?? luminance(t.edBg) < 128
+    r.setProperty('--sw-accent', hex(t.accent ?? (dark ? '7FB4D8' : '4A7C9E')))
+    r.setProperty('--sw-border', hex(t.border ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -14))))
+    r.setProperty('--sw-code-bg', hex(t.codeBg ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -8))))
+    r.setProperty('--sw-select', hexToRgba(t.accent ?? t.dim, 0.26))
+    r.setProperty('--sw-ring', hexToRgba(t.accent ?? t.dim, 0.3))
+    root.dataset.theme = t.name
+
+    // 材质：键名白名单化后再写，避免 AHK 推来个奇怪键名污染 style
+    root.dataset.style = t.style || 'flat'
+    if (t.material) {
+      for (const key of Object.keys(t.material)) {
+        if (!/^[a-z][a-z0-9-]*$/.test(key)) continue
+        const v = t.material[key]
+        if (typeof v === 'string' && v) r.setProperty(`--sw-${key}`, v)
+      }
+    }
+  }
+
+  // 换主题走一次 View Transition：整窗交叉溶解，而不是逐个属性慢慢变。
+  // ⚠ .theming 期间禁掉所有 transition/animation —— 不然后台那些 :hover 过渡
+  //   会跟着一起触发，看起来像有人把整窗亮度拧了一遍。
+  root.classList.add('theming')
+
+  // ⚠ 必须有兜底：View Transition 的 finished 在某些情况下不会 resolve
+  //   （transition 被跳过 / 页面在后台）。只靠它摘 .theming 会把动画永久禁掉。
+  let guard = 0
+  const done = () => {
+    window.clearTimeout(guard)
+    window.setTimeout(() => root.classList.remove('theming'), 40)
+  }
+  guard = window.setTimeout(() => root.classList.remove('theming'), 900)
+
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+  const vt = (document as any).startViewTransition
+  if (!reduce && typeof vt === 'function') {
+    try {
+      const trans = (document as any).startViewTransition(paint)
+      Promise.resolve(trans?.finished).then(done, done)
+      return
+    } catch {
+      // 掉回同步路径，别让换主题因为一个过场 API 失败
+    }
+  }
+  paint()
+  done()
 }
 
 /* ── 颜色小工具（主题推下来的是 6 位 hex，不带 #）───────────────────── */
@@ -194,4 +245,91 @@ export function toStoredMarkdown(md: string): string {
     /(!\[[^\]]*\]\()https:\/\/vault\.local\/([^)\s]+)(\))/g,
     '$1./$2$3',
   )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   工作台面板（Alt+S）—— 数据契约
+   与 src\WorkBench\PanelHostBridge.ahk 的 PanelData.Json() 逐字对齐。
+   ⚠ 改字段名必须两边同改：前端拿到 undefined 不报错，只会静默少一行 / 少一栏。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+export interface PanelHotkey {
+  key: string
+  label: string
+  note?: string
+}
+
+/** 「全部热键」视图按组分段；模块页没有 groups（平铺在 hotkeys 里） */
+export interface PanelGroup {
+  name: string
+  items: PanelHotkey[]
+}
+
+export interface PanelField {
+  key: string
+  label: string
+  /** "folder" = 带「浏览…」按钮；缺省 / "text" = 普通文本框 */
+  kind: string
+  value: string
+  /** 空输入框里的灰字提示，只显示、不进值 */
+  placeholder: string
+}
+
+export interface PanelSpec {
+  title: string
+  hint: string
+  /** 后端 spec 里有没有 apply —— 没有就不显示「保存设置」 */
+  hasApply: boolean
+  fields: PanelField[]
+}
+
+export interface PanelRow {
+  id: string
+  /** view = 「全部热键」那一页；module = 各模块 */
+  kind: 'view' | 'module'
+  name: string
+  desc: string
+  count: number
+  failed: boolean
+  groups?: PanelGroup[]
+  hotkeys?: PanelHotkey[]
+  spec: PanelSpec | null
+}
+
+export interface PanelData {
+  app: string
+  version: string
+  vault: string
+  total: number
+  modules: number
+  /** 首屏停在哪一页（模块 Id；空串 = 第一页）。由 AHK 的 ShowHelp(id) 记下 */
+  focus: string
+  rows: PanelRow[]
+}
+
+/** 拉整份面板数据；浏览器预览里返回 null（调用方退回内置示例） */
+export async function fetchPanel(): Promise<PanelData | null> {
+  if (!isHosted()) return null
+  const raw = await ahkCall<string>('getPanel')
+  return raw ? (JSON.parse(raw) as PanelData) : null
+}
+
+/**
+ * 存某模块的设置：值按 fields 的声明顺序送。
+ *
+ * ⚠ **必须补满 8 个**：AHK 侧 PanelHostApply 是固定 8 个形参 —— hostObjects 走
+ *   IDispatch，变参（`args*`）在这种调用方式下不可靠，而前端也拿不到「AHK 想要几个」。
+ *   超过 8 个字段要同步加长 AHK 那边（目前最多的是文件夹的 3 个）。
+ *
+ * ⚠ AHK 侧的方法键名是 **saveSettings** 而不是 apply：hostObjects 在 JS 侧是 Proxy，
+ *   `b['apply']` 会先命中内置的 Function.prototype.apply —— 拿到的是原生函数，
+ *   一调就抛「TypeError: Function.prototype.apply was called on ...」，
+ *   而调用点大多在 try 里，表现成「点保存没反应 + 状态栏一行看不懂的错」。
+ *
+ * 返回 "ok" | "err:原因"。
+ */
+export async function applySettings(moduleId: string, values: string[]): Promise<string> {
+  const pad = values.slice(0, 8)
+  while (pad.length < 8) pad.push('')
+  return String(await ahkCall<string>('saveSettings', moduleId, ...pad))
 }

@@ -1,0 +1,118 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   motion.css —— 动效与过场
+   · 全部挂在 html[data-style='glass'] 下；flat 主题没有一丝动画
+   · 三个原则：
+     ① 只动 transform / opacity / filter —— 走合成层，不触发布局与重绘
+     ② 动画结束立刻摘掉 will-change，否则合成层一直挂着吃显存
+     ③ 任何时刻都能被 prefers-reduced-motion 一键关掉
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* @property 让自定义属性可被插值 —— 普通自定义属性是字符串，
+   写了 transition 也只会「瞬间跳变」，这是最容易踩的坑。 */
+@property --sw-sweep {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: -1;
+}
+
+/* ── 呼出 / 收起 ────────────────────────────────────────────────────────
+   AHK 唤出窗口时调 window.__swfx.reveal()，给 html 加 .sw-revealing。
+   ⚠ 收起前必须先调 __swfx.reset()：否则隐藏期间动画已跑完，
+     下次 Show() 的第一帧会闪一下完整的画面（实测过）。
+   480ms 是「允许为漂亮让步」换来的预算；任何一帧掉到 30fps 就该砍 blur。 */
+html[data-style='glass'].sw-revealing #app {
+  will-change: opacity, transform, filter;
+  animation: sw-reveal var(--sw-dur-slow) var(--sw-ease-out) both;
+}
+
+@keyframes sw-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.965);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+/* 工具条的一次性扫光：只在呼出时跑一次，不常驻。
+   ⚠ 用 ::after 不是 ::before —— .note-head 的 ::before 留给将来的装饰，别抢。 */
+html[data-style='glass'].sw-revealing .note-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(210, 250, 255, 0.34) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: sw-sweep 560ms 140ms var(--sw-ease-out) both;
+}
+
+@keyframes sw-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* 内容分层淡入：正文先、工具条次、页脚最后。
+   用 animation-delay 而不是改 DOM 顺序 —— 布局一次都不动。 */
+html[data-style='glass'].sw-revealing .note-body {
+  animation: sw-fade-up 420ms 180ms var(--sw-ease-out) both;
+}
+
+html[data-style='glass'].sw-revealing .note-foot {
+  animation: sw-fade-up 320ms 260ms var(--sw-ease-out) both;
+}
+
+@keyframes sw-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── 主题切换：一次交叉溶解，而不是逐个属性慢慢变 ──────────────────────
+   Alt+T 换主题时前端给 html 挂 .theming，300ms 后摘掉。
+   ⚠ 不抑制的话，:hover 的 transition 会跟着触发，
+     整窗像被人逐个元素拧亮度 —— 廉价感的来源就在这里。 */
+html.theming,
+html.theming *,
+html.theming *::before,
+html.theming *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── 无障碍兜底 ─────────────────────────────────────────────────────────
+   减少动效时连呼出动画一起关掉 —— 但**保留 opacity 的瞬间切换**，
+   否则窗口会"突然全黑"。 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-style='glass'].sw-revealing #app {
+    animation: none;
+    opacity: 1;
+  }
+
+  html[data-style='glass'].sw-revealing .note-head::after,
+  html[data-style='glass'].sw-revealing .note-body,
+  html[data-style='glass'].sw-revealing .note-foot {
+    animation: none;
+  }
+}

@@ -43,6 +43,8 @@ class DateJumpFeature {
         ; 标题栏 / 滚动条跟着主题明暗（Show 之前调，避免露面后再变一次）
         UiPaint.TitleBar(dlg.Hwnd, p.win, p.text)
         UiPaint.WindowTheme(dlg.Hwnd, p.dark)
+        ; 玻璃背衬（只有玻璃主题给）：见 GlassPaint 的降级链
+        UiPaint.Glass(dlg.Hwnd, p.style, p.win)
 
         allItems := NoteStoreService.ListAllTags()
 

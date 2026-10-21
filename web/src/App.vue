@@ -1,12 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import NoteEditor from './components/NoteEditor.vue'
+import GlassLab from './components/GlassLab.vue'
+import PanelView from './components/PanelView.vue'
+import PromptView from './components/PromptView.vue'
 import { isHosted, ahkCall, applyTheme, type Theme } from './ahk'
 
-/* ── 页面切换：现在是两个视图，模块化路由留到 S3 ─────────────────── */
+/* ── 页面切换：现在是五个视图，模块化路由留到 S3 ─────────────────── */
 // 支持 ?view=note 直达 —— 真机验证与将来从 AHK 唤起特定页面都用得上
-const view = ref<'self' | 'note'>(
-  new URLSearchParams(location.search).get('view') === 'note' ? 'note' : 'self',
+// ?view=lab：材质样板（S0），浏览器里单独验收「琉璃」观感，不接 AHK
+// ?view=panel：工作台面板（Alt+S），数据全部来自 AHK 的 PanelHostBridge
+// ?view=prompts：提示词库（Alt+P），数据来自 Text 模块的 HostBridge
+const _q = new URLSearchParams(location.search).get('view')
+const view = ref<'self' | 'note' | 'lab' | 'panel' | 'prompts'>(
+  _q === 'note'
+    ? 'note'
+    : _q === 'lab'
+      ? 'lab'
+      : _q === 'panel'
+        ? 'panel'
+        : _q === 'prompts'
+          ? 'prompts'
+          : 'self',
 )
 
 /* ── 自检页 ─────────────────────────────────────────────────────── */
@@ -49,7 +64,6 @@ const DEMO_MD = [
 ].join('\n')
 
 const noteMd = ref(DEMO_MD)
-const saved = ref('')
 
 /* ── 宿主（AHK）入口 ───────────────────────────────────────────────
    AHK 用 WebHostService.Eval('window.__swnote.setMarkdown("…")') 灌内容。
@@ -127,12 +141,6 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function save() {
-  // S2a 只是「证明编辑器能产出 markdown」，真正落盘要等 S2b 接 AHK
-  localStorage.setItem('sevenwork.note.preview', noteMd.value)
-  saved.value = `已暂存 ${new Date().toLocaleTimeString()}`
-}
-
 onMounted(() => {
   // 宿主入口只挂一次；重新导航页面会重建，不需要额外清理
   // ⚠ 未捕获的 Promise 拒绝在 WebView2 里完全静默（不写 console、不弹窗），
@@ -183,7 +191,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="shell" :class="{ solo: view === 'note' }">
+  <!-- 材质样板独立成页：它自带全屏底（光雾 + 霜），不套 .shell 骨架 -->
+  <GlassLab v-if="view === 'lab'" />
+  <!-- 工作台面板同理：自己整页布局（两块玻璃板 + 底栏），不套 .shell -->
+  <PanelView v-else-if="view === 'panel'" />
+  <!-- 提示词库：整页列表（搜索 + 条目 + 状态行），也不套 .shell -->
+  <PromptView v-else-if="view === 'prompts'" />
+  <div v-else class="shell" :class="{ solo: view === 'note' }">
     <aside v-if="view !== 'note'" class="side">
       <div class="brand">
         <span class="dot" />SevenWork
@@ -231,22 +245,15 @@ onMounted(async () => {
       </section>
     </main>
 
+    <!-- 纯编辑器：**不设题头** —— 标题由笔记正文第一行（`📅 日期 速记`）承担，
+         窗口标题已是 SevenNote；再挂一块「笔记 / Milkdown · …」只会把正文挤下去，
+         说明文字还会在小窗口里折成两行。字数放底部状态行，对应原生版 StatusBar 的位置。 -->
     <main v-else class="main note">
-      <header class="note-head">
-        <div>
-          <h1>笔记</h1>
-          <p class="sub">Milkdown · 输入即 Markdown · 图片粘贴自动落盘</p>
-        </div>
-        <div class="note-act">
-          <span class="dim">{{ noteMd.length }} 字符</span>
-          <button @click="save">暂存</button>
-        </div>
-      </header>
       <div class="note-body">
         <!-- v-model 是单向回吐：编辑器是唯一真源，不反向覆写它 -->
         <NoteEditor ref="editorRef" v-model="noteMd" @ready="onEditorReady" />
       </div>
-      <div v-if="saved" class="note-foot">{{ saved }}</div>
+      <div class="note-foot">{{ noteMd.length }} 字</div>
     </main>
   </div>
 </template>
@@ -403,59 +410,13 @@ textarea:focus {
   min-height: 0;
 }
 
-.note-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px 12px;
-  border-bottom: 1px solid var(--sw-border);
-  flex: none;
-}
-
-.note-head h1 {
-  font-size: 18px;
-  margin: 0 0 2px;
-}
-
-.note-head .sub {
-  margin: 0;
-  font-size: 12px;
-}
-
-.note-act {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: none;
-}
-
-.note-act button {
-  padding: 5px 14px;
-  border: 1px solid var(--sw-border);
-  border-radius: 6px;
-  background: var(--sw-bg-alt);
-  color: var(--sw-fg);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.note-act button:hover {
-  border-color: var(--sw-accent);
-  color: var(--sw-accent);
-}
-
-.dim {
-  font-size: 12px;
-  color: var(--sw-dim);
-}
-
 .note-body {
   flex: 1 1 auto;
   min-height: 0;
 }
 
+/* 底部状态行：对应原生版 `StatusBar` 的位置（原来显示日期 / 星期 / 标签）。
+   现在只留字数 —— 其余信息 AHK 侧没有往前端推，别在这儿假装有。 */
 .note-foot {
   flex: none;
   padding: 6px 22px;

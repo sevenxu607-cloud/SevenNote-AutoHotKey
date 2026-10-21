@@ -221,6 +221,10 @@ class WindowFeature {
     static Hide() {
         g := State.GetGui()
         EventBus.Emit("Window.BeforeHide")
+        ; ⚠ 玻璃主题的入场编排必须在这里归位：不 reset 的话，隐藏期间那 480ms
+        ;   照样跑完 —— 下次 Show() 的第一帧直接是终态，看起来像「动画没了、闪一下」。
+        ;   页面没挂载时 Eval 返回 {ok:false}，忽略即可。
+        WebHostService.Eval("window.__swfx&&window.__swfx.reset()")
         this._RememberPosition(g.Hwnd)
         g.Hide()
     }

@@ -1,0 +1,567 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   lab.css —— 材质样板（S0）：验证「琉璃 · 极光霜」到底能不能立起来
+   · 作用域：只挂 .lab 前缀 —— 不碰 html[data-style='glass']，
+     笔记窗的现有观感一个字不改，定型后再把 .lab 换成主题作用域。
+   · 六层材质，缺一层就掉回「深色主题」：
+       ① 光雾 .lab__aurora   彩色光球缓慢漂移，一切反射的来源
+       ② 霜   .lab__grain    feTurbulence 噪点，**在玻璃之上** + overlay
+       ③ 玻璃 .gl            backdrop-filter 把底层光雾冻住
+       ④ 厚度 .gl 的 box-shadow 顶高光 / 底暗边 / 内描边 / 三层投影
+       ⑤ 冰棱 .gl::before     conic-gradient 渐变边框（mask 挖空）
+       ⑥ 反光 .gl::after     鼠标位置驱动的 specular，plus-lighter 叠加
+   · ⚠ 玻璃的前提是「背后有东西可透」：.lab 底下必须先是会动的光雾，
+     否则 backdrop-filter 模糊纯色 = 纯色，CSS 全白费（这是上一版的病根）。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. 页面基座 ────────────────────────────────────────────────────── */
+.lab {
+  /* 墨色（文字三档）—— scrim 之后板面是深的，次要文字不能按浅底配色取 */
+  --lab-ink: #eafcff;
+  --lab-ink-dim: #b6d7e4;
+  --lab-ink-faint: #82a8ba;
+
+  /* 光色（极光五色，暖橙只占 16% 做冷暖对比，多了就脏）*/
+  --lab-teal: 45, 212, 191;
+  --lab-indigo: 124, 108, 240;
+  --lab-ice: 103, 232, 249;
+  --lab-violet: 192, 132, 252;
+  --lab-warm: 240, 168, 104;
+
+  --lab-abyss: #04121a;
+  /* 霜别开高：0.09 时整屏像磨砂脏了，0.035 才是"一层薄霜" */
+  --lab-frost: 0.035;
+
+  /* 玻璃板参数 —— 全部可被内联 style 覆盖，滑杆直接改这六个 */
+  --g-blur: 22px;
+  /* ⚠ 饱和别过 160%：琉璃要"透"，过饱和会把背景的紫压成黑紫 */
+  --g-sat: 150%;
+  /* ⚠ 白层别过 0.06：厚了就成乳白塑料，透不出底下的光 */
+  --g-tint: 0.045;
+  --g-edge: 0.7;
+  --g-spec: 1;
+
+  --lab-radius: 22px;
+  --lab-radius-sm: 14px;
+  --lab-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* 派生参数：嵌套玻璃要“更薄一层”，但 CSS 变量不能引用自己
+     （--g-blur: calc(var(--g-blur) * .7) 是循环依赖，整条声明直接失效）。 */
+  --g-blur-2: calc(var(--g-blur) * 0.7);
+  --g-tint-2: calc(var(--g-tint) * 0.8);
+
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* 霜的 overlay 混合要有独立层叠上下文，否则会跟 body 的底色混到一起去 */
+  isolation: isolate;
+  background: var(--lab-abyss);
+  color: var(--lab-ink);
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 1. 光雾：5 个独立光团 + 容器统一模糊 ──────────────────────────────
+   ⚠ 别用「一个元素铺 5 层 radial-gradient」：渐变半径是相对那个超大元素的，
+     五层叠在一起会互相平均成一片均匀暗青 —— 看截图就是「深色主题」，没有极光。
+     光团必须是**独立的圆**（中心亮、衰减慢），容器统一 blur 一次
+     （5 个小圆各自 blur 是 5 个离屏层，统一 blur 只要 1 个）。 */
+.lab__aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  filter: blur(64px) saturate(135%);
+}
+
+.lab__orb {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  will-change: transform;
+  /* screen：光与光是相加的，不是颜料相混 —— 叠在一起会更亮，不会发灰 */
+  mix-blend-mode: screen;
+  /* 慢到盯着看不出来，但静置 10 秒再比一次就差很多 —— 这是「活」的来源 */
+  animation: lab-orb var(--dur, 46s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+  /* ⚠ 衰减到 68% 就收：76% 时边缘拖太长，几团叠起来又平均成一片暗青 */
+  background: radial-gradient(
+    circle closest-side,
+    rgba(var(--c), 0.95) 0%,
+    rgba(var(--c), 0.6) 34%,
+    rgba(var(--c), 0.22) 58%,
+    transparent 68%
+  );
+}
+
+@keyframes lab-orb {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(var(--dx, 4vmin), var(--dy, -4vmin), 0) scale(1.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab__orb {
+    animation: none;
+  }
+}
+
+
+/* ── 2. 霜：噪点铺在**玻璃之上**，soft-light 混合 ──────────────────────
+   ⚠ 关键差异：放最底层只是「脏底」，放玻璃之上才是「霜」。
+   ⚠ 混合模式必须是 soft-light，**不能用 overlay**：overlay 在暗底上把对比两头
+     拉大，全屏 fixed 铺开就是一层电视雪花（实测整页发灰）。
+   ⚠ baseFrequency 别开太高：.78 在 150% DPI 下颗粒细到被抗锯齿抹平（实测看不见），
+     .66 才既有颗粒又不糊成一片灰。 */
+.lab__grain {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: var(--lab-frost);
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.66' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.gl {
+  position: relative;
+  border-radius: var(--lab-radius);
+  /* 玻璃 = 三层，缺一层就废：
+     ⚠ ① scrim（最深、压在下面）：玻璃背后的光**可以是亮的**，但文字必须读得清。
+        少了它，亮光团上方的玻璃会变成浅灰白、浅色字全糊（实测「嵌套玻璃」那行差点消失）。
+        tokens.css 的 --sw-scrim 注释写的就是这句：结构层，不是可选。
+     ⚠ ② 白层（三段渐变）：给"面"的走向，顶部亮底部收；有了 scrim 兜底才敢给到 .1。
+     ⚠ ③ 霜（soft-light）：换 overlay 会把整块板提亮成乳白塑料。 */
+  background-image:
+    /* ⚠ rect 必须带 opacity：soft-light 在亮底上能产生 ±60/255 的剧烈变化，
+       满强度噪点铺上来就是一层电视雪花。.06 才是「薄霜」。 */
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23f)' opacity='.06'/%3E%3C/svg%3E"),
+    linear-gradient(
+      170deg,
+      rgba(255 255 255 / calc(var(--g-tint) * 2.2)) 0%,
+      rgba(255 255 255 / var(--g-tint)) 34%,
+      rgba(255 255 255 / calc(var(--g-tint) * 0.4)) 100%
+    ),
+    linear-gradient(180deg, rgba(3 14 20 / 0.36) 0%, rgba(3 14 20 / 0.48) 100%);
+  background-size:
+    160px 160px,
+    auto,
+    auto;
+  background-blend-mode: soft-light, normal, normal;
+  backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.06);
+  -webkit-backdrop-filter: blur(var(--g-blur)) saturate(var(--g-sat)) brightness(1.06);
+  box-shadow:
+    /* ④ 厚度：上沿反光 + 下沿落影，成对出现才像一块板 */
+    inset 0 1px 0 rgba(255 255 255 / 0.6),
+    inset 0 -1px 0 rgba(0 0 0 / 0.34),
+    inset 0 0 0 1px rgba(190 245 255 / 0.12),
+    /* 贴地 / 浮起 / 长投影 —— 长投影是「悬浮」的开关，别省 */
+    0 1px 2px rgba(0 10 18 / 0.3),
+    0 12px 28px rgba(0 10 18 / 0.34),
+    0 42px 90px -28px rgba(0 10 18 / 0.6),
+    /* 冰棱的外溢光：1px 的 conic 边只剩 1.5 物理像素、肉眼几乎看不见，
+       「棱」的感知主要来自板外这一圈淡光 */
+    0 0 26px -8px rgba(103 232 249 / calc(var(--g-edge) * 0.9));
+}
+
+/* ── 5. 冰棱：渐变边框（conic 光沿边跑一圈 + mask 挖空中心）───────────
+   ⚠ 不要用 border-image —— 它不吃 border-radius，圆角会退化成直角。 */
+.gl::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from 200deg,
+    rgba(255 255 255 / 0.03),
+    rgba(160 250 255 / var(--g-edge)) 12%,
+    rgba(255 255 255 / 0.06) 28%,
+    rgba(200 180 255 / calc(var(--g-edge) * 0.8)) 52%,
+    rgba(255 255 255 / 0.04) 72%,
+    rgba(140 245 255 / calc(var(--g-edge) * 0.75)) 88%,
+    rgba(255 255 255 / 0.03)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* ── 6. specular：鼠标经过时板面亮一块（plus-lighter = 加光不是盖白）───
+   坐标由 JS 写成 --spec-x / --spec-y 的百分比，相对**自身**尺寸。 */
+.gl::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms var(--lab-ease);
+  mix-blend-mode: plus-lighter;
+  background: radial-gradient(
+    280px 220px at var(--spec-x, 28%) var(--spec-y, 16%),
+    rgba(255 255 255 / calc(0.15 * var(--g-spec))),
+    transparent 70%
+  );
+}
+
+.gl:hover::after {
+  opacity: 1;
+}
+
+/* 静态反光：不跟鼠标的板子给一个固定高光，否则整片玻璃看着是哑光的 */
+.gl--fixed::after {
+  opacity: 0.7;
+  --spec-x: 22%;
+  --spec-y: 10%;
+}
+
+/* ── 7. 布局 ────────────────────────────────────────────────────────────
+   ⚠ 内容层必须 z-index: 1 以上 —— 光雾是 fixed z-0，不抬起来会被盖住。 */
+.lab__bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 16px 22px 0;
+  padding: 11px 20px;
+  border-radius: var(--lab-radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lab__wrap {
+  position: relative;
+  z-index: 2;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 22px 22px 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 296px;
+  gap: 20px;
+  align-items: start;
+}
+
+.lab__col {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.lab__hero {
+  padding: 30px 34px 34px;
+}
+
+.lab__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+}
+
+.lab__card {
+  padding: 20px 22px 22px;
+  border-radius: var(--lab-radius-sm);
+}
+
+.lab__nest {
+  padding: 16px 18px;
+  border-radius: var(--lab-radius-sm);
+  /* 嵌套玻璃：backdrop-filter 会再糊一层，比外层更浓 —— 层叠感就来自这里。
+     ⚠ 必须换成派生变量，写成 --g-blur: calc(var(--g-blur) * .7) 是自引用，无效。
+     ⚠ 内层 scrim 要比外层更深：凹槽本身就是"往里沉"，叠一层白就成了「贴了张纸」。 */
+  --g-blur: var(--g-blur-2);
+  background-image: linear-gradient(180deg, rgba(3 14 20 / 0.4) 0%, rgba(3 14 20 / 0.52) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.18),
+    inset 0 -1px 0 rgba(0 0 0 / 0.3),
+    inset 0 0 0 1px rgba(190 245 255 / 0.1);
+}
+
+/* 面板预演：选中行用发光而不是变深色 —— 深色在玻璃上会被当成“洞” */
+.gl-row.is-on {
+  color: var(--lab-ink);
+  background: rgba(103 232 249 / 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(210 250 255 / 0.28),
+    inset 0 0 0 1px rgba(103 232 249 / 0.22);
+}
+
+
+/* ── 8. 排版 ─────────────────────────────────────────────────────────── */
+.lab__title {
+  margin: 0 0 6px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  /* 文字压在玻璃上要一点点描边光，否则最亮的光斑处会“糊” */
+  text-shadow: 0 1px 3px rgba(0 10 18 / 0.45);
+}
+
+.lab__sub {
+  margin: 0 0 22px;
+  max-width: 62ch;
+  color: var(--lab-ink-dim);
+  font-size: 13px;
+}
+
+.lab__k {
+  margin: 0 0 4px;
+  color: var(--lab-ink-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lab__v {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lab__h {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.lab__note {
+  margin: 12px 0 0;
+  color: var(--lab-ink-faint);
+  font-size: 12px;
+}
+
+/* ── 9. 控件：玻璃皮肤（按钮 / 输入 / 列表）─────────────────────────── */
+.gl-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lab-ink);
+  background: rgba(255 255 255 / 0.075);
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.34),
+    inset 0 -1px 0 rgba(0 0 0 / 0.22),
+    0 2px 6px rgba(0 10 18 / 0.28);
+  transition:
+    background 160ms var(--lab-ease),
+    transform 160ms var(--lab-ease),
+    box-shadow 160ms var(--lab-ease);
+}
+
+.gl-btn:hover {
+  background: rgba(255 255 255 / 0.13);
+  transform: translateY(-1px);
+}
+
+.gl-btn:active {
+  transform: translateY(0);
+  background: rgba(255 255 255 / 0.06);
+  box-shadow:
+    inset 0 1px 3px rgba(0 10 18 / 0.45),
+    inset 0 1px 0 rgba(255 255 255 / 0.12);
+}
+
+.gl-btn--on {
+  background: rgba(103 232 249 / 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(210 250 255 / 0.5),
+    inset 0 0 0 1px rgba(103 232 249 / 0.34),
+    0 4px 14px -4px rgba(103 232 249 / 0.5);
+}
+
+.gl-btn--primary {
+  color: #03202a;
+  font-weight: 600;
+  background: linear-gradient(170deg, rgba(163 245 255 / 0.95), rgba(45 212 191 / 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255 255 255 / 0.75),
+    inset 0 -1px 0 rgba(0 60 70 / 0.28),
+    0 8px 22px -6px rgba(103 232 249 / 0.55);
+}
+
+.gl-btn--primary:hover {
+  background: linear-gradient(170deg, rgba(190 250 255 / 1), rgba(70 226 205 / 0.95));
+}
+
+.gl-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lab-ink);
+  background: rgba(4 18 26 / 0.4);
+  box-shadow:
+    inset 0 1px 2px rgba(0 8 14 / 0.5),
+    inset 0 0 0 1px rgba(190 245 255 / 0.16);
+  outline: none;
+  transition: box-shadow 160ms var(--lab-ease);
+}
+
+.gl-input::placeholder {
+  color: var(--lab-ink-faint);
+}
+
+.gl-input:focus {
+  box-shadow:
+    inset 0 1px 2px rgba(0 8 14 / 0.5),
+    inset 0 0 0 1px rgba(103 232 249 / 0.55),
+    0 0 0 3px rgba(103 232 249 / 0.16);
+}
+
+.gl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--lab-ink-dim);
+  transition: background 140ms var(--lab-ease);
+}
+
+.gl-row:hover {
+  background: rgba(255 255 255 / 0.07);
+  color: var(--lab-ink);
+}
+
+.gl-row__tag {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: rgba(200 250 255 / 0.9);
+  background: rgba(103 232 249 / 0.16);
+  box-shadow: inset 0 0 0 1px rgba(103 232 249 / 0.26);
+}
+
+/* ── 10. 调参栏 ─────────────────────────────────────────────────────── */
+.lab__tune {
+  position: sticky;
+  top: 84px;
+  padding: 18px 18px 20px;
+  border-radius: var(--lab-radius-sm);
+}
+
+.lab__slider {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 13px;
+}
+
+.lab__slider > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--lab-ink-dim);
+}
+
+.lab__slider b {
+  color: var(--lab-ink);
+  font-weight: 600;
+  /* 数字等宽：滑杆拖动时数值不跳字 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* range 的跨浏览器定制只能各写各的伪元素，Chromium 用 -webkit- 那套 */
+.lab__tune input[type='range'] {
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  background: rgba(190 245 255 / 0.18);
+}
+
+.lab__tune input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(170deg, #d9fbff, #67e8f9);
+  box-shadow:
+    0 0 0 3px rgba(103 232 249 / 0.18),
+    0 2px 6px rgba(0 10 18 / 0.5);
+}
+
+.lab__tiers {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.lab__tiers .gl-btn {
+  flex: 1;
+  padding: 7px 0;
+  text-align: center;
+}
+
+.lab__dump {
+  width: 100%;
+  height: 96px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  resize: none;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--lab-ink-dim);
+  background: rgba(4 18 26 / 0.45);
+  box-shadow: inset 0 0 0 1px rgba(190 245 255 / 0.14);
+  outline: none;
+}
+
+/* ── 11. 响应式与滚动条 ────────────────────────────────────────────── */
+@media (max-width: 940px) {
+  .lab__wrap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lab__tune {
+    position: static;
+    order: -1;
+  }
+}
+
+.lab ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.lab ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lab ::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  background: rgba(190 245 255 / 0.22);
+  box-shadow: inset 0 0 0 1px rgba(190 245 255 / 0.1);
+}
+
+.lab ::-webkit-scrollbar-thumb:hover {
+  background: rgba(190 245 255 / 0.34);
+}
+
+
+

@@ -1,0 +1,1032 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   glass.css —— 琉璃材质与控件皮肤
+   · 作用域：全部挂在 html[data-style='glass'] 下 —— flat 主题一点玻璃成本都不付
+   · 特异性：一律带 html[data-style='glass'] 前缀。App.vue 的 scoped 规则是
+     .x[data-v-xxx]（0,2,0），我们多一个元素选择器（0,2,1），稳定胜出。
+     ⚠ 别图省事写 !important —— 那会连将来面板的局部覆盖一起拍死。
+   · 三层结构：scrim 衬底（保对比度） → 冰面（blur） → 边与光
+     ⚠ scrim 是**结构层不是调参**：青光斑最亮处 #1E5A6E 上，正文只到 Lc 86
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. 色板默认值（AHK 推主题时由内联 style 覆盖，内联优先级最高）──── */
+html[data-style='glass'] {
+  color-scheme: dark;
+
+  --sw-bg: #08222e;
+  --sw-bg-alt: #061a24;
+  --sw-fg: #e9fbff;
+  --sw-dim: #a3c9d9;
+  --sw-accent: #67e8f9;
+  --sw-accent-2: #c9b6ff;
+  --sw-glow-1: #2dd4bf;
+  --sw-glow-2: #7c6cf0;
+  --sw-warn: #ffb4a2;
+  --sw-border: rgba(190, 245, 255, 0.16);
+  --sw-code-bg: rgba(190, 245, 255, 0.07);
+  --sw-select: rgba(103, 232, 249, 0.26);
+  --sw-edge: rgba(210, 250, 255, 0.3);
+  --sw-ring: rgba(103, 232, 249, 0.28);
+  --sw-scrim: rgba(3, 14, 20, 0.46);
+  --sw-shadow-1: 0 1px 2px rgba(0, 10, 18, 0.4);
+  --sw-shadow-2: 0 6px 18px rgba(0, 10, 18, 0.45);
+  --sw-shadow-3: 0 18px 48px rgba(0, 10, 18, 0.55);
+  --sw-font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+}
+
+/* ── 1. 窗口底：双光斑 + 霜噪点 ──────────────────────────────────────────
+   底色交给 html，body 透明 —— 否则 body 的背景会盖住 ::before 的固定层。
+   光斑用 rgba 直写而非 color-mix：target 定的是 chrome110，不赌运行时特性。 */
+html[data-style='glass'],
+html[data-style='glass'] body {
+  background: var(--sw-bg-alt);
+}
+
+/* ⚠ 病根记录（S0 实测，别再走回头路）：**不要用「一个伪元素铺 N 层
+   radial-gradient」**。渐变半径是按**那个容器**的尺寸算的，容器一旦比视口大，
+   五层光斑就会互相平均成一片均匀暗青 —— 截图看起来就是「深色主题」，一点极光都没有。
+   光团必须是**独立的圆**（中心亮、衰减快），模糊统一在容器上做一次
+   （5 个小圆各自 blur 是 5 个离屏层，统一 blur 只要 1 个）。
+   ⚠ 节点由 main.ts 注入（body 的第一个子元素），不写进任何 Vue 模板 ——
+   自检页 / 笔记页 / 将来的面板都要共享同一层底，写进模板就得抄四遍。 */
+
+/* 极光五色（RGB 三元组：rgba(var(--c), a) 要用它拼透明度）。
+   暖橙只占 16%，多了整片就脏。 */
+html[data-style='glass'] {
+  --sw-aur-1: 45, 212, 191;   /* 青绿 */
+  --sw-aur-2: 124, 108, 240;  /* 靛紫 */
+  --sw-aur-3: 103, 232, 249;  /* 冰青 */
+  --sw-aur-4: 192, 132, 252;  /* 紫罗兰 */
+  --sw-aur-5: 240, 168, 104;  /* 暖橙 */
+}
+
+html[data-style='glass'] .sw-aurora {
+  /* ⚠ 必须重设 display：下面那条兜底规则写了 display:none，这条不写回来
+     容器就是隐藏的 —— 表现是「光雾一点都看不见」，整页平坦得像深色主题，
+     而 CSS 全是对的（这个坑第一次移植时真踩了）。 */
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* 唯一的一次模糊：把五个圆揉成一团会呼吸的光雾。
+     ⚠ 必须用 clamp + vmin，**不能写死 64px**：模糊是绝对值，而 orb 尺寸是
+       vmin 相对的。写死 64px 时，1460 宽的大窗里它只占光团直径的 6%（刚好的柔边），
+       697 宽的笔记窗里却占 26% → 五团被糊成一片均匀暗青，
+       看起来又退回「深色主题」（真机实测，S1 第二次踩）。
+     clamp 的 18px 下限保证小窗仍有柔边、72px 上限保证大窗不至于糊过头。 */
+  filter: blur(clamp(18px, 6vmin, 72px)) saturate(135%);
+}
+
+/* flat 主题不付这笔成本（节点常驻，靠这条关掉） */
+.sw-aurora {
+  display: none;
+}
+
+html[data-style='glass'] .sw-orb {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  will-change: transform;
+  /* screen：光与光是**相加**的，不是颜料相混 —— 叠在一起更亮，不会发灰 */
+  mix-blend-mode: screen;
+  /* 慢到盯着看不出来，但静置 10 秒再比一次就差很多 —— 这是「活」的来源 */
+  animation: sw-orb-drift var(--dur, 46s) ease-in-out infinite alternate;
+  animation-delay: var(--delay, 0s);
+  /* ⚠ 衰减到 68% 就收：76% 时边缘拖太长，几团叠起来又会平均成一片暗青 */
+  background: radial-gradient(
+    circle closest-side,
+    rgba(var(--c), 0.95) 0%,
+    rgba(var(--c), 0.6) 34%,
+    rgba(var(--c), 0.22) 58%,
+    transparent 68%
+  );
+}
+
+@keyframes sw-orb-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(var(--dx, 4vmin), var(--dy, -4vmin), 0) scale(1.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-style='glass'] .sw-orb {
+    animation: none;
+  }
+}
+
+/* 霜噪点：小尺寸平铺，成本可控。静态，不参与动画。
+   ⚠ 两条都是 S0 踩出来的：
+     ① z-index 必须盖过 #app（z-1）—— 从前写 0，等于这层霜**根本不存在**；
+     ② 混合只能用 soft-light —— overlay 在暗底上把对比两头拉大，
+        全屏 fixed 铺开就是一层电视雪花（实测整页发灰）。
+     ③ baseFrequency 别开高：.82 在 150% DPI 下颗粒被抗锯齿抹平（看不见），
+        .66 既有颗粒又不糊成一片灰。 */
+html[data-style='glass'] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  opacity: var(--sw-frost, 0.035);
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.66' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+html[data-style='glass'] #app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── 1b. 「板」三件套：厚度 / 冰棱 / specular ──────────────────────────
+   用法：给元素加 .sw-plate（笔记页眉、页脚、将来的面板行都套它）。
+   ⚠ 三件必须一起给，少一件就退回「深色背景上放了个方块」：
+       厚度   = 上沿 1px 反光 + 下沿 1px 落影（**成对**）+ 三层投影 + 外溢光
+       冰棱   = 1px conic 渐变边，mask 挖空（border-image 不吃 border-radius）
+       specular = 鼠标驱动的 plus-lighter 光斑（坐标由 main.ts 写 --spec-x/y）
+   ⚠ 「棱」的感知主要来自**板外那一圈淡光**：1px 的 conic 边在 150% DPI 下只有
+     1.5 物理像素，肉眼几乎看不见 —— 别写了边就以为看得清。
+   ⚠ 只给**没有 ::before/::after** 的元素套：这两个伪元素被本类占用了。
+     .side（顶光带）/ .card / .probe（顶部光带）都自带 ::before，别往它们身上加。 */
+html[data-style='glass'] .sw-plate {
+  position: relative;
+  border-radius: var(--sw-radius-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(190, 245, 255, 0.12),
+    0 1px 2px rgba(0, 10, 18, 0.3),
+    0 12px 28px rgba(0, 10, 18, 0.34),
+    0 42px 90px -28px rgba(0, 10, 18, 0.6),
+    0 0 26px -8px rgba(103, 232, 249, calc(var(--sw-edge-a, 0.7) * 0.9));
+}
+
+html[data-style='glass'] .sw-plate::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: conic-gradient(
+    from 200deg,
+    rgba(255, 255, 255, 0.03),
+    rgba(160, 250, 255, calc(var(--sw-edge-a, 0.7) * 1)) 12%,
+    rgba(255, 255, 255, 0.06) 28%,
+    rgba(200, 180, 255, calc(var(--sw-edge-a, 0.7) * 0.8)) 52%,
+    rgba(255, 255, 255, 0.04) 72%,
+    rgba(140, 245, 255, calc(var(--sw-edge-a, 0.7) * 0.75)) 88%,
+    rgba(255, 255, 255, 0.03)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/* plus-lighter = 加光不是盖白：玻璃上的反光应该是「更亮」，不是「蒙一层白」 */
+html[data-style='glass'] .sw-plate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms var(--sw-dur, 200ms) var(--sw-ease, ease);
+  mix-blend-mode: plus-lighter;
+  background: radial-gradient(
+    280px 220px at var(--spec-x, 28%) var(--spec-y, 16%),
+    rgba(255, 255, 255, calc(0.15 * var(--sw-spec, 1))),
+    transparent 70%
+  );
+}
+
+html[data-style='glass'] .sw-plate:hover::after {
+  opacity: 1;
+}
+
+/* 静态反光：不跟鼠标的板子给一个固定高光，否则整块玻璃看着是哑光的 */
+html[data-style='glass'] .sw-plate--fixed::after {
+  opacity: 0.7;
+  --spec-x: 22%;
+  --spec-y: 10%;
+}
+
+/* ── 2. 骨架：侧栏玻璃 / 内容区衬底 ─────────────────────────────────────
+   窗口外框（圆角 + 亚克力 + 边框染色）由 AHK 的 GlassPaint 负责，
+   这里只管**内容层**，两处画同一个框只会打架。 */
+html[data-style='glass'] .shell {
+  background: transparent;
+}
+
+html[data-style='glass'] .side {
+  position: relative;
+  /* 冰面：白层浓度走 --sw-tint（滑杆「白层」直接调它，别写死 rgba） */
+  background: var(--sw-tint);
+  border-right: 1px solid var(--sw-border);
+  /* 三个参数全部走 token：blur / sat / bright 就是滑杆与 material 字段的落点 */
+  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%)) brightness(var(--sw-bright, 1.06));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%)) brightness(var(--sw-bright, 1.06));
+  box-shadow: inset -1px 0 0 rgba(210, 250, 255, 0.12);
+}
+
+/* 侧栏顶光带：1px 渐变，从左上淡入淡出 */
+html[data-style='glass'] .side::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(210, 250, 255, 0.6), transparent);
+  pointer-events: none;
+}
+
+/* 内容区 = 整块大玻璃。三层：scrim（可读）→ blur（透而柔）→ 白层交给 .side/控件。
+   ⚠ scrim 从 .18 提到 .30：S0 样板在 1460 宽下 .18 够用，但笔记窗只有 ~1000 宽，
+     orb 的 vmin 相对更大 → 光团更集中更亮，.18 压不住正文（表格 / 代码块先花）。
+   ⚠ 对比度靠这里 + .ProseMirror 两层**叠加**算，别只看一层：
+     合计 0.30 + 0.2 ≈ 0.44，与 lab 主板的 0.36–0.48 同档。 */
+html[data-style='glass'] .main {
+  position: relative;
+  background: rgba(3, 14, 20, 0.3);
+  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+}
+
+/* ── 工作台面板（Alt+S）：两块独立玻璃板 ───────────────────────────────
+   结构在 web/src/components/PanelView.vue，这里只给材质。与 .main 同一套
+   blur / scrim 口径；侧栏比内容浅一档 —— 导航是「外框」，内容才是要读的。
+   ⚠ 两块板各有 ::before（1px 环边）/ ::after（specular），别再往它们身上加。
+   ⚠ scoped 样式会把选择器编成 .pnav[data-v-xxx]（specificity 0,2,0），
+     这条 html[data-style] .pnav 是 0,2,1 —— 赢一格，能盖住组件里的兜底底色。 */
+html[data-style='glass'] .pnav {
+  background: rgba(10, 26, 36, 0.5);
+  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+}
+
+html[data-style='glass'] .pmain {
+  background: rgba(3, 14, 20, 0.34);
+  backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+  -webkit-backdrop-filter: blur(var(--sw-blur, 22px)) saturate(var(--sw-sat, 150%))
+    brightness(var(--sw-bright, 1.06));
+}
+
+
+/* ── 3. 品牌与导航 ──────────────────────────────────────────────────────
+   导航行的「光带扫过」用 transform 位移做 ::after，不做 background 渐变位移 ——
+   transform 走合成层，background-position 走重绘。 */
+html[data-style='glass'] .brand {
+  color: var(--sw-fg);
+  text-shadow: 0 0 14px rgba(103, 232, 249, 0.24);
+}
+
+html[data-style='glass'] .dot {
+  background: var(--sw-accent);
+  box-shadow:
+    0 0 0 3px rgba(103, 232, 249, 0.14),
+    0 0 14px rgba(103, 232, 249, 0.75);
+}
+
+html[data-style='glass'] .nav {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--sw-radius);
+  color: var(--sw-fg);
+  transition: background var(--sw-dur-fast) var(--sw-ease), color var(--sw-dur-fast);
+}
+
+html[data-style='glass'] .nav::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 18%,
+    rgba(210, 250, 255, 0.16) 50%,
+    transparent 82%
+  );
+  transform: translateX(-115%);
+  transition: transform 520ms var(--sw-ease-out);
+}
+
+html[data-style='glass'] .nav:hover:not(.off):not(.on)::after {
+  transform: translateX(115%);
+}
+
+html[data-style='glass'] .nav.on {
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.18), rgba(103, 232, 249, 0.03));
+  box-shadow:
+    inset 2px 0 0 var(--sw-accent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+html[data-style='glass'] .nav.off {
+  color: var(--sw-dim);
+  opacity: 0.38;
+}
+
+/* ── 4. 按钮 ────────────────────────────────────────────────────────────
+   两套选择器：① 覆盖现有 .note-act button（scoped 0,2,1 → 我们 0,2,2）
+                ② 将来的 .sw-btn 通用类
+   主按钮用「亮底 + 深字」：青底 #67E8F9 上配 #04141A 对比度 12.9，
+   比「深底 + 青字」更亮眼，也不会在青光斑上糊掉。 */
+html[data-style='glass'] .note-act button,
+html[data-style='glass'] .sw-btn {
+  position: relative;
+  padding: 6px 15px;
+  border: 1px solid var(--sw-edge);
+  border-radius: var(--sw-radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+  color: var(--sw-fg);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 10px rgba(0, 10, 18, 0.38);
+  transition:
+    background var(--sw-dur-fast) var(--sw-ease),
+    border-color var(--sw-dur-fast) var(--sw-ease),
+    box-shadow var(--sw-dur-fast) var(--sw-ease),
+    transform var(--sw-dur-fast) var(--sw-ease);
+}
+
+html[data-style='glass'] .note-act button:hover,
+html[data-style='glass'] .sw-btn:hover {
+  border-color: rgba(103, 232, 249, 0.55);
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.2), rgba(103, 232, 249, 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 0 18px rgba(103, 232, 249, 0.26),
+    0 2px 10px rgba(0, 10, 18, 0.38);
+}
+
+/* 按下：下沉 1px + 内凹阴影。不做放大 —— 密集工具条里放大反而打架。 */
+html[data-style='glass'] .note-act button:active,
+html[data-style='glass'] .sw-btn:active {
+  transform: translateY(1px) scale(0.988);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 10, 18, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+html[data-style='glass'] .note-act button:focus-visible,
+html[data-style='glass'] .sw-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px var(--sw-ring),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* 主按钮 */
+html[data-style='glass'] .sw-btn--primary {
+  border-color: rgba(210, 250, 255, 0.55);
+  background: linear-gradient(180deg, #9ff2ff, #67e8f9 42%, #2dd4bf);
+  color: #04141a;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -2px 6px rgba(4, 20, 26, 0.22),
+    0 4px 16px rgba(45, 212, 191, 0.32);
+}
+
+html[data-style='glass'] .sw-btn--primary:hover {
+  background: linear-gradient(180deg, #b9f7ff, #7deeff 42%, #45e0cb);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 6px 22px rgba(45, 212, 191, 0.44);
+}
+
+/* 幽灵按钮：无底无框，hover 才浮出冰面 */
+html[data-style='glass'] .sw-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--sw-dim);
+}
+
+html[data-style='glass'] .sw-btn--ghost:hover {
+  border-color: var(--sw-border);
+  background: rgba(190, 245, 255, 0.07);
+  color: var(--sw-fg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ── 5. 输入 ────────────────────────────────────────────────────────────
+   输入框是**内凹**的（inset 阴影 + 更深的底），与按钮的外凸互补 ——
+   一凹一凸，界面才有纵深。聚焦环用 box-shadow，不用 outline。 */
+html[data-style='glass'] input,
+html[data-style='glass'] textarea,
+html[data-style='glass'] .sw-input {
+  border: 1px solid rgba(190, 245, 255, 0.18);
+  border-radius: var(--sw-radius);
+  background: rgba(3, 14, 20, 0.42);
+  color: var(--sw-fg);
+  font: inherit;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 10, 18, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    border-color var(--sw-dur-fast) var(--sw-ease),
+    box-shadow var(--sw-dur-fast) var(--sw-ease),
+    background var(--sw-dur-fast) var(--sw-ease);
+}
+
+html[data-style='glass'] textarea {
+  padding: 9px 11px;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+html[data-style='glass'] input::placeholder,
+html[data-style='glass'] textarea::placeholder {
+  color: rgba(163, 201, 217, 0.55);
+}
+
+html[data-style='glass'] input:focus,
+html[data-style='glass'] textarea:focus,
+html[data-style='glass'] .sw-input:focus {
+  outline: none;
+  border-color: rgba(103, 232, 249, 0.6);
+  background: rgba(3, 14, 20, 0.55);
+  box-shadow:
+    0 0 0 3px var(--sw-ring),
+    inset 0 1px 3px rgba(0, 10, 18, 0.55);
+}
+
+/* ── 6. 标题层级 ────────────────────────────────────────────────────────
+   标题靠字号 + 极淡冷光分层，**不做渐变文字** —— 渐变字在深底上会把
+   字重和笔画变虚，长文档读起来累。
+   ⚠ 光晕别开大：>24px 的大半径会让中文笔画边缘糊成一片，看起来像失焦。 */
+html[data-style='glass'] h1 {
+  color: #f2feff;
+  text-shadow: 0 0 16px rgba(103, 232, 249, 0.14);
+  letter-spacing: -0.01em;
+}
+
+html[data-style='glass'] .sub,
+html[data-style='glass'] .hint {
+  color: var(--sw-dim);
+}
+
+html[data-style='glass'] .k {
+  color: rgba(163, 201, 217, 0.78);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+html[data-style='glass'] .v {
+  color: var(--sw-fg);
+  text-shadow: 0 0 10px rgba(103, 232, 249, 0.1);
+}
+
+/* ── 7. 卡片 / 探针块 ───────────────────────────────────────────────────
+   卡片是「可拿起来的一块冰」：顶部 1px 光带 + 悬停上浮 1px。
+   ⚠ 上浮只动 transform，不同时改 margin —— 那会触发整页重排。 */
+html[data-style='glass'] .card,
+html[data-style='glass'] .probe {
+  position: relative;
+  border: 1px solid rgba(190, 245, 255, 0.22);
+  border-radius: var(--sw-radius-lg);
+  background:
+    linear-gradient(180deg, rgba(190, 245, 255, 0.13), rgba(190, 245, 255, 0.045));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    var(--sw-shadow-2);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  transition:
+    transform var(--sw-dur) var(--sw-ease-out),
+    box-shadow var(--sw-dur) var(--sw-ease-out),
+    border-color var(--sw-dur) var(--sw-ease-out);
+}
+
+html[data-style='glass'] .card::before,
+html[data-style='glass'] .probe::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgba(210, 250, 255, 0.55), transparent);
+  pointer-events: none;
+}
+
+html[data-style='glass'] .card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(103, 232, 249, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 10px 26px rgba(0, 10, 18, 0.5),
+    0 0 22px rgba(103, 232, 249, 0.12);
+}
+
+html[data-style='glass'] .warn {
+  color: var(--sw-warn);
+  background: rgba(255, 180, 162, 0.1);
+  border: 1px solid rgba(255, 180, 162, 0.32);
+  border-radius: var(--sw-radius);
+}
+
+/* ── 8b. 笔记窗 = 一块悬浮的大玻璃 ──────────────────────────────────────
+   ⚠ 笔记窗是**满窗**的，不做这一步就没有「板外」——
+     整屏都是一层均匀柔光，看起来又是深色主题（S1 第一版真踩了）。
+     四周留 12px 让光雾透出来，板才有「浮在光上」的厚度。
+   ⚠ 板内 scrim 别低于 .34：正文要在这块板上读半小时。 */
+html[data-style='glass'] .main.note {
+  margin: 12px;
+  border-radius: var(--sw-radius-lg);
+  overflow: hidden;
+  background: linear-gradient(
+    180deg,
+    rgba(3, 14, 20, 0.36) 0%,
+    rgba(3, 14, 20, 0.46) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(190, 245, 255, 0.1),
+    0 1px 2px rgba(0, 10, 18, 0.3),
+    0 12px 28px rgba(0, 10, 18, 0.34),
+    0 0 26px -8px rgba(103, 232, 249, calc(var(--sw-edge-a, 0.7) * 0.9));
+}
+
+/* ── 8. 工具条 / 页脚 ───────────────────────────────────────────────────
+   这两块是「窗框」的一部分：玻璃 + 顶/底 1px 光带。
+   面积都很小（各占视口 < 8%），backdrop-filter 的成本可以接受。 */
+html[data-style='glass'] .note-head {
+  position: relative;
+  border-bottom: 1px solid var(--sw-border);
+  background: rgba(190, 245, 255, 0.045);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+html[data-style='glass'] .note-head h1 {
+  font-size: 18px;
+}
+
+html[data-style='glass'] .note-foot {
+  position: relative;
+  border-top: 1px solid var(--sw-border);
+  background: rgba(190, 245, 255, 0.05);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  color: var(--sw-dim);
+}
+
+html[data-style='glass'] .dim {
+  color: rgba(163, 201, 217, 0.72);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 9. 编辑器正文 ──────────────────────────────────────────────────────
+   ⚠ 这里是**文字层**：绝不加 backdrop-filter。
+     玻璃放在文字下面，字就会跟着背景的明暗一起抖，读半小时眼睛就废了。
+   ⚠ 底色是 scrim 叠加（.main .18 + 这里 .2 ≈ .34），不是可选装饰：
+     最亮青光斑 #1E5A6E 上，正文裸奔只有 Lc 86，压一层才回到 95+。 */
+html[data-style='glass'] .sw-editor .ProseMirror {
+  background: rgba(3, 14, 20, 0.2);
+  color: var(--sw-fg);
+  caret-color: var(--sw-accent);
+  text-rendering: optimizeLegibility;
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror ::selection {
+  background: var(--sw-select);
+  color: #ffffff;
+}
+
+/* 标题：字号分层 + 极淡冷光；h1/h2 上方补一条渐变细线做「段落起势」 */
+html[data-style='glass'] .sw-editor .ProseMirror h1,
+html[data-style='glass'] .sw-editor .ProseMirror h2,
+html[data-style='glass'] .sw-editor .ProseMirror h3,
+html[data-style='glass'] .sw-editor .ProseMirror h4 {
+  color: #f4feff;
+  letter-spacing: -0.008em;
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror h1 {
+  text-shadow: 0 0 18px rgba(103, 232, 249, 0.16);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror h2 {
+  text-shadow: 0 0 14px rgba(103, 232, 249, 0.1);
+}
+
+/* 链接：青字 + 下划线用渐变淡出，hover 时整条亮起 */
+html[data-style='glass'] .sw-editor .ProseMirror a {
+  color: var(--sw-accent);
+  text-decoration-color: rgba(103, 232, 249, 0.45);
+  text-decoration-thickness: 1px;
+  transition: color var(--sw-dur-fast), text-decoration-color var(--sw-dur-fast);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror a:hover {
+  color: #b9f7ff;
+  text-decoration-color: rgba(185, 247, 255, 0.9);
+}
+
+/* 行内代码 / 代码块：冰面 + 左侧青条 */
+html[data-style='glass'] .sw-editor .ProseMirror code {
+  color: #d7fbff;
+  background: rgba(190, 245, 255, 0.09);
+  border: 1px solid rgba(190, 245, 255, 0.14);
+  border-radius: 5px;
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror pre {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(190, 245, 255, 0.08), rgba(190, 245, 255, 0.03));
+  border: 1px solid rgba(190, 245, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 6px 20px rgba(0, 10, 18, 0.35);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror pre::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--sw-accent), transparent);
+  pointer-events: none;
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror pre code {
+  background: none;
+  border: 0;
+  color: #e6fbff;
+}
+
+/* 引用：左侧渐变竖条（青 → 透明），不用纯色 —— 纯色在深底上太像边框 */
+html[data-style='glass'] .sw-editor .ProseMirror blockquote {
+  border-left: 0;
+  padding-left: 1.1em;
+  color: rgba(163, 201, 217, 0.95);
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.08), transparent 70%);
+  border-radius: 0 var(--sw-radius) var(--sw-radius) 0;
+  position: relative;
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror blockquote::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(103, 232, 249, 0.9), rgba(103, 232, 249, 0.06));
+}
+
+/* 表格：表头冰面 + 行 hover 微亮 + 半透明细边 */
+html[data-style='glass'] .sw-editor .ProseMirror th {
+  background: rgba(190, 245, 255, 0.08);
+  color: #f4feff;
+  box-shadow: inset 0 -1px 0 rgba(210, 250, 255, 0.22);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror td,
+html[data-style='glass'] .sw-editor .ProseMirror th {
+  border-color: rgba(190, 245, 255, 0.2);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror tbody tr:hover {
+  background: rgba(190, 245, 255, 0.035);
+}
+
+/* 任务列表勾选框：圆角冰面，选中填青并带微光晕 */
+html[data-style='glass'] .sw-editor .ProseMirror li[data-item-type='task']::before {
+  border: 1.5px solid rgba(190, 245, 255, 0.55);
+  border-radius: 4px;
+  background: rgba(3, 14, 20, 0.35);
+  box-shadow: inset 0 1px 2px rgba(0, 10, 18, 0.5);
+  transition: background var(--sw-dur-fast), border-color var(--sw-dur-fast),
+    box-shadow var(--sw-dur-fast);
+}
+
+html[data-style='glass']
+  .sw-editor
+  .ProseMirror
+  li[data-item-type='task'][data-checked='true']::before {
+  background: var(--sw-accent);
+  border-color: rgba(210, 250, 255, 0.85);
+  box-shadow:
+    0 0 0 3px rgba(103, 232, 249, 0.14),
+    0 0 10px rgba(103, 232, 249, 0.38);
+}
+
+/* 分隔线：两端消隐，比实线轻 */
+html[data-style='glass'] .sw-editor .ProseMirror hr {
+  border-top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(210, 250, 255, 0.28) 20%,
+    rgba(210, 250, 255, 0.28) 80%,
+    transparent
+  );
+}
+
+/* 图片：圆角 + 1px 冰边 + 投影；选中时青环 */
+html[data-style='glass'] .sw-editor .ProseMirror img {
+  border-radius: var(--sw-radius);
+  box-shadow:
+    0 0 0 1px rgba(190, 245, 255, 0.16),
+    0 8px 26px rgba(0, 10, 18, 0.5);
+}
+
+html[data-style='glass'] .sw-editor .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--sw-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 22px rgba(103, 232, 249, 0.45);
+}
+
+/* 空文档占位：压到 dim 的 65%，只是提示，不抢注意力 */
+html[data-style='glass'] .sw-editor .ProseMirror p.is-editor-empty:first-child::before {
+  color: rgba(163, 201, 217, 0.5);
+}
+
+/* ── 10. 滚动条：8px 窄条，hover 才亮 ───────────────────────────────────
+   玻璃主题里 10px 的粗条太「系统」。轨道透明、thumb 半透明青 ——
+   滚起来才不会像一根水泥柱子。 */
+html[data-style='glass'] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-style='glass'] ::-webkit-scrollbar-thumb {
+  background: rgba(190, 245, 255, 0.22);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+html[data-style='glass'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(190, 245, 255, 0.45);
+  background-clip: content-box;
+}
+
+html[data-style='glass'] ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── 11. 通用控件（面向前端化预埋；笔记窗现在只用到一部分）─────────────
+   这一组是「设计系统的词汇表」：将来面板 / 提示词库前端化直接复用，
+   不必再写一套。命名沿用 .sw- 前缀，与现有 --sw-* 变量同族。 */
+
+/* 分隔线：两端消隐 */
+html[data-style='glass'] .sw-hr {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(210, 250, 255, 0.26) 18%,
+    rgba(210, 250, 255, 0.26) 82%,
+    transparent
+  );
+}
+
+/* 徽章 / 热键标 */
+html[data-style='glass'] .sw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: var(--sw-radius-pill);
+  background: rgba(103, 232, 249, 0.14);
+  color: #b9f7ff;
+  font-size: 11px;
+  line-height: 1.8;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表：行 hover 光带 + 选中左侧青条 */
+html[data-style='glass'] .sw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+html[data-style='glass'] .sw-list__item {
+  position: relative;
+  overflow: hidden;
+  padding: 7px 11px;
+  border-radius: var(--sw-radius);
+  color: var(--sw-fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--sw-dur-fast) var(--sw-ease);
+}
+
+html[data-style='glass'] .sw-list__item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 18%,
+    rgba(210, 250, 255, 0.14) 50%,
+    transparent 82%
+  );
+  transform: translateX(-115%);
+  transition: transform 520ms var(--sw-ease-out);
+}
+
+html[data-style='glass'] .sw-list__item:hover::after {
+  transform: translateX(115%);
+}
+
+html[data-style='glass'] .sw-list__item.is-active {
+  background: linear-gradient(90deg, rgba(103, 232, 249, 0.18), rgba(103, 232, 249, 0.03));
+  box-shadow: inset 2px 0 0 var(--sw-accent);
+  color: #ffffff;
+}
+
+/* 空状态：六边形冰晶线稿 + 一句引导 */
+html[data-style='glass'] .sw-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: rgba(163, 201, 217, 0.6);
+  font-size: 13px;
+  text-align: center;
+}
+
+html[data-style='glass'] .sw-empty::before {
+  content: "";
+  width: 42px;
+  height: 48px;
+  opacity: 0.5;
+  background: no-repeat center / contain
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 42 48' fill='none' stroke='%2367E8F9' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M21 2 40 13v22L21 46 2 35V13z'/%3E%3Cpath d='M21 2v44M2 13l38 22M40 13L2 35' stroke-opacity='.35'/%3E%3C/svg%3E");
+}
+
+/* 加载：conic 扇形 + 径向 mask 挖成环。比 border 旋转更像冰晶。 */
+html[data-style='glass'] .sw-spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 250deg,
+    rgba(103, 232, 249, 0.15) 280deg,
+    var(--sw-accent) 350deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  animation: sw-spin 900ms linear infinite;
+}
+
+@keyframes sw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Toast：底部滑入 + 左侧 3px 青条 */
+html[data-style='glass'] .sw-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 9px 16px 9px 14px;
+  border: 1px solid rgba(210, 250, 255, 0.26);
+  border-radius: var(--sw-radius-lg);
+  background: rgba(6, 26, 36, 0.86);
+  color: var(--sw-fg);
+  font-size: 13px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 18px 48px rgba(0, 10, 18, 0.6);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  transform: translate(-50%, 120%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 320ms var(--sw-ease-out),
+    opacity 220ms var(--sw-ease);
+}
+
+html[data-style='glass'] .sw-toast::before {
+  content: "";
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--sw-accent), rgba(45, 212, 191, 0.35));
+}
+
+html[data-style='glass'] .sw-toast.is-show {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+/* Tooltip：不需要 JS，靠 data-tip 属性 */
+html[data-style='glass'] [data-tip] {
+  position: relative;
+}
+
+html[data-style='glass'] [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 8px);
+  z-index: 50;
+  transform: translate(-50%, -4px);
+  padding: 4px 9px;
+  border: 1px solid rgba(210, 250, 255, 0.2);
+  border-radius: var(--sw-radius-sm);
+  background: rgba(6, 26, 36, 0.92);
+  color: var(--sw-fg);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 160ms var(--sw-ease),
+    transform 160ms var(--sw-ease-out);
+}
+
+html[data-style='glass'] [data-tip]:hover::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ── 12. 无障碍：两档响应 ───────────────────────────────────────────────
+   ① 减少动效：位移与循环动画归零，但保留 hover 的颜色与描边（那在传达状态）
+   ② 更高对比：scrim 加深、边框提亮 —— 青色系余量本来就小，这一档是刚需 */
+@media (prefers-reduced-motion: reduce) {
+  html[data-style='glass'] .nav::after,
+  html[data-style='glass'] .sw-list__item::after {
+    display: none;
+  }
+
+  html[data-style='glass'] .card:hover {
+    transform: none;
+  }
+
+  html[data-style='glass'] .note-act button:active,
+  html[data-style='glass'] .sw-btn:active {
+    transform: none;
+  }
+
+  html[data-style='glass'] .sw-spin {
+    animation-duration: 2.4s;
+  }
+}
+
+@media (prefers-contrast: more) {
+  html[data-style='glass'] {
+    --sw-scrim: rgba(1, 8, 12, 0.62);
+    --sw-border: rgba(210, 250, 255, 0.34);
+    --sw-edge: rgba(230, 253, 255, 0.55);
+    --sw-dim: #bcd9e6;
+  }
+
+  html[data-style='glass'] .sw-editor .ProseMirror {
+    background: rgba(1, 8, 12, 0.3);
+  }
+}
+
+
+
+

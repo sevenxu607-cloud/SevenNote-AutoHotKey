@@ -139,6 +139,8 @@ class PromptEditFeature {
         ; 标题栏 / 滚动条 / 原生控件跟着主题明暗
         UiPaint.TitleBar(g.Hwnd, p.win, p.text)
         UiPaint.WindowTheme(g.Hwnd, p.dark)
+        ; 玻璃背衬（只有玻璃主题给）：见 GlassPaint 的降级链
+        UiPaint.Glass(g.Hwnd, p.style, p.win)
         ; 三个输入控件：Edit / ComboBox 都不吃 BackColor，走 WM_CTLCOLOREDIT 登记
         ; （ComboBox 的输入区与下拉列表分别发 0x0133 / 0x0134，同一份登记够用）
         UiPaint.EditColors(this._title.Hwnd, p.codeBg, p.text)

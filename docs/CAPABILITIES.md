@@ -25,12 +25,14 @@ src/WorkBench/
 │     ├─ PandocRunner.ahk      单文件格式转换（pandoc 定位 + 调用）
 │     └─ DocxHeadingFix.ahk    docx 自定义标题样式名 → pandoc 认得的 heading N
 ├─ Services/                   平台服务：业务策略，**可读 Config / State**
-│  └─ ThemeService.ahk         主题表（当前只留纯米黄）+ 语义色板 Palette()（控制面板是刻意例外）
+│  └─ ThemeService.ahk         主题表（当前只留「琉璃 · 极光霜」）+ 语义色板 Palette()
 ├─ Coordinator/                跨模块协调：读业务上下文、发事件、算几何
 │  └─ PeerCoordinator.ahk
 ├─ ModuleRegistry.ahk
 ├─ HotkeyRouter.ahk
-├─ WorkBenchUI.ahk
+├─ PanelHostBridge.ahk         工作台面板的宿主对象（数据聚合 + saveSettings + 主题 JSON）
+├─ WebWindow.ahk               WebView2 窗口骨架（建窗 / 隐藏态定位 / 露面后挂载 / Esc / 换主题）
+├─ WebPanelUI.ahk              工作台面板窗口（WebView2）：停哪一页 + 跨模块开页请求
 └─ WorkBench.ahk               组合根：装配 5 个模块
 ```
 

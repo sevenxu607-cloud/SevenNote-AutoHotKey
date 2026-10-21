@@ -50,6 +50,9 @@
 | **`Ord()` 在 v2 只收一个字符** | 照 v1 的习惯写 `Ord(s, i)` 抛 `Too many parameters passed to function. Specifically: Ord` → 先 `SubStr(s, i, 1)` 再 `Ord(ch)`。⚠ 逐字符遍历时 `SubStr` 按 UTF-16 单元取，emoji 会被拆成代理对的两个单元；只要判定后**原样追加**（不重新 `Chr` 组合），拼回去仍是原字 |
 | **WebView2 在窗口隐藏期挂载 → 编辑区一片纯底色** | 父窗口 `Show("Hide")` 时 `Mount`，Chromium 子窗口会停在 `SW_HIDE`（实测子窗口 `vis=False`、坐标 `-32000,-32000`），父窗口随后 `Show()` 也不回来 —— 表现是「窗口出来了、编辑区一片纯底色」，`stderr` 与 `_error.log` 都空。两个补丁都要：`ComCall(4, ctrl, "int", 1)`（见下一行）+ **父窗口可见后**再 `Fill()` 一次（隐藏时那次给的是 0×0） |
 | **`WebHostService` 的 `IsVisible` 只有 getter** | 库里 `IsVisible { get => ComCall(3, …) }`，没有 `put_IsVisible`。`ICoreWebView2Controller` 的 vtable 4 就是 putter，直接 `ComCall(4, this._ctrl, "int", 1)`；写成 `this._ctrl.IsVisible := 1` 抛「属性是只读的」，同样会被外层 `try` 吞掉 |
+| **hostObjects 的方法键名撞上 JS 内置** | `AddHostObjectToScript("ahk", {apply: Fn})` 之后，前端 `b['apply']` 拿到的是 `Function.prototype.apply`（宿主对象是 Proxy，先查函数原型）→ 调用抛 `TypeError: Function.prototype.apply was called on ...`，而调用点大多在 `try` 里，表现成「点保存没反应、日志一条不写」→ 键名避开 `apply` / `call` / `bind` / `toString` / `constructor` / `name` / `length` / `prototype`；本项目改用 `saveSettings` |
+| **`WebHostService` 单例挂不住第二个窗口** | 老实现挂第二个窗口时先 `Destroy()` 掉第一个 → 面板一开、笔记窗一片纯底色。改成 `hwnd → {ctrl, core, host}` 槽位表后 **无参调用会落到「最近挂载的窗口」**，所以调用一律显式传 hwnd；两个窗口的 `dataDir` 还必须分开（同一 user data folder 建不出第二个 `CoreWebView2Environment`，失败藏在 `await()` 里、只表现为白屏） |
+| **`Property is read-only`（实例字段赋值）** | 两个同源原因：① **字段名与方法名撞车** —— AHK v2 的属性名**不区分大小写**、且与方法共用命名空间，`this._place := x` 撞上私有方法 `_Place()` 就被解析成「给方法赋值」（方法只有 getter，无 setter）；② 字段声明在类体里（类体变量是**静态**的），`this.x := v` 等于写静态变量。两种表现都是「按热键没反应，`_error.log` 只有一行 `Return Property is read-only.`」→ **字段一律在 `__New` 里赋初值，且名字与方法错开**（`_placeMode` vs `_Place()`）。本项目此前全是全静态类，`WebWindow.ahk` 是第一个实例类 |
 
 
 ## 全局异常兜底（v2.4.2 起，注册点在组合根）

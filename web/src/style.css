@@ -1,53 +1,17 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   主题变量 —— AHK 侧通过 __sevenwork.applyTheme() 覆盖这些值
-   默认取工作台面板的米色系（与 WorkBenchUI 的 FFF8E7 / F2E8D2 对齐）
+   样式聚合器 —— main.ts 只 import 这一个文件
+   · tokens：变量（唯一来源）
+   · base：重置 / 排版 / 滚动条
+   · flat：现有米黄外观（后续阶段进来）
+   · glass：琉璃材质 + 控件皮肤（后续阶段进来）
+   · motion：关键帧与过场（后续阶段进来）
+   ⚠ @import 必须写在所有规则之前，否则浏览器整条丢弃。
+   ⚠ 顺序就是层叠顺序：后面的能覆盖前面的，别把 flat 放到 glass 后面。
    ═══════════════════════════════════════════════════════════════════════ */
-:root {
-  --sw-bg: #fff8e7;
-  --sw-bg-alt: #f2e8d2;
-  --sw-fg: #3d5166;
-  --sw-dim: #8a7f66;
-  --sw-accent: #4a7c9e;
-  --sw-border: #d8cdb0;
-  --sw-radius: 8px;
-  --sw-code-bg: #f5eeda;
-  --sw-select: rgba(74, 124, 158, 0.28);
-  --sw-font: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
-  --sw-font-mono: "Cascadia Mono", Consolas, "Courier New", monospace;
-}
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
-}
-
-body {
-  background: var(--sw-bg);
-  color: var(--sw-fg);
-  font-family: var(--sw-font);
-  font-size: 14px;
-  line-height: 1.6;
-  /* WebView2 里禁用文本选择的默认蓝，由各区域自己决定 */
-  -webkit-font-smoothing: antialiased;
-}
-
-/* 滚动条跟主题走，别让 Chromium 默认的亮色滚动条破坏观感 */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--sw-border);
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+@import "./theme/tokens.css";
+@import "./theme/base.css";
+@import "./theme/glass.css";
+@import "./theme/motion.css";
+/* lab（S0 材质样板）放最后：它只作用于 .lab，不影响其余页面，排后面便于整体回收 */
+@import "./theme/lab.css";

@@ -23,10 +23,15 @@
 #Include ..\..\..\lib\WebView2\WebView2.ahk
 
 class WebHostService {
-    static _ctrl := 0
-    static _core := 0
-    static _host := ""
-    static _hwnd := 0
+    ; v2.10：**多实例**。从前是单例（_ctrl / _core / _hwnd 各一个），
+    ; 挂第二个窗口时 Mount 会先 Destroy() —— 面板一开、笔记窗的 WebView2 就没了，
+    ; 表现为「关掉面板后笔记窗一片纯底色」。改成 hwnd → {ctrl, core, host} 的槽位表。
+    static _slots := Map()
+    ; 最近挂载的 hwnd：无参调用（Eval / Resize …）默认作用在它身上。
+    ; ⚠ 新代码**一律显式传 hwnd** —— 否则「最后挂的是哪个窗口」决定行为，
+    ;   面板一开，笔记模块的无参 Resize 就打到面板上去了。
+    static _cur := 0
+    static _bgUnsupported := false
 
     ; ─── 挂载 ───────────────────────────────────────────────────────────
     ; hwnd    父窗口（Gui.Hwnd）；同一个 hwnd 重复 Mount 只做 Fill，不重建 Chromium
@@ -35,6 +40,9 @@ class WebHostService {
     ; bgColor 0xAARRGGBB 首帧底色（防白闪）
     ; dataDir WebView2 user data 目录；缺省用 SevenWork 自己的，
     ;         **不要**用库默认的 Edge 目录 —— 那里跟 Edge 浏览器共用，缓存/清理会互相影响
+    ;         ⚠ 多个窗口**必须给不同 dataDir**：同一 user data folder 建第二个
+    ;         CoreWebView2Environment 会失败（Chromium 的 profile 锁），
+    ;         而失败发生在 await() 里，看起来只是「第二个窗口白屏」。
     ; 返回 {ok:true, ctrl, core, reused} | {ok:false, reason}
     static Mount(hwnd, distDir, host := "app.local", bgColor := 0xFF0B1624, dataDir := "") {
         if !hwnd || !DllCall("user32\IsWindow", "ptr", hwnd, "int")
@@ -47,12 +55,15 @@ class WebHostService {
             return {ok: false, reason: "前端目录不存在: " . distDir}
 
         ; 同一个父窗口 → 复用，只跟一次尺寸（面板反复开关时省掉 200ms 重建 + 内存抖动）
-        if this._ctrl && this._hwnd = hwnd {
-            this.Resize()
-            return {ok: true, ctrl: this._ctrl, core: this._core, reused: true}
+        if this._slots.Has(hwnd) {
+            slot := this._slots[hwnd]
+            this._cur := hwnd
+            this.Resize(hwnd)
+            return {ok: true, ctrl: slot.ctrl, core: slot.core, reused: true}
         }
 
-        this.Destroy()
+        ; ⚠ 这里**不再 Destroy 别的窗口** —— 各窗口各留一份，
+        ;   谁该关由它的主人（模块 / 平台界面）自己决定。
 
         try {
             ctrl := WebView2.CreateControllerAsync(hwnd, 0, dataDir || (EnvGet("LOCALAPPDATA") . "\SevenWork\WebView2")).await()
@@ -74,24 +85,32 @@ class WebHostService {
             return {ok: false, reason: "映射虚拟主机失败: " . e.Message}
         }
 
-        this._ctrl := ctrl
-        this._core := core
-        this._host := host
-        this._hwnd := hwnd
+        this._slots[hwnd] := {ctrl: ctrl, core: core, host: host}
+        this._cur := hwnd
         return {ok: true, ctrl: ctrl, core: core, reused: false}
+    }
+
+    ; ─── 取槽位（内部）────────────────────────────────────────────────
+    ; hwnd 省略 = 最近挂载的那个。拿不到返回 ""，调用方一律按「尚未挂载」处理。
+    static _Slot(hwnd := 0) {
+        h := hwnd || this._cur
+        if (!h || !this._slots.Has(h))
+            return ""
+        return this._slots[h]
     }
 
     ; ─── 导航到虚拟主机下的路径 ─────────────────────────────────────────
     ; ⚠ 虚拟主机映射**不做目录索引**：Navigate("https://app.local/") 会落到 Edge 的
     ;   「无法访问此页面」，而 SetVirtualHostNameToFolderMapping 的 HRESULT 仍是 S_OK、
     ;   导航也不抛错 —— 只有画面是错误页，是最难查的一类问题。根路径必须补成 index.html。
-    static Navigate(path := "/") {
-        if !this._core
+    static Navigate(path := "/", hwnd := 0) {
+        slot := this._Slot(hwnd)
+        if !IsObject(slot)
             return {ok: false, reason: "尚未挂载"}
         if (path = "" || path = "/")
             path := "/index.html"
         try {
-            this._core.Navigate("https://" . this._host . path)
+            slot.core.Navigate("https://" . slot.host . path)
             return {ok: true}
         } catch as e {
             return {ok: false, reason: e.Message}
@@ -105,8 +124,9 @@ class WebHostService {
     ;
     ; ⚠ 同一个 host 重复调用是覆盖语义（不报错），换 vault 不用先卸载 ✓
     ; ⚠ 与 Mount 一样必须传规范化路径，含 .. 时导航不报错、只出「无法访问此页面」。
-    static MapHost(host, dir) {
-        if !this._core
+    static MapHost(host, dir, hwnd := 0) {
+        slot := this._Slot(hwnd)
+        if !IsObject(slot)
             return {ok: false, reason: "尚未挂载"}
         if (host = "")
             return {ok: false, reason: "主机名为空"}
@@ -114,7 +134,7 @@ class WebHostService {
         if !DirExist(dir)
             return {ok: false, reason: "目录不存在: " . dir}
         try {
-            this._core.SetVirtualHostNameToFolderMapping(host, dir, 1)
+            slot.core.SetVirtualHostNameToFolderMapping(host, dir, 1)
             return {ok: true, host: host, dir: dir}
         } catch as e {
             return {ok: false, reason: "映射虚拟主机失败: " . e.Message}
@@ -122,11 +142,14 @@ class WebHostService {
     }
 
     ; ─── 把 AHK 对象暴露成 JS 的 chrome.webview.hostObjects.<name> ─────
-    static Bind(name, obj) {
-        if !this._core
+    ; ⚠ hostObjects 是**按 WebView 实例**注册的：同一个 name 要在每个窗口各 Bind 一次，
+    ;   不是挂一次全局生效（从前单例时期这个区别看不出来）。
+    static Bind(name, obj, hwnd := 0) {
+        slot := this._Slot(hwnd)
+        if !IsObject(slot)
             return {ok: false, reason: "尚未挂载"}
         try {
-            this._core.AddHostObjectToScript(name, obj)
+            slot.core.AddHostObjectToScript(name, obj)
             return {ok: true}
         } catch as e {
             return {ok: false, reason: e.Message}
@@ -138,11 +161,12 @@ class WebHostService {
     ; ⚠ **JS 里抛异常不会让 ok 变 false**：ExecuteScriptAsync 对脚本异常只返回 null
     ;   （HTML 规范如此），所以「选择器写错」与「页面确实没有这个元素」看起来一样。
     ;   写断言时要么保证 JS 不抛错，要么在 JS 里自己 try/catch 后返回字符串。
-    static Eval(js) {
-        if !this._core
+    static Eval(js, hwnd := 0) {
+        slot := this._Slot(hwnd)
+        if !IsObject(slot)
             return {ok: false, reason: "尚未挂载"}
         try {
-            raw := this._core.ExecuteScriptAsync(js).await()
+            raw := slot.core.ExecuteScriptAsync(js).await()
             if (raw = "" || raw = "null")
                 return {ok: false, reason: "脚本返回 null（JS 语法错 / 抛异常 / 表达式无值）"}
             return {ok: true, value: raw}
@@ -156,10 +180,10 @@ class WebHostService {
     ; ⚠ 用 Sleep 轮询而不是等某个事件：WebView2 没有「页面脚本就绪」的回调，
     ;   而 ExecuteScriptAsync 在页面尚未加载时同样会正常返回，
     ;   只能靠反复问「那个对象有了吗」。
-    static WaitFor(js, timeoutMs := 5000, intervalMs := 60) {
+    static WaitFor(js, timeoutMs := 5000, intervalMs := 60, hwnd := 0) {
         t0 := A_TickCount
         loop {
-            r := this.Eval(js)
+            r := this.Eval(js, hwnd)
             if (r.ok && r.value != "" && r.value != "false" && r.value != "null")
                 return true
             if (A_TickCount - t0 >= timeoutMs)
@@ -170,25 +194,37 @@ class WebHostService {
 
     ; ─── 跟随父窗口尺寸 ─────────────────────────────────────────────────
     ; ⚠ 必须由调用方在父窗口的 Size 事件里点名调用 —— 不做挂钩，保持能力层无副作用
-    static Resize() {
-        if !this._ctrl
+    static Resize(hwnd := 0) {
+        slot := this._Slot(hwnd)
+        if !IsObject(slot)
             return {ok: false, reason: "尚未挂载"}
         try {
-            this._ctrl.Fill()
+            slot.ctrl.Fill()
             ; ⚠ 库只实现了 IsVisible 的 getter（ComCall 3），没有 putter。
             ;   而「在窗口隐藏期挂载」时 Chromium 会把自己留在隐藏状态：父窗口后来
             ;   重新显示也不回来（实测子窗口 vis=False、坐标 -32000,-32000）。
             ;   表现是「窗口出来了、编辑区一片纯底色」，看起来像 WebView2 根本没显示。
             ;   vtable 4 = put_IsVisible，这里补一次 TRUE。
-            ComCall(4, this._ctrl, "int", 1)
+            ComCall(4, slot.ctrl, "int", 1)
             return {ok: true}
         } catch as e {
             return {ok: false, reason: e.Message}
         }
     }
 
-    static IsReady() {
-        return !!this._core
+    static IsReady(hwnd := 0) {
+        return IsObject(this._Slot(hwnd))
+    }
+
+    ; ─── 前端产物目录 ─────────────────────────────────────────────────
+    ; 开发态在 <repo>\web\dist（src\ 的同级）；编译版与 exe 同级。
+    ; 放能力层而不是某个模块里：笔记窗与面板都要它，谁都不该是「标准的来源」。
+    static DistDir() {
+        for p in [A_ScriptDir . "\..\web\dist", A_ScriptDir . "\web\dist"] {
+            if DirExist(p)
+                return this._NormPath(p)
+        }
+        return ""
     }
 
     ; ─── 路径规范化（展开 . / ..）────────────────────────────────────────
@@ -201,14 +237,24 @@ class WebHostService {
     }
 
     ; ─── 销毁 ───────────────────────────────────────────────────────────
-    static Destroy() {
-        if this._ctrl {
-            try this._ctrl.Close()
+    ; hwnd 省略 = 全部销毁（退出时用）。传 hwnd 只关那一个 —— 关面板不能顺手
+    ; 把笔记窗的 Chromium 也带走，那正是单例时代的老毛病。
+    static Destroy(hwnd := 0) {
+        if hwnd {
+            if !this._slots.Has(hwnd)
+                return {ok: true}
+            slot := this._slots[hwnd]
+            try slot.ctrl.Close()
+            this._slots.Delete(hwnd)
+            if (this._cur = hwnd)
+                this._cur := 0
+            return {ok: true}
         }
-        this._ctrl := 0
-        this._core := 0
-        this._host := ""
-        this._hwnd := 0
+        for h, slot in this._slots {
+            try slot.ctrl.Close()
+        }
+        this._slots := Map()
+        this._cur := 0
         return {ok: true}
     }
 }

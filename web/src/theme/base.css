@@ -1,0 +1,40 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   base.css —— 重置 + 排版 + 全局外观
+   从旧 style.css 原样搬来，**规则一个字都没改** —— 便于逐像素比对零回归。
+   ═══════════════════════════════════════════════════════════════════════ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--sw-bg);
+  color: var(--sw-fg);
+  font-family: var(--sw-font);
+  font-size: 14px;
+  line-height: 1.6;
+  /* WebView2 里禁用文本选择的默认蓝，由各区域自己决定 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 滚动条跟主题走，别让 Chromium 默认的亮色滚动条破坏观感 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sw-border);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

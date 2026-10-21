@@ -77,7 +77,7 @@ class FoldersModule {
     }
 
     ; ═══ 面板设置声明 ═══
-    ; 平台（WorkBenchUI）只认 {label, kind, value} 三个字段，**不认识「槽位」这个词**；
+    ; 平台（WebPanelUI）只认 {label, kind, value} 三个字段，**不认识「槽位」这个词**；
     ; 保存时把 values 原样交回这里的 apply 函数，由本模块自己写配置。
     ; 这样平台零业务耦合，将来别的模块加设置照抄这份形状即可。
     ; kind 目前支持 "folder"（输入框 + 浏览按钮）；后续可扩 "text" / "number" / "toggle"。
