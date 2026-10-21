@@ -2,7 +2,7 @@
 
 > **用途**：回答「到底用了什么技术、实现了什么」—— 每条都是「技术手段 → 实现效果」。
 > 功能怎么用看 `../README.md`；项目全景看 `PROJECT-OVERVIEW.md`；人的决策看 `DEVLOG.md`。
-> 口径：`v2.4.3` / `2026-10-18`。**技术事实以 `src/SevenWork.ahk` 为准**，本文只是索引。
+> 口径：`v2.8` / `2026-10-21`。**技术事实以 `src/SevenWork.ahk` 为准**，本文只是索引。
 
 ---
 
@@ -238,7 +238,7 @@ class SevenNoteModule {
 | --- | --- |
 | `ConfigService` | `IniRead` / `IniWrite` 包一层，**读一次就缓存**（`GetVault()` 单次保存要调 6 次以上） |
 | `State` | 进程内状态：Gui 句柄 / 编辑区句柄 / 当前日期 / 标签 |
-| `EventBus` | `Map` + `On(event, fn)` / `Emit(event, ...)` —— 21 个 Feature 之间**零直接调用** |
+| `EventBus` | `Map` + `On(event, fn)` / `Emit(event, ...)` —— 25 个 Feature 之间**零直接调用** |
 | `StatusBar` | 三个 Static 控件：日期+星期 / 标签 / 字数+提示 |
 
 **已用的事件**（部分）：`Window.BeforeHide`、`Window.Shown`、`Save.Requested`、

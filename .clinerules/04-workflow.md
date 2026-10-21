@@ -4,6 +4,17 @@
 
 **不要只靠「读代码觉得没问题」就宣称改好了。** 改完 `.ahk` 必须用真实解释器跑一次。
 
+**只改文档时（`.md` / `.clinerules` / `tools\*.ps1`）不用起 AHK，但必须跑**：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\check-docs.ps1
+```
+
+六项全 `PASS` 且退出码 `0` 才算过 —— 相对链接存在 / `*.md` = LF / `*.ahk` = CRLF /
+README badge = `Config.Version` / 代码围栏成对 / 行数清单。
+⚠ 它抓的是**结构性腐化**（链接断、编码跑偏、围栏没配平），抓不到「内容说错了」；
+口径与事实仍要自己对。
+
 ### 先验编码与换行
 
 源码 **UTF-8 无 BOM**；`.gitattributes` 规定 `*.ahk` **CRLF**、`*.md` **LF**。有些编辑器整文件写回会把 CRLF 统一成 LF（实测一次就把 `src\SevenWork.ahk` 全转成裸 LF，`git diff` 整文件变色）。**判换行只认字节**：

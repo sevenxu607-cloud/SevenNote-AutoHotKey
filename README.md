@@ -1,19 +1,19 @@
-# SevenWork-AutoHotKey
-Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF storage, Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date tags.
 # SevenWork
+
+**Lightweight daily scratchpad for Windows (AHK v2)** — RichEdit editing, dual RTF storage,
+Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date tags.
 
 > 一键唤起的 Windows 本地速记工具 —— 富文本编辑 + 双 RTF 存储 + Markdown 输出
 > 为 Obsidian 收件箱场景设计，走到哪记到哪，图文并茂、无感保存、标签管理
 >
-> 📄 **只想快速了解？** 看 [`docs/PROJECT-OVERVIEW.md`](./docs/PROJECT-OVERVIEW.md) —— 一页纸全景（定位 / 规模 / 欠账 / 限制）
-> 🔧 **想看技术实现？** 看 [`docs/PROJECT-IMPLEMENTATION.md`](./docs/PROJECT-IMPLEMENTATION.md) —— 15 个技术块（RichEdit / GDI / Dwm / Launcher 契约…）
+> 🗺️ **不知道从哪读起？** 看 [`docs/README.md`](./docs/README.md) —— 文档地图（哪份文档管什么、多久更新一次）
 > 📄 **只想快速了解？** 看 [`docs/PROJECT-OVERVIEW.md`](./docs/PROJECT-OVERVIEW.md) —— 一页纸全景（定位 / 规模 / 欠账 / 限制）
 > 🔧 **想看技术实现？** 看 [`docs/PROJECT-IMPLEMENTATION.md`](./docs/PROJECT-IMPLEMENTATION.md) —— 15 个技术块（RichEdit / GDI / Dwm / Launcher 契约…）
 > 🧭 **想看工作台化路线？** 看 [`docs/WORKBENCH-PLAN.md`](./docs/WORKBENCH-PLAN.md) —— 三张归属表 + Phase 0–6
 > 📋 **版本历史** [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) ｜ 🗓 **决策日志** [`docs/DEVLOG.md`](./docs/DEVLOG.md)
 > 🎨 **主题出图** [`docs/THEME-IMAGES.md`](./docs/THEME-IMAGES.md) ｜ 🪟 **外部窗口适配** [`docs/LAUNCHER-GUIDE.md`](./docs/LAUNCHER-GUIDE.md)
 
-![version](https://img.shields.io/badge/version-2.4.4-blue)
+![version](https://img.shields.io/badge/version-2.8-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![language](https://img.shields.io/badge/language-AutoHotkey%20v2-green)
 ![license](https://img.shields.io/badge/license-MIT-orange)
@@ -219,7 +219,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 
 ### 方式 A：使用 EXE（推荐普通用户）
 
-1. 从 [Releases](../../releases) 下载 `SevenWork.zip`（约 40MB，解压后得到 SevenWork.exe）
+1. 从 [Releases](https://github.com/sevenxu607-cloud/SevenNote-AutoHotKey/releases) 下载 `SevenWork.zip`（约 40MB，解压后得到 SevenWork.exe）
 2. 放到任意非系统盘目录（如 `D:\tools\`）
 3. **关闭杀毒软件**（AHK 编译的 EXE 常被误报）
 4. 双击运行
@@ -240,7 +240,7 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 | `SevenWork.ahk` | 根目录启动器：把入口转给 `src\`，并保持 `A_ScriptDir` 指向项目根 |
 | `src\SevenWork.ahk` | 组合根：装配 + 启动 |
 | `src\WorkBench\` | 平台层：Kernel / 热键路由 / 模块登记 / 统一帮助 / 伙伴协调 |
-| `src\modules\SevenNote\` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
+| `src\modules\SevenNote\` | 笔记模块：6 个 Service + `StatusBar` + 18 个 Feature + 模块生命周期 |
 | `src\modules\Launcher\` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 模块生命周期 |
 | `src\modules\KeysInput\` | 键位模块：`CapsLockFeature` + 模块生命周期 + `Alt+Shift+C` |
 | `src\modules\Text\` | 文本模块：提示词库（`Alt+P`）—— 2 个 Feature + `PromptStoreService` + 模块生命周期 |
@@ -364,7 +364,6 @@ Lightweight daily scratchpad for Windows (AHK v2): RichEdit editing, dual RTF st
 > 建一个，或新建提示词时在「分类」里写 `Work/会议`。首次运行会播种 `Chat` / `Code` / `Work`
 > 三个空目录当起步结构，之后完全自由。想换位置就在 `_config.ini` 写
 > `[Paths] PromptsDir=D:\你的路径`（非空即覆盖默认的 `<Vault>\_prompts`）。
-```
 
 ### 配置目录（AppData）
 

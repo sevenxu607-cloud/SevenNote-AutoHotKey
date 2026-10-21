@@ -1,9 +1,9 @@
 # SevenWork 项目全景（一页纸）
 
 > **用途**：一屏看完「这是什么 · 做到哪了 · 还欠什么」。
-> 完整手册见 `../README.md`（818 行）；人的决策记录见 `DEVLOG.md`；
+> 文档地图见 [`README.md`](README.md)；完整手册见 `../README.md`；人的决策记录见 `DEVLOG.md`；
 > 工作台化路线见 `WORKBENCH-PLAN.md`（三张归属表 + Phase 0–6）。
-> 统计口径：`2026-10-19`，版本 `v2.4.4`，分支 `feature/groups`。
+> 口径：`2026-10-21`，版本 `v2.8`，`main` = 日用 / 稳定。
 
 ---
 
@@ -21,7 +21,7 @@
 | 项 | 数值 |
 | --- | --- |
 | 源码 | 根 `SevenWork.ahk` 启动器 + `src/` 下组合根、`WorkBench/` 平台层、`modules/SevenNote/` 笔记模块、`modules/Launcher/` 外部程序模块、`modules/KeysInput/` 键位模块 |
-| 类 | 34 个 = Kernel 4 + Service 8 + StatusBar 1 + Feature 21 |
+| 类 | 57 个 = Kernel 4 + Capability 7 + Coordinator 1 + 平台 4 + 模块 5 + StatusBar 1 + Service 10 + Feature 25 |
 | 文档 | `README.md` 约 740 行（手册正文）；版本历史拆到 `docs/CHANGELOG.md`，开发日志在 `docs/DEVLOG.md` |
 | 发行物 | 编译后约 250 MB（含内嵌 Pandoc 100+ MB） |
 
@@ -87,9 +87,10 @@
 ## 架构
 
 ```
-FEATURE  功能层  21 项  →  Feature 之间零调用，靠 EventBus 通信，可插拔
-SERVICE  服务层   8 项  →  纯能力，无业务 / 无时间 / 无理由
-KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻结，只加不改）
+FEATURE  功能层   25 项  →  Feature 之间零调用，靠 EventBus 通信，可插拔
+SERVICE  服务层   10 项  →  纯能力，无业务 / 无时间 / 无理由
+KERNEL   骨架层    4 项  →  Config / ConfigService / EventBus / State（冻结，只加不改）
+CAPABILITY 能力层  7 项  →  只收 hwnd / 数字 / Rect，不读 Config / 不发事件
 表示层：StatusBar       组合根：装配 + 启动
 依赖方向：Feature → Service → Kernel → OS（严禁反向）
 ```
@@ -130,7 +131,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `SevenWork.ahk` | 根目录启动器：把入口转给 `src/`，保持项目根为 `A_ScriptDir` |
 | `src/SevenWork.ahk` | 组合根：装配 + 启动 |
 | `src/WorkBench/` | 平台层：Kernel / 热键路由 / 模块登记 / 帮助 / 伙伴协调 |
-| `src/modules/SevenNote/` | 笔记模块：7 个 Service + `StatusBar` + 18 个 Feature + 生命周期 |
+| `src/modules/SevenNote/` | 笔记模块：6 个 Service + `StatusBar` + 18 个 Feature + 生命周期 |
 | `src/modules/Launcher/` | 外部程序模块：`PeerLayoutService` + PowerShell / DeepSeek Feature + 生命周期 |
 | `src/modules/KeysInput/` | 键位模块：`CapsLockFeature` + `Alt+Shift+C` 生命周期 |
 | `docs/legacy/` | Phase 2 拆分前的单文件快照，只作对照，不参与运行 |
@@ -144,7 +145,7 @@ KERNEL   骨架层   4 项  →  Config / ConfigService / EventBus / State（冻
 | `docs/DEVLOG.md` | 开发日志：人的原话、判断、放弃方案、待办 |
 | `docs/WORKBENCH-PLAN.md` | 工作台化路线：三张归属表 + 模块接口 + Phase 0–6 |
 | `.clinerules/` | 给 AI 的约定：语言 / 架构 / AHK v2 坑 / 验证流程 / 主题烘图 / 日志规则 |
-| `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1` |
+| `tools/` | `pick-theme-colors.ps1`、`rebake-backdrop.ps1`、`check-docs.ps1`（文档体检） |
 | `docs/screenshots/` | README 配图 |
 
 ---
