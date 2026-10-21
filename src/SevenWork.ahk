@@ -79,6 +79,9 @@ Persistent()
 #Include WorkBench\Capabilities\Placement\WindowProbe.ahk
 #Include WorkBench\Capabilities\Placement\PlacementExecutor.ahk
 #Include WorkBench\Capabilities\Graphics\BackdropService.ahk
+; UiPaint：Win32 染色原语（标题栏 / 滚动条主题 / ListView 底色）。
+; 只收 hwnd + 颜色字符串，不认主题、不读 Config —— 主题是业务策略，在 WorkBench\Services。
+#Include WorkBench\Capabilities\Graphics\UiPaint.ahk
 ; ExplorerProbe：按**真实路径**找资源管理器窗口（读 Shell.Application.Windows）。
 ; 不用窗口标题 —— 标题是文件夹名，重名 / 本地化都靠不住。Folders 模块用它做显隐定位。
 #Include WorkBench\Capabilities\Shell\ExplorerProbe.ahk
@@ -109,6 +112,12 @@ Persistent()
 ;  SERVICE 服务层
 ; ═══════════════════════════════════════════════════════════════════════════
 
+#Include WorkBench\Services\ThemeService.ahk
+
+; 字号：仍属笔记模块（只影响 RichEdit，而编辑区已交给 WebView2 —— 见 FontService 头注释）
+#Include modules\SevenNote\Services\FontService.ahk
+
+
 #Include modules\SevenNote\Services\EditorService.ahk
 
 
@@ -120,12 +129,6 @@ Persistent()
 
 ; 粘贴图片落盘（WebView2 → base64 → _assets/<date>/）—— 必须在 NoteStoreService 之后
 #Include modules\SevenNote\Services\NoteImageService.ahk
-
-
-#Include modules\SevenNote\Services\ThemeService.ahk
-
-
-#Include modules\SevenNote\Services\FontService.ahk
 
 
 ; BackdropService 已上收到 WorkBench\Capabilities\Graphics\（见上方 CAPABILITY 层）

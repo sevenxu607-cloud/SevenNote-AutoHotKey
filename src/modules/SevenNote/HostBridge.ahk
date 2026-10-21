@@ -17,17 +17,32 @@
 NoteHostPing() => "pong"
 NoteHostVersion() => A_AhkVersion
 
-; 主题 → JSON（前端 JSON.parse 后 applyTheme）。
-; 主题名里有中文，直接拼进 JSON 是合法的，但引号 / 反斜杠必须转义。
-NoteHostTheme() {
-    t := ThemeService.Themes[ThemeService.GetCurrent()]
+; 语义色板 → JSON。前端 JSON.parse 后 applyTheme 一次设全 --sw-*。
+; v2.9 起随主题上收一起扩到 9 个语义色：从前只给 4 个（name/win/edBg/text/dim），
+; --sw-accent / --sw-border 一直用 CSS 里的浅色默认值 —— 深色主题下那两个颜色是
+; 米黄系的，压在深底上既不像强调色也不像分隔线。
+;
+; ⚠ 字段顺序 / 名字与 web/src/ahk.ts 的 Theme 接口逐个对齐，改一边必须改另一边。
+; ⚠ 有中文（主题名），引号 / 反斜杠必须过 JsText.Escape —— 手拼 JSON 只在这一处。
+NoteHostThemeJson() {
+    p := ThemeService.Palette()
     return '{'
-        . '"name":' . JsText.Escape(t.name) . ','
-        . '"win":'   . JsText.Escape(t.win)   . ','
-        . '"edBg":'  . JsText.Escape(t.edBg)  . ','
-        . '"text":'  . JsText.Escape(t.text)  . ','
-        . '"dim":'   . JsText.Escape(t.dim)
+        . '"name":'    . JsText.Escape(p.name)   . ','
+        . '"win":'     . JsText.Escape(p.win)    . ','
+        . '"edBg":'    . JsText.Escape(p.edBg)   . ','
+        . '"text":'    . JsText.Escape(p.text)   . ','
+        . '"dim":'     . JsText.Escape(p.dim)    . ','
+        . '"accent":'  . JsText.Escape(p.accent) . ','
+        . '"border":'  . JsText.Escape(p.border) . ','
+        . '"codeBg":'  . JsText.Escape(p.codeBg) . ','
+        . '"dark":'    . (p.dark ? "true" : "false") . ','
+        . '"bg":'      . JsText.Escape(p.bg)     . ','
+        . '"bgAlpha":' . p.bgAlpha
         . '}'
+}
+
+NoteHostTheme() {
+    return NoteHostThemeJson()
 }
 
 ; 粘贴的图片落盘：base64 → <vault>\_assets\<日期>\sw_*.png，返回 ./_assets/… 相对路径。

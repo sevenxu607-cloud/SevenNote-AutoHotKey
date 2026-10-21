@@ -17,12 +17,15 @@ src/WorkBench/
 │  │  ├─ WindowProbe.ahk       窗口 / 工作区事实查询
 │  │  └─ PlacementExecutor.ahk 唯一搬窗口出口
 │  ├─ Graphics/
-│  │  └─ BackdropService.ahk   背景图图层 + 位图合成
+│  │  ├─ BackdropService.ahk   背景图图层 + 位图合成
+│  │  └─ UiPaint.ahk           Win32 染色原语：标题栏 / 窗口主题 / ListView 底色
 │  ├─ Shell/
 │  │  └─ ExplorerProbe.ahk     按真实路径找资源管理器窗口 + 读选中项
 │  └─ Document/
 │     ├─ PandocRunner.ahk      单文件格式转换（pandoc 定位 + 调用）
 │     └─ DocxHeadingFix.ahk    docx 自定义标题样式名 → pandoc 认得的 heading N
+├─ Services/                   平台服务：业务策略，**可读 Config / State**
+│  └─ ThemeService.ahk         5 套主题 + 语义色板 Palette()（控制面板是刻意例外）
 ├─ Coordinator/                跨模块协调：读业务上下文、发事件、算几何
 │  └─ PeerCoordinator.ahk
 ├─ ModuleRegistry.ahk
@@ -318,6 +321,33 @@ DocxHeadingFix.LevelOf(styleName)         ; → 1..9 / 0（0 = 不是标题样�
   能力，这是最少依赖的一条路。实测 23MB 课件：解压 148ms + 打包 760ms。
 
 ---
+
+### 4.8 `UiPaint`（Win32 染色原语）
+
+```ahk
+UiPaint.TitleBar(hwnd, winHex, textHex)   ; → true / false（无 hwnd 时 false）
+UiPaint.WindowTheme(hwnd, dark)           ; → true / false
+UiPaint.ListView(hwnd, bgHex, fgHex)      ; → true / false
+UiPaint.Bgr(hexRGB)                       ; → COLORREF（0x00BBGGRR）
+UiPaint.IsDark(hexRGB)                    ; → bool
+```
+
+**只收 hwnd + `RRGGBB` 字符串 + 布尔**，不认主题对象、不读 `Config` / `State`、不发事件。
+配色由调用方（`ThemeService.Palette()`）算好再传进来 —— 能力层只管「把这个颜色刷上去」。
+
+| 方法 | 干了什么 | 失败时 |
+| --- | --- | --- |
+| `TitleBar` | `DWMWA_USE_IMMERSIVE_DARK_MODE`（20，退 19）+ Win11 的 `35/36/34` 染标题栏 / 标题文字 / 外框 | 静默退回系统配色（Win10 无后三个属性） |
+| `WindowTheme` | `SetWindowTheme` 设 `DarkMode_Explorer` / `Explorer` | 静默退回系统主题（老系统没有前者） |
+| `ListView` | `LVM_SETBKCOLOR` / `SETTEXTCOLOR` / `SETTEXTBKCOLOR` + 双缓冲 | `SendMessage` 失败不报错（控件已销毁） |
+
+全都不返回值给业务判断「要不要回退」：染色失败只影响观感、不影响功能，让调用方写分支
+反而会诱使它在失败时做危险动作（比如把窗口藏起来）。
+
+> ⚠ 深色主题下的 Edit / ComboBox 还需要 `WM_CTLCOLOREDIT`（`OnMessage` 只能注册一次，
+> 要按 hwnd 分发 + `CreateSolidBrush`/`DeleteObject` 成对管理）。**尚未实现** ——
+> 加的时候连同 `EditColors()` / `ComboColors()` 一起做，别只改背景不改文字
+> （白底黑字 → 深底黑字，比不改更糟）。
 
 ## 5. 不该放进 `Capabilities` 的东西
 

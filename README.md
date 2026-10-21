@@ -116,13 +116,13 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 - **切日期自动定位到开头**（不是末尾）
 - **空笔记不落盘**：Vault 永远干净
 
-### 🎨 5 套主题 + 7 种字体
+### 🎨 5 套主题
 
 - **主题**：纯米黄 / 护眼绿 / 纸白 / **星空** / **金克斯**
-- **字体**：楷体 / 华文行楷 / 华文新魏 / 方正舒体 / 仿宋 / 微软雅黑 / 黑体
-- **字号**：12 / 14 / 16 / 18 / 20 pt
-- **`Alt+T` 切主题，`Alt+Shift+T` 切字体，`Alt+=/-` 调字号**
-- 全部自动记忆，重启保留
+- **`Alt+T` 循环切换**，自动记忆，重启保留
+- 主题是**平台级**的（`WorkBench\Services\ThemeService.ahk`）：笔记窗口、标题栏、提示词库、
+  日期对话框、启动提示一起跟着变。`Alt+S` 工作台面板是**刻意的例外** —— 它有自己的配色，
+  方便和内容区区分
 - 最后两套是**背景图主题**：切到它们，一张图片铺满编辑区，文字**直接浮在图上**
 - 两套都走「**暗图 + 亮字**」：图不动明暗（只把压在字下的最亮处滚降一点），窗框 / 标题栏 /
   状态栏一起转深，人物（星空是星云）铺满编辑区
@@ -154,7 +154,7 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
   底色染成 `win`、标题文字染成 `text`、外框同 `win`。实测标题栏像素精确等于 `#0B1624`，
   和窗框连成一体
 - **编辑区滚动条也跟着主题**：滚动条画在**非客户区**、由系统主题上色，深色主题下原来会留一条
-  亮白竖条压在暗底上（浅色主题下则相反）。`ThemeService._SetScrollBarTheme` 把编辑区窗口主题
+  亮白竖条压在暗底上（浅色主题下则相反）。`UiPaint.WindowTheme` 把编辑区窗口主题
   设成 `DarkMode_Explorer` / `Explorer` 即随主题明暗 —— 实测滚动条区域的像素均亮度 **40**
   （编辑区 75，同档暗）、**亮像素 0 个**
 - **上下滑动时不再频闪**：主窗口开了 `WS_EX_COMPOSITED`（`+E0x02000000`）离屏双缓冲 ——
@@ -166,8 +166,8 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 想再加一套**别的图**当主题（极光、雪原……）？见
 [开发指南 → 添加带背景图的主题](#添加带背景图的主题)，配 `tools\pick-theme-colors.ps1` 一键取色。
 
-**换图 / 调浓淡**都改**主题自己**：`ThemeService.Themes` 里那一条的 `bg`（图路径）与
-`bgAlpha`（遮罩不透明度 0-100；遮罩色取该主题 `edBg`，暗主题压暗、亮主题加白纱）。
+**换图 / 调浓淡**都改**主题自己**：`src\WorkBench\Services\ThemeService.ahk` 里 `Themes` 那一条的
+`bg`（图路径）与 `bgAlpha`（遮罩不透明度 0-100；遮罩色取该主题 `edBg`，暗主题压暗、亮主题加白纱）。
 不设全局开关 —— 多套图主题才能各调各的（换图后**重启程序**才生效，位图有缓存）。
 
 ### ⌨️ 输入增强
@@ -265,9 +265,7 @@ Pandoc → Markdown, Obsidian inbox. One hotkey, auto-save, image support, date 
 | `Alt+S` | 打开**工作台面板**：左侧导航选页（`≡ 全部热键` / 各模块），右侧看该页热键、直接改该模块的设置 |
 | `Alt+↑ / Alt+↓` | 前一天 / 后一天 |
 | `Alt+Home` | 回到今天 |
-| `Alt+T` | 切换主题（含两套背景图主题「星空 / 金克斯」） |
-| `Shift+Alt+T` | 切换字体 |
-| `Alt+= / Alt+-` | 调大 / 调小字号 |
+| `Alt+T` | 循环切换界面主题（含两套背景图主题「星空 / 金克斯」） |
 | `Alt+Shift+C` | 切换 CapsLock 键盘映射 |
 | `Alt+P` | 呼出 / 隐藏**提示词库**（片段库，数据在 `<Vault>\_prompts\`） |
 | `Alt+1 / Alt+2 / Alt+3` | 呼出 / 隐藏**文件夹槽位 1 / 2 / 3** —— 指向哪个目录在 `Alt+S` 面板里换，留空表示该槽位未启用 |
@@ -619,13 +617,15 @@ class MyModule {
 
 ### 添加新主题
 
-`ThemeService.Themes` 数组加一行：
+`src\WorkBench\Services\ThemeService.ahk` 的 `Themes` 数组加一行：
 
 ```ahk
 {name: "暗夜黑", win: "1E1E1E", edBg: "252526", text: "D4D4D4", dim: "808080"},
 ```
 
-加完 `Alt+T` 自动循环到新主题。
+加完 `Alt+T` 自动循环到新主题。**只写 4 个基色就够** —— `accent` / `border` / `panel` /
+`codeBg` 由 `Palette()` 按明暗派生（要覆盖就在条目里自带同名字段），前端 `--sw-*` 与 AHK
+窗口拿的是同一份派生结果。加在**末尾**，别插中间（`ThemeIndex` 存下标）。
 
 ### 添加带背景图的主题
 

@@ -25,7 +25,7 @@ class SevenNoteModule {
         g.Opt("+AlwaysOnTop +Resize +MinSize450x300")
         ; 首帧底色：Chromium 起来前不铺东西会露白。取当前主题的窗底色同档。
         g.SetFont("s14", "楷体")
-        g.BackColor := ThemeService.Themes[ThemeService.GetCurrent()].win
+        g.BackColor := ThemeService.Palette().win
 
         ; ─── 客户区整个交给 WebView2 ───
         ; 字数 / 标签 / 主题名 / 日期 / 提示原本是 6 个 Text 控件，现在全在页面里
@@ -56,6 +56,31 @@ class SevenNoteModule {
         ; 而 Mount 发生在隐藏态（见 _Mount）。不补的话窗口出来了、编辑区仍是 0×0 ——
         ; 画面一片纯底色，看起来像「WebView2 根本没显示」。
         EventBus.On("Window.Shown", (*) => SevenNoteModule._AfterShown())
+
+        ; 换主题（Alt+T）时跟着变：平台只广播，窗口自己决定怎么响应 ——
+        ; 这样删掉笔记模块，别的模块窗口照样跟着主题走。
+        EventBus.On("Theme.Changed", (*) => SevenNoteModule._OnThemeChanged())
+    }
+
+    ; 换主题：窗口底色 + 标题栏 + 推给前端页面。
+    ; ⚠ 异步回调碰窗口前必须过闸（见 .clinerules/03「异步回调里碰窗口」）：
+    ;   窗口可能已经销毁，WinAPI 抛错会被全局 OnError 记一条看不懂的日志。
+    static _OnThemeChanged() {
+        g := State.GetGui()
+        if !g
+            return
+        if !DllCall("user32\IsWindow", "ptr", g.Hwnd, "int")
+            return
+
+        p := ThemeService.Palette()
+        g.BackColor := p.win
+        UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+
+        ; 前端：--sw-* 全套一次推过去。页面没起来时 Eval 返回 {ok:false}，忽略即可 ——
+        ; 前端 onMounted 还会再 getTheme 一次，不会留旧色。
+        if this._mounted
+            WebHostService.Eval("window.__sevenwork&&window.__sevenwork.applyTheme("
+                . NoteHostThemeJson() . ")")
     }
 
     static _AfterShown() {
@@ -92,13 +117,24 @@ class SevenNoteModule {
             return false
         }
 
+        ; 标题栏跟着主题染（深底配亮字 / 浅底配深字，由 UiPaint 自己按亮度判）。
+        ; 放在隐藏态做：属性设好，窗口一露面就是正确的颜色，不会先闪一下白标题栏。
+        p := ThemeService.Palette()
+        UiPaint.TitleBar(g.Hwnd, p.win, p.text)
+
         dist := this._DistDir()
         if (dist = "") {
             LogError("前端产物不存在，先到 web\ 下 npm run build")
             return false
         }
 
-        r := WebHostService.Mount(g.Hwnd, dist)
+        ; 首帧底色必须跟主题走：这里的默认值是深蓝（0xFF0B1624），米黄主题下
+        ; Chromium 起来前会先闪一帧深蓝。传 edBg（内容底）而不是 win（窗口底）——
+        ; WebView2 铺满整个客户区，它盖住的正是内容区。
+        ; ⚠ 这里是 AARRGGBB（COREWEBVIEW2_COLOR），不是 Win32 的 COLORREF ——
+        ;   别套 RGBtoBGR，那会把 R/B 反过来（FFF8E7 → E7F8FF，米黄变淡蓝）。
+        r := WebHostService.Mount(g.Hwnd, dist, "app.local"
+            , 0xFF000000 | Integer("0x" . p.edBg))
         if !r.ok {
             LogError("WebView2 挂载失败：" . r.reason)
             return false

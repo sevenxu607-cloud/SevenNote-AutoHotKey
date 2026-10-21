@@ -90,7 +90,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\rebake-backdrop.ps1 `
 
 ## 三、登记主题（三处一起改）
 
-1. `ThemeService.Themes` **追加到数组末尾**（`ThemeIndex` 存下标，插中间会顶掉老用户当前的主题）
+1. `src\WorkBench\Services\ThemeService.ahk` 的 `Themes` **追加到数组末尾**（`ThemeIndex` 存下标，插中间会顶掉老用户当前的主题）
 2. `bg` 与 `bgAlpha` **必须成对**；`bgFit` 可选（不写 = `cover`）
 3. 前一条结尾补 `},` —— 漏逗号报 `Unexpected "{"`，窗口再也出不来（方案 A 预检查不出）
 

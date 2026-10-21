@@ -49,7 +49,7 @@ class FontService {
         NumPut("uint", 92, cf, 0)
         NumPut("uint", 0x40000000 | 0x20000000 | 0x80000000 | 0x08000000, cf, 4)
         NumPut("int", this.GetSize() * 20, cf, 12)
-        NumPut("uint", ThemeService._RGBtoBGR(t.text), cf, 20)
+        NumPut("uint", ThemeService.RGBtoBGR(t.text), cf, 20)
         NumPut("uchar", 134, cf, 24)
         StrPut(this.GetName(), cf.Ptr + 26, "UTF-16")
         SendMessage(0x0444, 4, cf.Ptr, hwndEd)

@@ -12,6 +12,11 @@ class WorkBench {
             return
         this._initialized := true
 
+        ; ─── 先恢复主题：模块 Init 会读它（主窗底色 / WebView2 首帧色）───
+        ; 必须在 Register / InitAll 之前 —— 否则第一个窗口建出来就是主题 1。
+        ; LoadFromConfig 只改状态、不广播：此刻窗口一个都还没建，没人要重绘。
+        ThemeService.LoadFromConfig()
+
         ; 模块登记只放「模块类」——它们统一带 Id / Name / Init() / GetHotkeys()。
         ; ⚠ 加模块只改这里（一行 #Include 在上面）+ 一行 Register，组合根不动：
         ;   启动 / 热键 / 兜底都由 ModuleRegistry.InitAll() / StartAll() / HotkeyRouter 遍历。
@@ -26,13 +31,17 @@ class WorkBench {
         WorkBenchUI.Init()
     }
 
-    ; ─── 平台级热键：工作台面板 + 保存退出 ───
+    ; ─── 平台级热键：工作台面板 + 主题 + 保存退出 ───
     ; Alt+S 由平台负责打开面板（帮助 + 各模块设置）；Alt+Shift+Z 只广播 Save.Requested，
     ; 真正落盘仍由 SevenNote 的 SaveFeature 订阅处理 —— 平台不直接调用模块内部 Feature。
+    ; Alt+T 归平台：主题是**所有模块窗口**共用的一套（v2.9 起 ThemeService 上收到平台），
+    ; 不再是笔记模块的私事 —— 放在模块里会让「谁负责切主题」取决于模块是否启用。
     static GetHotkeys() {
         return [
             {ctx: "global", key: "!s", group: "平台", line: "   Alt+S            工作台面板（帮助 + 设置）"
                 , fn: (*) => WorkBenchUI.ShowHelp()},
+            {ctx: "global", key: "!t", group: "外观", line: "   Alt+T            循环切换界面主题"
+                , fn: (*) => ThemeService.Next()},
             {ctx: "global", key: "!+z", group: "平台", line: "   Alt+Shift+Z      保存并退出"
                 , fn: (*) => (EventBus.Emit("Save.Requested"), ExitApp())}
         ]

@@ -14,11 +14,10 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：S3b 落地 —— 编辑区已是 WebView2 + Milkdown，加载 / 保存 / 脏标记全链路
-  真机验证通过（详见 2026-10-21 20:45 条目）
-- **正在处理**：S3 收尾 —— 搬回编辑快捷键（S3c）与外观对齐（S3d）
-- **下一步**：S3c（`Shift+Tab` 反缩进、列表内 `Tab` 走 `sinkListItem`），
-  然后 S3d（前端 `Alt+T` 主题循环）
+- **最近一次改动**：主题上收到平台 + `Alt+T` 恢复 —— 5 套主题现在覆盖笔记主窗
+  （窗口底色 / 标题栏 / 前端 `--sw-*` 全套），真机验证通过（详见 2026-10-21 21:20 条目）
+- **正在处理**：主题平台化 P2 —— 其余窗口（提示词库 / 日期对话框 / 启动提示）接 `Palette()`
+- **下一步**：P2 深色 Edit / ComboBox（`WM_CTLCOLOREDIT`）；控制面板留到 P2 之后单独打磨
 
 - **已知未解决**：
   - 50ms 轮询版（`ScrollSyncFeature`）在真机上「运行报错」，原因未定位，已回退
@@ -32,7 +31,9 @@
 - [x] ~~S3b：砍 11 条编辑热键、删 `SearchFeature`~~ —— 实际热键 27 → 7，删 12 个文件
 - [ ] S3c：`Shift+Tab` 反缩进；列表内 `Tab` 改走 `sinkListItem`
   （`Ctrl+T` / `Ctrl+H` / `Ctrl+Shift+H` / `Tab` 已在前端 keymap 就位）
-- [ ] S3d：外观对齐（`Alt+T` 循环主题、背景图主题是否随 RTF 一起退休待定）
+- [x] ~~S3d：`Alt+T` 循环主题~~ —— 主题服务上收到 `WorkBench\Services`，热键归平台
+  （2026-10-21 21:20 条目）
+- [ ] S3d 余项：背景图主题是否随 RTF 一起退休（`bg` 字段保留，前端尚未消费）
 - [ ] 存量 `.md` 每行的 `**` 包裹要不要清洗
 
 **P1（代码审查遗留）**
@@ -78,6 +79,39 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-21 21:20　主题上收到平台，`Alt+T` 恢复（P0 + P1）
+
+**我说**（原话，按会话记录整理）
+> 控制面板本轮一行不动，等 P2 完成后再单独打磨。
+
+**意图**
+5 套主题要真正覆盖**所有由工作台调度的窗口**，而不只是笔记主窗；控制面板是刻意例外。
+
+**决定 / 过程**
+- 先挖出一个 S3b 回归：`ThemeService.LoadFromConfig()` 没有任何调用点，`Apply()` 又被
+  `State.GetEd() === 0` 提前 `return` —— 等于**主题永远停在主题 1**，连存盘和 `Theme.Changed` 都不执行。
+- 主题服务从 `modules\SevenNote\Services\` 上收到 `src\WorkBench\Services\`，新增 `Palette()`
+  派生 9 个语义色（`win` / `edBg` / `text` / `dim` / `accent` / `border` / `panel` / `codeBg` / `dark`），
+  与前端 `--sw-*` 同名同义、派生公式两边一致。
+- 新增 Capability `UiPaint`（`TitleBar` / `WindowTheme` / `ListView`），只收 hwnd + 色值。
+- 双轨生效：窗口自己读 `Palette()`（拉）+ `Theme.Changed` 广播（推，笔记主窗经 `HostBridge`
+  把整套色板推给前端 `applyTheme`）。
+- `Alt+T` 归平台 `WorkBench.GetHotkeys()` —— 主题不再是模块私事。
+- 顺手修前端两处：`applyTheme` 补 `--sw-accent` / `--sw-border`；WebView2 首帧色从写死的
+  深蓝 `0xFF0B1624` 改成主题的 `edBg`。
+
+**代价 / 风险**
+- 删掉了模块内的 `ThemeService.ahk`；`FontService` 的 `_RGBtoBGR` 随之改名（它本身仍是死代码，未动）。
+- `UiPaint` **暂不含** `WM_CTLCOLOREDIT`：深色主题下原生 Edit / ComboBox 仍是系统色。
+- 控制面板固定米黄 —— 切到金克斯时会有「亮面板从深窗口里弹出来」的观感差，这是本轮**明确接受**的。
+
+**待办**
+- [ ] P2：提示词库 / 日期对话框 / 启动提示接 `Palette()`
+- [ ] P2：深色 Edit / ComboBox（`WM_CTLCOLOREDIT` + brush 生命周期）
+- [ ] P3：背景图主题接前端（`bg` / `bgAlpha` 已在 JSON 里，页面还没消费）
+- [ ] `FontService` / `Alt+±` 是否恢复待定
+
 ### 2026-10-21 20:45　S3b 落地：编辑区换成 WebView2，热键 27 → 7
 
 **我说**（原话）

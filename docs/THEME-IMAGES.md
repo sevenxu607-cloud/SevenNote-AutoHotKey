@@ -192,7 +192,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\rebake-backdrop.ps1 `
 > 漏了逗号不是「少一个元素」那么温柔，AHK 会报 `(946) : ==> Unexpected "{"`
 > 并弹一个标题为脚本名（`SevenWork.ahk`）的错误框，窗口再也出不来。
 
-标题栏**自动取主题色**，不必手工处理：`ThemeService._SetDarkTitleBar` 先按 `win` 的加权亮度
+标题栏**自动取主题色**，不必手工处理：`UiPaint.TitleBar(hwnd, win, text)` 先按 `win` 的加权亮度
 是否小于 128 决定 immersive dark mode，再用 Win11 的 `DWMWA_CAPTION_COLOR / TEXT_COLOR /
 BORDER_COLOR`(35/36/34) 把标题栏底色 / 标题文字 / 外框分别染成 `win` / `text` / `win`。
 （Win10 上后三个属性不存在 → `DllCall` 静默失败，退回系统配色。）

@@ -41,27 +41,43 @@ export async function ahkCall<T = string>(method: string, ...args: unknown[]): P
   return (await fn(...args)) as T
 }
 
-/** 主题对象 —— 与 ThemeService.Themes 的字段一一对应 */
+/**
+ * 语义色板 —— 与 AHK 侧 ThemeService.Palette() 的字段一一对应。
+ * 名字沿用 --sw-* 的语义，AHK 一次算全再推过来（派生规则只写在一处）。
+ */
 export interface Theme {
   name: string
-  win: string
-  edBg: string
-  text: string
-  dim: string
+  win: string // 窗口底 / 标题栏   → --sw-bg-alt
+  edBg: string // 内容底           → --sw-bg
+  text: string // 正文             → --sw-fg
+  dim: string // 次要文字          → --sw-dim
+  accent?: string // 强调色        → --sw-accent
+  border?: string // 分隔线        → --sw-border
+  codeBg?: string // 代码块 / 列表底 → --sw-code-bg
+  dark?: boolean // 是否深色（AHK 判，避免两边公式不一致）
+  bg?: string // 背景图绝对路径（P3 背景图主题用，当前不消费）
+  bgAlpha?: number // 背景图遮罩 0-100（P3）
 }
 
-/** AHK 推主题：__sevenwork.applyTheme({name, win, edBg, text, dim}) */
+/** AHK 推主题：__sevenwork.applyTheme({name, win, edBg, text, dim, accent, ...}) */
 export function applyTheme(t: Theme): void {
   const r = document.documentElement.style
-  r.setProperty('--sw-bg', '#' + t.edBg)
-  r.setProperty('--sw-bg-alt', '#' + t.win)
-  r.setProperty('--sw-fg', '#' + t.text)
-  r.setProperty('--sw-dim', '#' + t.dim)
-  // 代码块 / 选区需要一个比正文底再深（或再浅）一档的颜色，主题里没给，
-  // 按背景明暗推：暗底就往浅走，亮底就往深走。别直接复用 win —— 那个是标题栏色。
-  const dark = luminance(t.edBg) < 128
-  r.setProperty('--sw-code-bg', dark ? shift(t.edBg, 12) : shift(t.edBg, -8))
-  r.setProperty('--sw-select', hexToRgba(t.dim || t.text, 0.26))
+  const hex = (v: string) => (v.startsWith('#') ? v : '#' + v)
+
+  r.setProperty('--sw-bg', hex(t.edBg))
+  r.setProperty('--sw-bg-alt', hex(t.win))
+  r.setProperty('--sw-fg', hex(t.text))
+  r.setProperty('--sw-dim', hex(t.dim))
+
+  // accent / border / codeBg / dark 全部由 AHK 的 ThemeService.Palette() 派生后推来。
+  // 从前这几个前端自己算（border 干脆一直用 CSS 里那支米黄 #d8cdb0）—— 深色主题下
+  // 既不像分隔线也不像强调色。派生只写一处，网页与 AHK 窗口才对得上。
+  // 缺字段时退回本地推导：`npm run dev` 在浏览器里跑，没有 AHK 推值。
+  const dark = t.dark ?? luminance(t.edBg) < 128
+  r.setProperty('--sw-accent', hex(t.accent ?? (dark ? '7FB4D8' : '4A7C9E')))
+  r.setProperty('--sw-border', hex(t.border ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -14))))
+  r.setProperty('--sw-code-bg', hex(t.codeBg ?? (dark ? shift(t.edBg, 12) : shift(t.edBg, -8))))
+  r.setProperty('--sw-select', hexToRgba(t.accent ?? t.dim, 0.26))
   document.documentElement.dataset.theme = t.name
 }
 
@@ -85,10 +101,14 @@ function toHex(rgb: [number, number, number]): string {
   )
 }
 
-/** 相对亮度（sRGB 近似），只用来判明暗，不用于精确对比度 */
+/**
+ * 相对亮度（Rec.601 加权），只用来判明暗，不用于精确对比度。
+ * ⚠ 系数与 AHK 侧 ThemeService.IsDark / UiPaint.IsDark 必须完全一致 ——
+ *   两边对同一主题判出不同明暗，就会出现「网页深、标题栏浅」。
+ */
 function luminance(hex: string): number {
   const [r, g, b] = parseHex(hex)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return 0.299 * r + 0.587 * g + 0.114 * b
 }
 
 /** 整体加减同一档亮度 */

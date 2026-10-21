@@ -205,13 +205,15 @@ Feature，也不需要改组合根或帮助函数。
 
 ## 加新主题
 
-`ThemeService.Themes` 数组加一行：
+`src\WorkBench\Services\ThemeService.ahk` 的 `Themes` 数组加一行（**追加到末尾**）：
 
 ```ahk
 {name: "暗夜黑", win: "1E1E1E", edBg: "252526", text: "D4D4D4", dim: "808080"},
 ```
 
-加完 `Alt+T` 自动循环到新主题，无需改别处。
+加完 `Alt+T` 自动循环到新主题，无需改别处。**只给 4 个基色**（`win` / `edBg` / `text` /
+`dim`）就够 —— `accent` / `border` / `panel` / `codeBg` 由 `Palette()` 按明暗派生；
+要覆盖就在条目里自带同名字段。派生只写一处，前端 `--sw-*` 与 AHK 窗口拿的是同一份结果。
 
 ### 带背景图的主题
 
@@ -236,7 +238,7 @@ Feature，也不需要改组合根或帮助函数。
 - **烘图三步一步别省**：按 0.917 裁 → 缩到 2400 宽 + V 空间色调 → 成品尺寸 unsharp（`rebake-backdrop.ps1` 全包）。
   改脚本里的 C# 逻辑记得递增类名（见 `04-workflow`）。
 - **只能追加到数组末尾**（`ThemeIndex` 存下标）；前一条结尾补 `},` —— 漏逗号报 `Unexpected "{"`，方案 A 预检查不出。
-- **标题栏自动跟主题色**：`_SetDarkTitleBar` 按 `win` 亮度 < 128 决定 dark mode，Win11 用
+- **标题栏自动跟主题色**：`UiPaint.TitleBar` 按 `win` 亮度 < 128 决定 dark mode，Win11 用
   `DWMWA_CAPTION_COLOR` 染色（Win10 上 DllCall 静默失败、退回系统配色，不必判断版本）。
 - **拉伸时文字「时隐时无」= 铺图时机**：`_ScheduleRender()`（`SetTimer -80` 合并抖动）+ `_RenderNow()`
   （同矩形跳过，真重铺才 `RedrawWindow`）；`_Apply` 走 `_RenderNow(true)` 绕防抖。
