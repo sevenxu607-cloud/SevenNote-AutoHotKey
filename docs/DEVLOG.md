@@ -14,9 +14,9 @@
   **`dev` = 开发**（`..\SevenWork-dev` 工作树启动，配置 `%AppData%\SevenWork-Dev`）
 - **身份判据**：`Config.IsDev` 看工作树根有没有 `_dev.flag`（`.gitignore` 里、未跟踪）——
   **两分支源码零差异**，合并 / cherry-pick 不再挑提交
-- **最近一次改动**：S3 提示词库**列表窗**搬进 WebView2 —— 新增 `modules\Text\HostBridge.ahk` +
-  `web\src\components\PromptView.vue`，`PromptWindowFeature` 366 行 → 约 190 行；真机验证
-  右上角落位 / 收起再呼出 / `Enter` 开编辑窗 / `F5` 重扫全通（2026-10-22 02:30 条目）
+- **最近一次改动**：`dev` 合入 `main`（`c35b082`，fast-forward）—— 主目录日用身份直接跑上
+  WebView2 面板 / 提示词库 / 无题头笔记窗；根启动器两侧本就同一文件，差别只在分支
+  （2026-10-22 02:59 条目）
 - **正在处理**：S3 —— 编辑窗（`PromptEditFeature`，319 行原生控件）仍是原生
 - **下一步**：S3 余下三项（编辑窗 / 日期跳转 / 启动提示）→ S4 精修 + 文档；
   P3 背景图接前端仍然挂着
@@ -99,6 +99,36 @@
 ## 会话记录
 
 （新的在最上面）
+
+### 2026-10-22 02:59　「原来的启动」是旧样式：main 没合并，不是启动方式的问题
+
+**我说**（原话）
+> 怎么启动,为什么我使用原来的启动都是就样式
+
+**意图**
+推断：用户一直双击主目录的 `SevenWork.ahk`，看到的是旧界面（原生 ListView 面板 + 旧 dist），
+想要「用原来的启动方式就能看到新版」。
+
+**决定 / 过程**
+- 根因不是启动方式：两个目录是**同一仓库的两个工作树**（`SevenWork-dev\.git` 是指向
+  `SevenWork-AutoHotKey\.git\worktrees\SevenWork-dev` 的文件），根 `SevenWork.ahk` 两侧哈希完全相同
+  （`DDF64D62…`）。差别只在分支：主目录 `main @ b707a0f`，开发全在 `dev @ c35b082`，**从未合并**。
+- 主目录因此缺 `WebWindow.ahk` / `WebPanelUI.ahk` / `GlassPaint.ahk`，还留着已退役的 `WorkBenchUI.ahk`，
+  `web\dist` 也是 00:26 的旧构建 —— 所以「入口一样、界面不同」。
+- 在主目录 `git merge dev`：**fast-forward**（`main` 是 `dev` 祖先，无合并提交、不可能冲突），
+  合并后原启动方式即新版。`_dev.flag` 不入库，生产身份不受影响。
+- 真机验证：stderr 空、无 `_error.log`；`Alt+S` 是玻璃面板（`1432x1106` ≈ 940×700 @150%）、
+  `Alt+Z` 笔记窗无题头且内容是真实笔记（19 字，非演示文本）。
+- 首启触发 `_MigrateIndex`：`ThemeIndex 6→1`、`ThemeSchema 2→4`（写回不可逆，但 v2.10 主题表只剩一套）。
+
+**代价 / 风险**
+- 生产配置被一次性迁移（老主题下标重置为 1）；`dev` 与 `main` 现指向同一提交，
+  以后要并行开发得先让 `main` 追平或改用新分支。
+
+**待办**
+- [ ] 面板第二列说明文字带 `text-shadow` 光晕（`glass.css` 的 `0 0 14px rgba(103,232,249,.24)` 等），
+      缩略看像重影 —— 按「文字可读优先」可考虑调低
+- [ ] 是否 `git push origin main`（本地合并已完成，推送只是异地备份）
 
 ### 2026-10-22 02:30　提示词库列表窗搬进 WebView2，编辑窗仍原生
 
