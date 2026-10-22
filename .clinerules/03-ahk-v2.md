@@ -53,6 +53,10 @@
 | **hostObjects 的方法键名撞上 JS 内置** | `AddHostObjectToScript("ahk", {apply: Fn})` 之后，前端 `b['apply']` 拿到的是 `Function.prototype.apply`（宿主对象是 Proxy，先查函数原型）→ 调用抛 `TypeError: Function.prototype.apply was called on ...`，而调用点大多在 `try` 里，表现成「点保存没反应、日志一条不写」→ 键名避开 `apply` / `call` / `bind` / `toString` / `constructor` / `name` / `length` / `prototype`；本项目改用 `saveSettings` |
 | **`WebHostService` 单例挂不住第二个窗口** | 老实现挂第二个窗口时先 `Destroy()` 掉第一个 → 面板一开、笔记窗一片纯底色。改成 `hwnd → {ctrl, core, host}` 槽位表后 **无参调用会落到「最近挂载的窗口」**，所以调用一律显式传 hwnd；两个窗口的 `dataDir` 还必须分开（同一 user data folder 建不出第二个 `CoreWebView2Environment`，失败藏在 `await()` 里、只表现为白屏） |
 | **`Property is read-only`（实例字段赋值）** | 两个同源原因：① **字段名与方法名撞车** —— AHK v2 的属性名**不区分大小写**、且与方法共用命名空间，`this._place := x` 撞上私有方法 `_Place()` 就被解析成「给方法赋值」（方法只有 getter，无 setter）；② 字段声明在类体里（类体变量是**静态**的），`this.x := v` 等于写静态变量。两种表现都是「按热键没反应，`_error.log` 只有一行 `Return Property is read-only.`」→ **字段一律在 `__New` 里赋初值，且名字与方法错开**（`_placeMode` vs `_Place()`）。本项目此前全是全静态类，`WebWindow.ahk` 是第一个实例类 |
+| **`DwmSetWindowAttribute(38, SYSTEMBACKDROP)` 返回 0 却什么都没做** | 传 `3`（Acrylic / TRANSIENTWINDOW）拿到 `S_OK`，窗口照样把后方内容**清晰**透出来 —— 没有模糊、也没有报错。Win11 25H2 上这条对 `Gui` 的客户区**无效**，返回码不可信 → 别拿返回值当「生效」的判据，只能看截图 |
+| **`SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)` 让整个窗口消失** | 调用返回 `1`（成功）、进程还在，但窗口**连标题栏都不见了**，屏幕上只剩后方内容 → 它把窗口 layered 化，而 layered 父窗口的 Chromium 子窗口直接被裁掉。同理 `WS_EX_LAYERED` 也不能加。⚠ `GlassPaint` 里那段 `_Accent` 是**从未跑过**的第三级兜底（第一级就 return 了），别以为它在生产里验过 |
+| **拦 `WM_ERASEBKGND` 后必须由 DWM backdrop 托底** | 想让板外「露桌面」就得 `OnMessage(0x14, (*) => 1)` 掐掉背景刷，但**关掉所有 backdrop 后窗口整个不可见**（`MainWindowHandle = 0`、`IsWindow` 仍在）——未绘制的区域变成一片虚无。而且同一组合（拦背景 + `SYSTEMBACKDROP(3)`）实测**时好时坏**（一次板可见、下一次只剩一角）→ 这条路不稳定，**不要进生产**。WebView2 客户区本来就透不到桌面（它是独立合成表面，自己算完像素交给父窗口），板外那圈只能靠 CSS 画 |
+
 
 
 ## 全局异常兜底（v2.4.2 起，注册点在组合根）
