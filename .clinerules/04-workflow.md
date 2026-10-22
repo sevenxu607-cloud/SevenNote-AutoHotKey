@@ -46,7 +46,7 @@ $t = $t -replace "`r`n","`n"; $t = $t -replace "`n","`r`n"
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$tree = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-dev'   # 开发一律在 dev 工作树里验
+$tree = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey'   # 唯一工作树
 $src  = "$tree\src\SevenWork.ahk"
 $dir  = "$tree\src"   # 预检脚本必须与主脚本同目录，否则相对 #Include 找不到
 $L   = [System.IO.File]::ReadAllLines($src)
@@ -78,7 +78,7 @@ Remove-Item $tmp -Force
 
 ```powershell
 $exe = 'D:\02-Apps\AutoHotkey\v2\AutoHotkey64.exe'
-$script = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-dev\SevenWork.ahk'   # 根启动器
+$script = 'D:\03-PersonalFiles\02-GitHubFiles\SevenWork-AutoHotKey\SevenWork.ahk'   # 根启动器
 $se = "$env:TEMP\SevenWorkDev\_run_err.txt"
 Remove-Item $se -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $exe -ArgumentList @('/ErrorStdOut', "`"$script`"") `
@@ -131,11 +131,11 @@ if ($t2 -eq $t) { throw 'anchor not found' }
 [System.IO.File]::WriteAllText("$dir\_probe.ahk", $t2, [System.Text.UTF8Encoding]::new($false))
 ```
 
-- 探针必须放 `src\`（与相对 `#Include` 同目录）；`A_ScriptDir` 是 `src\` 时日志落 `src\.logs\`。
-- ⚠ **开发验证一律在 `SevenWork-dev` 工作树里做**：主目录没有 `_dev.flag`，跑探针就是「生产身份」——
-  日志落 `%AppData%\SevenWork\`，还会读写生产的 `_config.ini`。
+- 探针必须放 `src\`（与相对 `#Include` 同目录）；日志与配置都落 `%AppData%\SevenWork\`。
+- ⚠ **跑探针前先备份 `%AppData%\SevenWork\_config.ini`** —— v2.14 起没有「开发身份」这层隔离，
+  探针读写的就是生产配置，写坏了日用那边跟着坏。
 - 跑之前先 `Stop-Process` 掉已在运行的实例（两个实例抢热键，后起的注册失败、可能弹模态框）。
-- **验证完立刻删掉** `src\_probe.ahk` 与 `src\.logs\`。
+- **验证完立刻删掉** `src\_probe.ahk`；`src\.logs\` 已不会自动生成，手滑建了就一并清掉。
 
 ### 探针第一行别用裸 `FileDelete`
 

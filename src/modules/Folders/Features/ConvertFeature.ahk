@@ -76,7 +76,7 @@ class ConvertFeature {
 
         msg := this._Join(parts, " · ")
         if r.failed.Length
-            msg .= "`n失败详情见 .logs\_error.log"
+            msg .= "`n失败详情见 %AppData%\SevenWork\_error.log"
         return msg
     }
 

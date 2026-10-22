@@ -4,41 +4,24 @@
 
 class Config {
     static AppName := "SevenWork"
-    static Version := "2.13"
+    static Version := "2.14"
 
-    ; ═══ 身份判据：`_dev.flag`（目录即身份，与分支无关）═══
-    ; 项目根存在 `_dev.flag` = 开发身份；主目录（日用）不放它。
-    ; 该文件在 .gitignore 里、是**未跟踪**的本地标记 —— 因此 main 与 dev 两条分支的
-    ; 源码完全一致，合并零冲突；身份由「从哪个工作树启动」决定，重启也不会跑错。
-    ; 编译版永远算生产：exe 旁边误放 flag 也不该读测试配置。
-    ; ⚠ 两个 FileExist 覆盖两种入口：根启动器（A_ScriptDir = 树根）与
-    ;   `src\SevenWork.ahk`（调试 / 探针时 = `src\`）。
-    ; ⚠ 用 `=>` 简写属性：A_ScriptDir / A_IsCompiled 在取值时才求值，
-    ;   不在类加载期赌内置变量是否已就绪。
-    ; ⚠ 末尾 `!!` 归一成布尔：`FileExist` 返回的是 "A" / ""，直接透传的话
-    ;   `Config.IsDev = true` 这类比较会按字符串走而判假（AHK v2 不做隐式转换）。
-    static IsDev => !!(!A_IsCompiled
-        && (FileExist(A_ScriptDir . "\_dev.flag") || FileExist(A_ScriptDir . "\..\_dev.flag")))
-    ; 配置目录与 pandoc 目录**故意不同**，不是笔误：
-    ;   · _config.ini 是使用者状态（主题 / 字体 / Vault 路径），按身份隔离 ——
-    ;     开发走 SevenWork-Dev（测试库），日用 / 编译版走 SevenWork（真实笔记库），
-    ;     两边各改各的，互不覆盖。
-    ;   · pandoc.exe 是 100+MB 的内嵌可执行文件，跨身份共用一份，不随配置目录搬家。
-    static AppDataDir => this.IsDev
-        ? A_AppData . "\SevenWork-Dev"
-        : A_AppData . "\SevenWork"
+    ; ═══ 落点：一个目录、一份配置、一处日志（v2.14 起取消「开发身份」）═══
+    ; 曾经用工作树根的 `_dev.flag` 区分开发 / 日用：开发走 `SevenWork-Dev` 配置、
+    ; 日志落工作树 `.logs\`。代价是**两个工作树、两条分支、两份配置、两处日志**，
+    ; 而源码本来就零差异 —— 管理成本远大于「隔离」带来的收益，故整套取消。
+    ; 现在无论从哪个入口、哪个目录启动，都是同一份 `_config.ini`、同一个日志文件。
+    ; ⚠ 代价：探针脚本也读写这份**生产配置**。跑探针前先自己备份 `_config.ini`；
+    ;   探针本身不该写配置，真写坏了就靠备份还原。
+    static AppDataDir => A_AppData . "\SevenWork"
     static ConfigPath => this.AppDataDir . "\_config.ini"
     static PandocPath := A_AppData . "\SevenWork\pandoc.exe"
 
-    ; 报错日志落点：开发身份写**当前工作树根 `.logs\`**（翻起来不用到处找；
-    ; 从 `src\SevenWork.ahk` 跑探针时落在 `src\.logs\`）；日用 / 编译版跟配置落 AppData
-    ; —— exe 可能在桌面 / U 盘 / Program Files，那里要么往用户目录里扔文件，
-    ; 要么根本没写权限。
-    ; ⚠ 用 `=>` 简写属性而不是 `:=`：A_ScriptDir 在取值时才求值。
-    ; ⚠ 这两个身份别塞进上面的声明里 —— 它们依赖运行时内置变量。
-    static LogDir => this.IsDev
-        ? A_ScriptDir . "\.logs"
-        : A_AppData . "\SevenWork"
+    ; 报错日志跟配置放一起。不落工作树 `.logs\` 的理由：
+    ;   ① 项目目录可能在同步盘 / 只读位置，写不进去就丢日志；
+    ;   ② 「日志在哪」只该有一个答案 —— 少一个分支就少一次「翻了半天没找着」。
+    ; ⚠ 用 `=>` 简写属性而不是 `:=`：A_AppData 在取值时才求值。
+    static LogDir => this.AppDataDir
     static LogPath => this.LogDir . "\_error.log"
 
     static GetVault() {

@@ -285,8 +285,7 @@ Persistent()
 ; 屏幕上），只能手动杀进程 —— 项目在 v2 迁移期踩过三次（见 .clinerules/03）。
 ; 这里改成「写日志 + 继续跑」：单个 Feature 出错不该拖垮整个程序。
 ; 注册点放在这里（而不是文件更早处）是因为 LogError 要先建日志目录
-; （开发版项目根 .logs\、编译版 %AppData%\SevenWork\），
-; 而其中的 AppData 目录就在下面几行才建。
+; （%AppData%\SevenWork\），而那个目录就在下面几行才建。
 OnError(OnScriptError)
 
 ; ═══ 事件总线的错误出口 ═══
@@ -308,8 +307,7 @@ OnScriptError(err, mode) {
     return 1
 }
 
-; 追加一条到日志（落点见 Config.LogPath：开发版 .logs\_error.log，
-; 编译版 %AppData%\SevenWork\_error.log）。
+; 追加一条到日志（落点见 Config.LogPath：%AppData%\SevenWork\_error.log）。
 ; 超 512 KB 就轮转（删掉重来）—— 日志只用来事后定位，不归档。
 LogError(msg) {
     entry := "── " . FormatTime(, "yyyy-MM-dd HH:mm:ss") . " ──`r`n" . msg . "`r`n`r`n"

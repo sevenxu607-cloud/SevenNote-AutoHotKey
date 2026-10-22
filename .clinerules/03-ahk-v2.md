@@ -62,8 +62,8 @@
 ## 全局异常兜底（v2.4.2 起，注册点在组合根）
 
 - `OnError(OnScriptError)` → 写 `Config.LogPath` 后 `return 1` 继续跑，不再弹模态框。
-  日志位置：**开发身份（工作树根有 `_dev.flag`）`<工作树根>\.logs\_error.log`**；
-  日用 / 编译版 `%AppData%\SevenWork\_error.log`。含消息 / 文件 / 行 / 调用栈，超 512KB 轮转。
+  日志位置：**恒为 `%AppData%\SevenWork\_error.log`**（v2.14 起取消开发身份，不再有
+  `<工作树根>\.logs\` / `src\.logs\` 分支）。含消息 / 文件 / 行 / 调用栈，超 512KB 轮转。
 - `#Warn VarUnset, OutputDebug` —— 未赋值变量警告不再拦路。
 - **订阅者的异常也进同一份日志**（v2.4.5 起）：`EventBus.Emit` 对每个订阅者 `try`/`catch`
   且**互相隔离**，循环后汇聚成一条（`事件名 + 订阅者第 N 个 + 消息 + 文件/行`）。
